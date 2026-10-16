@@ -4,6 +4,8 @@
 
 import type { Mark, Node } from "prosemirror-model";
 import { schema } from "../editor/schema";
+import { parseMath } from "../math/ast";
+import { toOmml } from "../math/omml";
 import { TWIPS_PER_POINT, type DocContext } from "./model";
 import { escapeAttr, escapeText, tag } from "./xml";
 
@@ -147,7 +149,21 @@ class BodyWriter {
     if (node.type === schema.nodes.hard_break) return `<w:r>${this.runProps(node.marks)}<w:br/></w:r>`;
     if (node.type === schema.nodes.page_break) return `<w:r>${this.runProps(node.marks)}<w:br w:type="page"/></w:r>`;
     if (node.type === schema.nodes.raw_inline) return node.attrs.xml;
+    if (node.type === schema.nodes.math) return this.equation(node);
     return "";
+  }
+
+  private equation(node: Node): string {
+    const { latex, display, xml, original } = node.attrs;
+    if (xml && latex === original) return xml;
+    let tree;
+    try {
+      tree = parseMath(latex);
+    } catch {
+      // An equation that doesn't parse is saved as its text, so nothing is lost.
+      tree = { t: "text" as const, v: latex };
+    }
+    return toOmml(tree, display, !this.ctx.prefixes.has("m"));
   }
 
   private hyperlink(mark: Mark, content: string): string {

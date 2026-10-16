@@ -26,6 +26,8 @@ const PATHS = {
   clearFormat: '<path d="M6 5h12M12 5 9 19M4 20 20 4"/>',
   caret: '<path d="m7 10 5 5 5-5"/>',
   pageBreak: '<path d="M6 3v5h12V3M6 21v-5h12v5M3 12h3M9 12h2M13 12h2M18 12h3"/>',
+  equation: '<path d="M5 6h12M7 6v12M15 6v10a2 2 0 0 0 2 2h1"/>',
+  symbol: '<path d="M5 19h4v-2.500A6.500 6.500 0 1 1 15 16.500V19h4"/>',
   zoomIn: '<circle cx="11" cy="11" r="7"/><path d="m20 20-4-4M8 11h6M11 8v6"/>',
   zoomOut: '<circle cx="11" cy="11" r="7"/><path d="m20 20-4-4M8 11h6"/>',
 } as const;

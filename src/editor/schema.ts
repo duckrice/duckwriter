@@ -93,6 +93,19 @@ export const schema = new Schema({
       toDOM: () => ["span", { class: "page-break", title: "Page break" }],
     },
 
+    /**
+     * An equation, kept as its shorthand (LaTeX-like). `xml` is the Word
+     * equation it was read from, written back unchanged unless edited.
+     */
+    math: {
+      group: "inline",
+      inline: true,
+      atom: true,
+      selectable: true,
+      attrs: { latex: { default: "" }, display: { default: false }, xml: { default: null }, original: { default: null } },
+      toDOM: (node) => ["span", { class: "math", "data-latex": node.attrs.latex }, node.attrs.latex],
+    },
+
     /** A part of a paragraph DuckWriter can't edit yet (a picture, a field, a bookmark…), kept as is. */
     raw_inline: {
       group: "inline",

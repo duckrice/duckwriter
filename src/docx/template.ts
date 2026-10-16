@@ -5,7 +5,7 @@
 import JSZip from "jszip";
 
 const W = 'xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"';
-const R = 'xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"';
+const R = 'xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:m="http://schemas.openxmlformats.org/officeDocument/2006/math"';
 const HEADER = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n';
 
 const CONTENT_TYPES = `${HEADER}<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">

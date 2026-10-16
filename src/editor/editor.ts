@@ -23,6 +23,8 @@ import {
   toggleVertAlign,
 } from "./commands";
 import { changeListLevel, listPlugin, toggleList } from "./lists";
+import { MathView } from "./mathview";
+import { editEquation, insertEquation } from "../ui/equation";
 
 export interface EditorHooks {
   /** Called after every change to the document or the selection. */
@@ -70,6 +72,11 @@ export function createState(doc: Node, ctx: () => DocContext): EditorState {
         "Mod-Shift-<": c((x) => stepSize(x, -1)),
         "Mod-Shift-l": c((x) => toggleList(x, "bullet")),
         "Mod-Enter": insertPageBreak(),
+        // Word's shortcut for a new equation.
+        "Alt-=": (_state, _dispatch, view) => {
+          if (view) insertEquation(view);
+          return true;
+        },
         "Shift-Enter": chainCommands((state, dispatch) => {
           if (dispatch) dispatch(state.tr.replaceSelectionWith(state.schema.nodes.hard_break.create()).scrollIntoView());
           return true;
@@ -102,6 +109,9 @@ export function createView(host: HTMLElement, state: EditorState, hooks: EditorH
   const view: EditorView = new EditorView(host, {
     state,
     attributes: { spellcheck: "true", class: "doc" },
+    nodeViews: {
+      math: (node, v, getPos) => new MathView(node, v, getPos, (pos) => editEquation(v, pos)),
+    },
     dispatchTransaction(tr) {
       view.updateState(view.state.apply(tr));
       hooks.onChange(view, tr.docChanged);

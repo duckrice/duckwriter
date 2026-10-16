@@ -22,6 +22,7 @@ import {
 } from "../editor/commands";
 import { changeListLevel, kindOf, listOf, toggleList } from "../editor/lists";
 import { schema } from "../editor/schema";
+import { insertEquation } from "./equation";
 import { icon, type IconName } from "./icons";
 
 export interface ToolbarHost {
@@ -129,7 +130,11 @@ export class Toolbar {
         this.button("indentMore", "Increase indent (Tab in a list)", () => this.indent(1)),
         this.splitButton("lineSpacing", "Line and paragraph spacing", null, () => this.spacingMenu(), () => this.spacingMenu()),
       ),
-      group(this.button("pageBreak", "Page break (Ctrl+Enter)", () => this.run(insertPageBreak()))),
+      group(
+        this.button("equation", "Equation (Alt+=)", () => insertEquation(this.host.view)),
+        this.splitButton("symbol", "Symbol", null, () => this.symbolMenu(), () => this.symbolMenu()),
+        this.button("pageBreak", "Page break (Ctrl+Enter)", () => this.run(insertPageBreak())),
+      ),
       fonts,
       sizes,
     );
@@ -235,6 +240,36 @@ export class Toolbar {
       this.run(setMark(schema.marks.highlight, { color: name }));
     };
     return h("div", { class: "menu" }, this.swatches(HIGHLIGHT_CHOICES, (c) => HIGHLIGHTS[c], pick, (c) => c.replace(/([A-Z])/g, " $1").toLowerCase()), none);
+  }
+
+  private symbolMenu(): HTMLElement {
+    const groups: [string, string][] = [
+      ["Greek", "α β γ δ ε ζ η θ ι κ λ μ ν ξ π ρ σ τ υ φ χ ψ ω Γ Δ Θ Λ Ξ Π Σ Φ Ψ Ω"],
+      ["Maths", "± ∓ × ÷ ⋅ ≤ ≥ ≠ ≈ ≡ ∼ ∝ ∞ ∂ ∇ √ ∑ ∏ ∫ ∮ ∈ ∉ ⊂ ⊆ ∪ ∩ ∅ ∀ ∃ ¬ ∧ ∨ ∴ ′ ″"],
+      ["Arrows", "→ ← ↔ ⇒ ⇐ ⇔ ↑ ↓ ⇌ ↦"],
+      ["Units and more", "° ‰ µ Å Ω ℃ ℉ ½ ⅓ ¼ ¾ ² ³ ¹ ⁰ ⁻ ₀ ₁ ₂ ₃ € £ © ® ™ § ¶ † ‡ • … – —"],
+    ];
+    const insert = (text: string) => {
+      const { view } = this.host;
+      view.dispatch(view.state.tr.insertText(text).scrollIntoView());
+      view.focus();
+    };
+    return h(
+      "div",
+      { class: "menu symbol-menu" },
+      ...groups.flatMap(([title, chars]) => [
+        h("div", { class: "menu-heading" }, title),
+        h(
+          "div",
+          { class: "symbol-grid" },
+          ...chars.split(" ").map((ch) => {
+            const b = h("button", { type: "button", class: "symbol-button", title: ch }, ch);
+            b.addEventListener("click", () => insert(ch));
+            return b;
+          }),
+        ),
+      ]),
+    );
   }
 
   private spacingMenu(): HTMLElement {

@@ -4,6 +4,8 @@
 import JSZip from "jszip";
 import type { Mark, Node } from "prosemirror-model";
 import { schema } from "../editor/schema";
+import { toLatex } from "../math/ast";
+import { MATH_NS, fromOmml } from "../math/omml";
 import {
   DEFAULT_PAGE,
   TWIPS_PER_POINT,
@@ -335,9 +337,12 @@ class BodyReader {
   /** Reads the runs (and things that hold runs) inside `parent`. */
   private inlines(parent: Element, marks: readonly Mark[], out: Node[]) {
     for (const el of children(parent)) {
+      if (el.namespaceURI === MATH_NS && (el.localName === "oMath" || el.localName === "oMathPara")) {
+        out.push(this.equation(el, marks));
+        continue;
+      }
       if (el.namespaceURI !== NS.w) {
-        // Equations and other foreign content.
-        out.push(this.rawInline(el, el.localName === "oMath" || el.localName === "oMathPara" ? "Equation" : el.localName, marks));
+        out.push(this.rawInline(el, el.localName, marks));
         continue;
       }
       switch (el.localName) {
@@ -377,6 +382,18 @@ class BodyReader {
           out.push(schema.nodes.raw_inline.create({ xml: this.raw(el), hidden: true }));
       }
     }
+  }
+
+  private equation(el: Element, marks: readonly Mark[]): Node {
+    let latex = "";
+    try {
+      latex = toLatex(fromOmml(el));
+    } catch {
+      // Shown as its text; saved unchanged unless edited.
+      latex = `\\text{${(el.textContent ?? "").replace(/[{}]/g, "")}}`;
+    }
+    const display = el.localName === "oMathPara";
+    return schema.nodes.math.create({ latex, display, xml: this.raw(el), original: latex }, null, marks);
   }
 
   private rawInline(el: Element, label: string, marks: readonly Mark[]): Node {

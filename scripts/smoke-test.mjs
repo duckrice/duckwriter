@@ -346,6 +346,41 @@ await session(sample("report.docx"), 9434, async (app) => {
   check("Don't save closes the window", closed);
 });
 
+// ---- equations and symbols -------------------------------------------------------------
+
+await session(null, 9436, async (app) => {
+  await app.type("The area is ");
+  await app.key("=", 187, 1); // Alt+=
+  check("Alt+= opens the equation editor", await app.waitFor(`!!document.querySelector(".eq-editor")`, 3000));
+  await app.type("\\pi r^2");
+  check("it shows the equation while typing", await app.waitFor(`!!document.querySelector(".eq-preview msup")`, 3000));
+  await app.key("Enter", 13);
+  check("Enter puts it in the text as typeset maths", await app.waitFor(`!!document.querySelector(".doc .math math msup") && !document.querySelector(".eq-editor")`, 3000));
+  await app.type(" and the sum is");
+  await app.key("Enter", 13);
+  await app.clickOn(`.tb[title="Equation (Alt+=)"]`);
+  await app.waitFor(`!!document.querySelector(".eq-editor")`, 3000);
+  await app.clickOn(`.eq-template[title^="Sum"]`);
+  await app.type("i=1");
+  await app.key("Tab", 9);
+  await app.evaluate(`(() => { const i = document.querySelector(".eq-input"); i.value = "\\\\sum_{i=1}^{n} i = \\\\frac{n(n+1)}{2}"; i.dispatchEvent(new Event("input")); })()`);
+  check("the buttons insert shapes, and mistakes are explained", (await app.evaluate(`document.querySelector(".eq-message").textContent`)) === "");
+  await app.shoot("equation-editor");
+  await app.clickOn(".eq-footer .btn.primary");
+  check(
+    "an equation on an empty line is shown on its own line, centred",
+    await app.waitFor(`(() => { const m = document.querySelectorAll(".doc .math")[1]; return !!m && m.classList.contains("display") && !!m.querySelector("munderover") && !!m.querySelector("mfrac"); })()`, 3000),
+  );
+  await app.key("Enter", 13);
+  await app.clickOn(`.tb[title="Symbol options"]`);
+  await app.clickOn(`.symbol-button[title="μ"]`);
+  // The menu stays open for picking several.
+  await app.clickOn(`.symbol-button[title="°"]`);
+  check("the symbol menu inserts Greek letters and signs", (await app.evaluate(`[...document.querySelectorAll(".doc > .para")].at(-1).textContent`)) === "μ°");
+  await app.shoot("equations");
+  check("no errors in the app", app.errors.length === 0, app.errors.join("; "));
+});
+
 await session(sample("not-a-docx.docx"), 9435, async (app) => {
   check("a file that isn't a Word document gets a plain message", await app.waitFor(`/isn't a Word document/.test(document.querySelector(".toast.error")?.textContent ?? "")`, 5000));
 });

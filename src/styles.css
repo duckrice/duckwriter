@@ -485,3 +485,188 @@ body {
 .toast.error {
   background: #9b1c1c;
 }
+
+/* ---- equations ------------------------------------------------------------------ */
+
+.doc .math {
+  cursor: pointer;
+  border-radius: 3px;
+  text-indent: 0;
+}
+
+.doc .math math {
+  font-family: "Cambria Math", math;
+}
+
+.doc .math.display {
+  display: block;
+  margin: 4pt 0;
+  text-align: center;
+}
+
+.doc .math:hover,
+.doc .math.selected {
+  background: rgb(15 118 110 / 0.1);
+  outline: 1px solid rgb(15 118 110 / 0.35);
+}
+
+.doc .math.empty,
+.doc .math.error {
+  padding: 0 4px;
+  color: #9b1c1c;
+  font: italic 0.9em "Segoe UI", sans-serif;
+  background: #fdecec;
+}
+
+.doc .math.empty {
+  color: #65707d;
+  background: #eef1f4;
+}
+
+.eq-editor {
+  position: fixed;
+  z-index: 40;
+  width: 520px;
+  max-width: calc(100vw - 16px);
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--panel);
+  color: var(--text);
+  box-shadow: var(--shadow);
+}
+
+.eq-templates,
+.eq-symbols {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px;
+  margin-bottom: 6px;
+}
+
+.eq-template,
+.eq-symbol {
+  min-width: 30px;
+  height: 28px;
+  padding: 0 6px;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: var(--panel);
+  color: var(--text);
+  font: 14px "Cambria Math", "Segoe UI", serif;
+  cursor: pointer;
+}
+
+.eq-symbol {
+  min-width: 24px;
+  height: 24px;
+  padding: 0 3px;
+  border-color: transparent;
+}
+
+.eq-template:hover,
+.eq-symbol:hover {
+  background: var(--hover);
+  border-color: var(--accent);
+}
+
+.eq-input {
+  width: 100%;
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--panel);
+  color: var(--text);
+  font: 14px Consolas, "Courier New", monospace;
+  resize: vertical;
+}
+
+.eq-input:focus {
+  outline: 2px solid var(--accent);
+  outline-offset: -1px;
+}
+
+.eq-preview {
+  min-height: 40px;
+  margin: 6px 0 2px;
+  padding: 8px;
+  border-radius: 6px;
+  background: #ffffff;
+  color: #000000;
+  font-size: 18px;
+  text-align: center;
+  overflow-x: auto;
+}
+
+.eq-preview math {
+  font-family: "Cambria Math", math;
+}
+
+.eq-message {
+  min-height: 16px;
+  color: #b42318;
+  font-size: 12px;
+}
+
+.eq-footer {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 6px;
+}
+
+.eq-display {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.eq-help {
+  flex: 1;
+  color: var(--muted);
+  font-size: 12px;
+  text-align: right;
+}
+
+.btn.small {
+  padding: 4px 12px;
+}
+
+.btn.subtle {
+  border-color: transparent;
+  background: transparent;
+}
+
+.symbol-menu {
+  width: 330px;
+}
+
+.menu-heading {
+  margin: 6px 4px 2px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.symbol-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px;
+}
+
+.symbol-button {
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text);
+  font: 15px "Cambria Math", "Segoe UI", serif;
+  cursor: pointer;
+}
+
+.symbol-button:hover {
+  background: var(--hover);
+  outline: 1px solid var(--accent);
+}
