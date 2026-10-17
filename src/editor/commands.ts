@@ -60,13 +60,23 @@ export function effectivePara(ctx: DocContext, para: Node): ParaProps {
 
 /** The formatting at the cursor, or at the start of the selection. */
 export function formattingAt(ctx: DocContext, state: EditorState): { run: RunProps; para: ParaProps; paragraph: Node | null } {
-  const { $from, empty } = state.selection;
-  const paragraph = $from.parent.type === schema.nodes.paragraph ? $from.parent : null;
+  const { $from, empty, from, to } = state.selection;
+  let paragraph = $from.parent.type === schema.nodes.paragraph ? $from.parent : null;
   let marks: readonly Mark[] = state.storedMarks ?? $from.marks();
   if (!empty) {
-    // The first character of the selection, not whatever precedes it.
-    const after = $from.nodeAfter;
-    if (after) marks = after.marks;
+    // The first letter of the selection, not whatever precedes it (and with
+    // everything selected, the first letter of the document).
+    let found = false;
+    state.doc.nodesBetween(from, to, (node, _pos, parent) => {
+      if (found) return false;
+      if (node.isInline && parent) {
+        marks = node.marks;
+        paragraph = parent.type === schema.nodes.paragraph ? parent : paragraph;
+        found = true;
+        return false;
+      }
+      return true;
+    });
   }
   return { run: effectiveRun(ctx, paragraph, marks), para: paragraph ? effectivePara(ctx, paragraph) : {}, paragraph };
 }
@@ -150,6 +160,14 @@ export function stepSize(ctx: DocContext, direction: 1 | -1): Command {
     const current = formattingAt(ctx, state).run.size ?? 11;
     const next = direction > 0 ? (SIZES.find((s) => s > current) ?? current + 10) : ([...SIZES].reverse().find((s) => s < current) ?? Math.max(1, current - 1));
     return setMark(schema.marks.size, { pt: next })(state, dispatch);
+  };
+}
+
+/** Makes text a number of points bigger (or smaller), as Ctrl+] and Ctrl+[ do in Word. */
+export function stepSizeBy(ctx: DocContext, points: number): Command {
+  return (state, dispatch) => {
+    const current = formattingAt(ctx, state).run.size ?? 11;
+    return setMark(schema.marks.size, { pt: Math.min(1638, Math.max(1, Math.round((current + points) * 2) / 2)) })(state, dispatch);
   };
 }
 

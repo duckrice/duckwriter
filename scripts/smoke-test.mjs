@@ -150,9 +150,11 @@ async function session(files, port, run, { profileDir = profile } = {}) {
     },
     wheel: (x, y, deltaY, modifiers = 0) => send("Input.dispatchMouseEvent", { type: "mouseWheel", x, y, deltaX: 0, deltaY, modifiers }),
     /** `modifiers`: 2 is Ctrl. */
-    async key(name, code, modifiers = 0) {
-      await send("Input.dispatchKeyEvent", { type: "keyDown", key: name, code: name, windowsVirtualKeyCode: code, modifiers });
-      await send("Input.dispatchKeyEvent", { type: "keyUp", key: name, code: name, windowsVirtualKeyCode: code, modifiers });
+    /** Presses a key. `physical` is the key's place (KeyB, Digit2, IntlBackslash…), worked out for letters and digits. */
+    async key(name, code, modifiers = 0, physical = null, text = undefined) {
+      const where = physical ?? (/^[a-z]$/i.test(name) ? `Key${name.toUpperCase()}` : /^[0-9]$/.test(name) ? `Digit${name}` : name);
+      await send("Input.dispatchKeyEvent", { type: "keyDown", key: name, code: where, windowsVirtualKeyCode: code, modifiers, ...(text ? { text } : {}) });
+      await send("Input.dispatchKeyEvent", { type: "keyUp", key: name, code: where, windowsVirtualKeyCode: code, modifiers });
       // The editor picks up a selection made with the keys a moment later.
       await sleep(40);
     },
@@ -269,7 +271,7 @@ await session(null, 9433, async (app) => {
   );
 
   await app.key("Enter", 13);
-  await app.clickOn(`.tb[title="Bullets"]`);
+  await app.clickOn(`.tb[title^="Bullets"]`);
   await app.type("Socks");
   await app.key("Enter", 13);
   await app.type("Sweater");
@@ -279,7 +281,7 @@ await session(null, 9433, async (app) => {
   paras = await paragraphs(app);
   check("the Bullets button starts a bulleted list", paras[2]?.label === "•" && paras[3]?.label === "•", JSON.stringify(paras.slice(2)));
   check("Tab in a list moves the item a level in", paras[4]?.label === "◦" && paras[4]?.text === "The warm one", JSON.stringify(paras[4]));
-  check("the toolbar shows the list is on", await app.evaluate(`document.querySelector('.tb[title="Bullets"]').classList.contains("active")`));
+  check("the toolbar shows the list is on", await app.evaluate(`document.querySelector('.tb[title^="Bullets"]').classList.contains("active")`));
   await app.key("Enter", 13);
   await app.key("Enter", 13);
   await app.key("Enter", 13);
@@ -390,7 +392,7 @@ await session(null, 9436, async (app) => {
     await app.waitFor(`(() => { const m = document.querySelectorAll(".doc .math")[1]; return !!m && m.classList.contains("display") && !!m.querySelector("munderover") && !!m.querySelector("mfrac"); })()`, 3000),
   );
   await app.key("Enter", 13);
-  await app.clickOn(`.tb[title="Symbol options"]`);
+  await app.clickOn(`.tb[title^="Symbol"][title$="options"]`);
   await app.clickOn(`.symbol-button[title="μ"]`);
   // The menu stays open for picking several.
   await app.clickOn(`.symbol-button[title="°"]`);
@@ -598,7 +600,7 @@ rmSync(withRefs, { force: true });
 await session(null, 9460, async (app) => {
   await app.debugHandle();
   const setStyle = (id) => app.evaluate(`(() => { const s = document.querySelector(".style-select"); s.value = "${id}"; s.dispatchEvent(new Event("change")); })()`);
-  const references = () => app.clickOn(`.tb[title="References options"]`);
+  const references = () => app.clickOn(`.tb[title^="References"][title$="options"]`);
   await app.type("Introduction");
   await setStyle("Heading1");
   await app.key("End", 35);
@@ -781,6 +783,54 @@ await session(sample("long.docx"), 9480, async (app) => {
   check("…and paragraphs start on the grid on every page", report.off === 0 && report.lines > 20, JSON.stringify(report));
   check("switching it on is a change to save", report.title.startsWith("•"));
   await app.shoot("line-grid");
+  check("no errors in the app", app.errors.length === 0, app.errors.join("; "));
+});
+
+// ---- keyboard shortcuts --------------------------------------------------------------------------
+
+await session(null, 9490, async (app) => {
+  const ALT = 1;
+  await app.type("Size test");
+  await app.key("a", 65, CTRL);
+  const size = () => app.evaluate(`document.querySelector(".size-input").value`);
+  // Norwegian keyboard: Ctrl+Shift+< types ">", Ctrl+< types "<".
+  await app.key(">", 226, CTRL | SHIFT, "IntlBackslash");
+  check("Ctrl+> (Ctrl+Shift+< on a Norwegian keyboard) makes text bigger", (await size()) === "12", await size());
+  await app.key("¨", 221, CTRL, "BracketRight");
+  check("Ctrl+] (the ¨ key on a Norwegian keyboard) adds one point", (await size()) === "13", await size());
+  await app.key("<", 226, CTRL, "IntlBackslash");
+  check("Ctrl+< makes it smaller again", (await size()) === "12", await size());
+  await app.key("å", 219, CTRL, "BracketLeft");
+  check("Ctrl+[ takes a point off", (await size()) === "11", await size());
+  await app.key("P", 80, CTRL | SHIFT);
+  check("Ctrl+Shift+P goes to the font size box", await app.evaluate(`document.activeElement === document.querySelector(".size-input")`));
+  await app.type("18");
+  await app.key("Enter", 13);
+  check("typing a size there and Enter sets it, and goes back to the text", (await app.evaluate(`getComputedStyle(document.querySelector(".doc .para span")).fontSize`)) === pt(18) && (await app.evaluate(`document.activeElement?.classList.contains("doc")`)));
+
+  // AltGr+2 types @ on a Norwegian keyboard: it must not become Heading 2.
+  await app.key("End", 35);
+  await app.key("@", 50, CTRL | ALT, "Digit2", "@");
+  check("AltGr characters are typed, not taken as shortcuts", (await app.evaluate(`document.querySelector(".doc .para").textContent`)).endsWith("@") && !(await app.evaluate(`document.querySelector(".doc .para").dataset.style`)));
+
+  await app.key("1", 49, CTRL | ALT);
+  check("Ctrl+Alt+1 makes a heading", (await app.evaluate(`document.querySelector(".doc .para").dataset.style`)) === "Heading1");
+
+  // Menus open from the keyboard and work with the arrow keys.
+  await app.key("End", 35);
+  await app.key("Y", 89, CTRL | SHIFT);
+  check("Ctrl+Shift+Y opens the symbols, ready for the arrow keys", await app.waitFor(`document.activeElement?.classList.contains("symbol-button")`, 2000));
+  await app.key("ArrowRight", 39);
+  await app.key("Enter", 13);
+  await app.key("Escape", 27);
+  check("…and Enter puts the chosen one in", (await app.evaluate(`document.querySelector(".doc .para").textContent`)).endsWith("β"));
+
+  await app.key("F1", 112);
+  check("F1 lists every shortcut", await app.waitFor(`document.querySelectorAll(".shortcut-help .shortcut-row").length > 50`, 2000));
+  await app.type("size");
+  check("the list can be searched", (await app.evaluate(`[...document.querySelectorAll(".shortcut-help .shortcut-row")].map((r) => r.querySelector(".shortcut-label").textContent).join("|")`)).includes("Font size up by one point"));
+  await app.shoot("keyboard-shortcuts");
+  await app.key("Escape", 27);
   check("no errors in the app", app.errors.length === 0, app.errors.join("; "));
 });
 

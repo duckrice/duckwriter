@@ -1109,3 +1109,96 @@ span.page-gap.inline {
 .picture-bar::selection {
   background: transparent;
 }
+
+/* ---- keyboard shortcuts ---------------------------------------------------------------- */
+
+.shortcut-help {
+  width: min(640px, calc(100vw - 32px));
+  max-width: none;
+  max-height: min(80vh, 760px);
+  display: flex;
+  flex-direction: column;
+}
+
+.shortcut-help[open] {
+  display: flex;
+}
+
+.shortcut-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.shortcut-head h2 {
+  margin: 0;
+}
+
+.shortcut-search {
+  width: 100%;
+  margin: 10px 0 6px;
+}
+
+.shortcut-list {
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.shortcut-list h3 {
+  margin: 14px 0 4px;
+  color: var(--accent-text);
+  font-size: 13px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.shortcut-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 5px 4px;
+  border-bottom: 1px solid var(--border);
+}
+
+.shortcut-keys {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 6px;
+  color: var(--muted);
+}
+
+.shortcut-or {
+  font-size: 12px;
+}
+
+.keys {
+  white-space: nowrap;
+}
+
+kbd {
+  display: inline-block;
+  min-width: 22px;
+  margin: 0 2px;
+  padding: 1px 6px;
+  border: 1px solid var(--border);
+  border-bottom-width: 2px;
+  border-radius: 4px;
+  background: var(--bg);
+  color: var(--text);
+  font: 12px "Segoe UI", sans-serif;
+  text-align: center;
+}
+
+.shortcut-none {
+  color: var(--muted);
+}
+
+.menu .menu-item:focus-visible,
+.menu .symbol-button:focus-visible,
+.menu .swatch:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -1px;
+}

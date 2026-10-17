@@ -37,6 +37,7 @@ export interface ToolbarHost {
   save(): void;
   editHeader(): void;
   insertFootnote(): void;
+  showShortcuts(): void;
 }
 
 const FONTS = [
@@ -65,14 +66,25 @@ export class Toolbar {
   private lastTextColor = "#c00000";
   private lastHighlight = "yellow";
   private openMenu: HTMLElement | null = null;
+  private menuArrows = new Map<string, HTMLButtonElement>();
+  private styleByKeyboard = false;
 
   constructor(private host: ToolbarHost) {
     const fonts = h("datalist", { id: "dw-fonts" }, ...FONTS.map((f) => h("option", { value: f })));
     const sizes = h("datalist", { id: "dw-sizes" }, ...SIZES.map((s) => h("option", { value: String(s) })));
 
     this.styleSelect.addEventListener("change", () => {
-      this.run(setStyle(this.host.ctx, this.styleSelect.value || null));
+      // Chosen with the keyboard (Ctrl+Shift+S), the box keeps the focus until Enter.
+      this.run(setStyle(this.host.ctx, this.styleSelect.value || null), !this.styleByKeyboard);
     });
+    this.styleSelect.addEventListener("keydown", (event) => {
+      if (event.key === "Enter" || event.key === "Escape") {
+        event.preventDefault();
+        this.styleByKeyboard = false;
+        this.host.view.focus();
+      }
+    });
+    this.styleSelect.addEventListener("blur", () => (this.styleByKeyboard = false));
     this.fontInput.addEventListener("change", () => {
       const family = this.fontInput.value.trim();
       if (family) this.run(setMark(schema.marks.font, { family }));
@@ -101,26 +113,27 @@ export class Toolbar {
         this.button("newDoc", "New document (Ctrl+N)", () => this.host.newDocument()),
         this.button("open", "Open (Ctrl+O)", () => this.host.open()),
         this.button("save", "Save (Ctrl+S)", () => this.host.save()),
+        this.button("keyboard", "Keyboard shortcuts (F1)", () => this.host.showShortcuts()),
       ),
       group(this.button("undo", "Undo (Ctrl+Z)", () => this.run(undo)), this.button("redo", "Redo (Ctrl+Y)", () => this.run(redo))),
       group(this.styleSelect),
       group(
         this.fontInput,
         this.sizeInput,
-        this.button("zoomIn", "Bigger text (Ctrl+])", () => this.run(stepSize(ctx(), 1)), "sizeUp"),
-        this.button("zoomOut", "Smaller text (Ctrl+[)", () => this.run(stepSize(ctx(), -1)), "sizeDown"),
+        this.button("zoomIn", "Bigger text (Ctrl+> or Ctrl+])", () => this.run(stepSize(ctx(), 1)), "sizeUp"),
+        this.button("zoomOut", "Smaller text (Ctrl+< or Ctrl+[)", () => this.run(stepSize(ctx(), -1)), "sizeDown"),
       ),
       group(
         this.button("bold", "Bold (Ctrl+B)", () => this.run(toggleFormat(ctx(), "bold"))),
         this.button("italic", "Italic (Ctrl+I)", () => this.run(toggleFormat(ctx(), "italic"))),
         this.button("underline", "Underline (Ctrl+U)", () => this.run(toggleFormat(ctx(), "underline"))),
-        this.button("strike", "Strikethrough", () => this.run(toggleFormat(ctx(), "strike"))),
-        this.button("superscript", "Superscript (Ctrl+Shift++)", () => this.run(toggleVertAlign("superscript"))),
+        this.button("strike", "Strikethrough (Ctrl+Shift+X)", () => this.run(toggleFormat(ctx(), "strike"))),
+        this.button("superscript", "Superscript (Ctrl++)", () => this.run(toggleVertAlign("superscript"))),
         this.button("subscript", "Subscript (Ctrl+=)", () => this.run(toggleVertAlign("subscript"))),
       ),
       group(
-        this.splitButton("textColor", "Text colour", this.textColorBar, () => this.run(setMark(schema.marks.color, { color: this.lastTextColor })), () => this.colorMenu()),
-        this.splitButton("highlight", "Highlight", this.highlightBar, () => this.run(setMark(schema.marks.highlight, { color: this.lastHighlight })), () => this.highlightMenu()),
+        this.splitButton("textColor", "Text colour (Ctrl+Shift+O)", this.textColorBar, () => this.run(setMark(schema.marks.color, { color: this.lastTextColor })), () => this.colorMenu()),
+        this.splitButton("highlight", "Highlight (Ctrl+Alt+H)", this.highlightBar, () => this.run(setMark(schema.marks.highlight, { color: this.lastHighlight })), () => this.highlightMenu()),
         this.button("clearFormat", "Clear formatting (Ctrl+Space)", () => this.run(clearFormatting(ctx()))),
       ),
       group(
@@ -130,20 +143,20 @@ export class Toolbar {
         this.button("alignJustify", "Justify (Ctrl+J)", () => this.run(setAlign("justify"))),
       ),
       group(
-        this.button("bullets", "Bullets", () => this.run(toggleList(ctx(), "bullet"))),
-        this.button("numbers", "Numbering", () => this.run(toggleList(ctx(), "number"))),
-        this.button("indentLess", "Decrease indent (Shift+Tab in a list)", () => this.indent(-1)),
-        this.button("indentMore", "Increase indent (Tab in a list)", () => this.indent(1)),
-        this.splitButton("lineSpacing", "Line and paragraph spacing", null, () => this.spacingMenu(), () => this.spacingMenu()),
+        this.button("bullets", "Bullets (Ctrl+Shift+L)", () => this.run(toggleList(ctx(), "bullet"))),
+        this.button("numbers", "Numbering (Ctrl+Shift+7)", () => this.run(toggleList(ctx(), "number"))),
+        this.button("indentLess", "Decrease indent (Ctrl+Shift+M)", () => this.indent(-1)),
+        this.button("indentMore", "Increase indent (Ctrl+M)", () => this.indent(1)),
+        this.splitButton("lineSpacing", "Line spacing (Ctrl+1, Ctrl+5, Ctrl+2)", null, () => this.spacingMenu(), () => this.spacingMenu()),
       ),
       group(
-        this.button("picture", "Picture", () => void choosePicture(this.host.view, this.host.ctx)),
+        this.button("picture", "Picture (Ctrl+Alt+P)", () => void choosePicture(this.host.view, this.host.ctx)),
         this.button("equation", "Equation (Alt+=)", () => insertEquation(this.host.view)),
-        this.splitButton("symbol", "Symbol", null, () => this.symbolMenu(), () => this.symbolMenu()),
+        this.splitButton("symbol", "Symbol (Ctrl+Shift+Y)", null, () => this.symbolMenu(), () => this.symbolMenu()),
         this.button("pageBreak", "Page break (Ctrl+Enter)", () => this.run(insertPageBreak())),
-        this.button("header", "Header and footer", () => this.host.editHeader()),
+        this.button("header", "Header and footer (Ctrl+Alt+O)", () => this.host.editHeader()),
         this.button("footnote", "Footnote (Ctrl+Alt+F)", () => this.host.insertFootnote()),
-        this.splitButton("references", "References", null, () => this.referencesMenu(), () => this.referencesMenu()),
+        this.splitButton("references", "References (Ctrl+Alt+R)", null, () => this.referencesMenu(), () => this.referencesMenu()),
         this.splitButton("layout", "Layout", null, () => this.layoutMenu(), () => this.layoutMenu()),
       ),
       fonts,
@@ -151,16 +164,50 @@ export class Toolbar {
     );
     this.textColorBar.style.background = this.lastTextColor;
     this.highlightBar.style.background = HIGHLIGHTS[this.lastHighlight];
+    // Escape closes an open menu, wherever the cursor is.
+    document.addEventListener("keydown", (event) => {
+      if (event.key === "Escape" && this.openMenu) {
+        this.closeMenu();
+        this.host.view.focus();
+      }
+    });
     document.addEventListener("pointerdown", (event) => {
       if (this.openMenu && !this.openMenu.contains(event.target as Node) && !(event.target as HTMLElement).closest(".split-arrow")) this.closeMenu();
     });
   }
 
   /** Runs a command on the editor and gives it the focus back. */
-  run(command: Command) {
+  run(command: Command, focus = true) {
     const { view } = this.host;
     command(view.state, view.dispatch, view);
-    view.focus();
+    if (focus) view.focus();
+  }
+
+  /** Puts the cursor in the font, size or style box, for choosing from the keyboard. */
+  focusBox(box: "font" | "size" | "style") {
+    if (box === "style") {
+      this.styleByKeyboard = true;
+      this.styleSelect.focus();
+      return;
+    }
+    const input = box === "font" ? this.fontInput : this.sizeInput;
+    input.focus();
+    input.select();
+  }
+
+  /** Opens one of the toolbar's menus, ready to use with the arrow keys. */
+  openMenuByKeyboard(name: string) {
+    this.menuArrows.get(name)?.click();
+    const first = this.openMenu?.querySelector<HTMLElement>(".menu-item, .symbol-button, .swatch");
+    first?.focus();
+  }
+
+  applyTextColor() {
+    this.run(setMark(schema.marks.color, { color: this.lastTextColor }));
+  }
+
+  applyHighlight() {
+    this.run(setMark(schema.marks.highlight, { color: this.lastHighlight }));
   }
 
   private indent(direction: 1 | -1) {
@@ -184,6 +231,7 @@ export class Toolbar {
     if (bar) main.append(bar);
     const arrow = h("button", { type: "button", class: "tb split-arrow", title: `${title} options`, "aria-label": `${title} options`, html: icon("caret", 14) });
     arrow.addEventListener("mousedown", (event) => event.preventDefault());
+    this.menuArrows.set(name, arrow);
     const wrap = h("div", { class: "split" }, main, arrow);
     arrow.addEventListener("click", () => {
       if (this.openMenu?.dataset.owner === name) return this.closeMenu();
@@ -193,10 +241,35 @@ export class Toolbar {
       menu.addEventListener("mousedown", (event) => {
         if (!(event.target instanceof HTMLInputElement)) event.preventDefault();
       });
+      menu.addEventListener("keydown", (event) => this.menuKeys(event, menu));
       wrap.append(menu);
       this.openMenu = menu;
     });
     return wrap;
+  }
+
+  /** Arrow keys move through a menu's choices; Escape closes it. */
+  private menuKeys(event: KeyboardEvent, menu: HTMLElement) {
+    const items = [...menu.querySelectorAll<HTMLElement>(".menu-item, .symbol-button, .swatch")];
+    const at = items.indexOf(document.activeElement as HTMLElement);
+    const grid = menu.querySelector(".symbol-grid, .swatches");
+    const across = grid ? Math.max(1, Math.round(grid.clientWidth / (items[0]?.offsetWidth || 28))) : 1;
+    const go = (to: number) => {
+      event.preventDefault();
+      items[Math.max(0, Math.min(items.length - 1, to))]?.focus();
+    };
+    if (event.key === "ArrowDown") go(at + (items[at]?.matches(".menu-item") ? 1 : across));
+    else if (event.key === "ArrowUp") go(at - (items[at]?.matches(".menu-item") ? 1 : across));
+    else if (event.key === "ArrowRight") go(at + 1);
+    else if (event.key === "ArrowLeft") go(at - 1);
+    else if ((event.key === "Enter" || event.key === " ") && at >= 0) {
+      event.preventDefault();
+      items[at].click();
+    } else if (event.key === "Escape") {
+      event.preventDefault();
+      this.closeMenu();
+      this.host.view.focus();
+    }
   }
 
   private closeMenu() {
@@ -310,10 +383,11 @@ export class Toolbar {
       ["Arrows", "→ ← ↔ ⇒ ⇐ ⇔ ↑ ↓ ⇌ ↦"],
       ["Units and more", "° ‰ µ Å Ω ℃ ℉ ½ ⅓ ¼ ¾ ² ³ ¹ ⁰ ⁻ ₀ ₁ ₂ ₃ € £ © ® ™ § ¶ † ‡ • … – —"],
     ];
-    const insert = (text: string) => {
+    const insert = (text: string, fromKeyboard: boolean) => {
       const { view } = this.host;
       view.dispatch(view.state.tr.insertText(text).scrollIntoView());
-      view.focus();
+      // Chosen with the keyboard, the menu keeps the focus for the next one (Esc to finish).
+      if (!fromKeyboard) view.focus();
     };
     return h(
       "div",
@@ -325,7 +399,7 @@ export class Toolbar {
           { class: "symbol-grid" },
           ...chars.split(" ").map((ch) => {
             const b = h("button", { type: "button", class: "symbol-button", title: ch }, ch);
-            b.addEventListener("click", () => insert(ch));
+            b.addEventListener("click", (event) => insert(ch, event.detail === 0));
             return b;
           }),
         ),

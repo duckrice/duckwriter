@@ -13,7 +13,8 @@ import { stylesheetFor } from "./editor/stylesheet";
 import { baseName, isDesktop, onCloseRequested, pickDocument, pickSavePath, readPath, setTitle, startupFiles, writePath } from "./platform";
 import { Footnotes } from "./ui/footnotes";
 import { updateTocs } from "./ui/references";
-import { insertPictureFiles, snapOn } from "./ui/pictures";
+import { insertPictureFiles, setSnap, snapOn } from "./ui/pictures";
+import { handleShortcuts, showShortcutHelp } from "./ui/shortcuts";
 import { placeFloatingPictures } from "./editor/imageview";
 import { HeadersAndFooters } from "./ui/headers";
 import { icon } from "./ui/icons";
@@ -84,7 +85,7 @@ class App {
     this.sheet.addEventListener("dblclick", (event) => {
       if (this.headers.view && !this.headers.layer.contains(event.target as HTMLElement)) this.headers.stop();
     });
-    window.addEventListener("keydown", (event) => this.onKey(event));
+    handleShortcuts(this);
     onCloseRequested(() => this.confirmDiscard());
     window.addEventListener("beforeunload", (event) => {
       if (!isDesktop && this.dirty) event.preventDefault();
@@ -309,6 +310,39 @@ class App {
 
   // ---- view -----------------------------------------------------------------
 
+  // ---- for the keyboard shortcuts ----------------------------------------------
+
+  /** Zooms in (1), out (-1) or back to 100% (0). */
+  zoomBy(direction: 1 | -1 | 0) {
+    if (direction === 0) this.setZoom(1);
+    else this.stepZoom(direction);
+  }
+
+  toggleSnap() {
+    setSnap(!snapOn());
+    this.toast(snapOn() ? "Pictures snap to the grid" : "Pictures move freely");
+  }
+
+  focusBox(box: "font" | "size" | "style") {
+    this.toolbar.focusBox(box);
+  }
+
+  openMenu(menu: "symbol" | "references" | "layout" | "textColor" | "highlight") {
+    this.toolbar.openMenuByKeyboard(menu);
+  }
+
+  applyTextColor() {
+    this.toolbar.applyTextColor();
+  }
+
+  applyHighlight() {
+    this.toolbar.applyHighlight();
+  }
+
+  showShortcuts() {
+    showShortcutHelp();
+  }
+
   private setZoom(zoom: number) {
     this.zoom = Math.min(5, Math.max(0.25, zoom));
     this.sheet.style.zoom = String(this.zoom);
@@ -318,34 +352,6 @@ class App {
   private stepZoom(direction: 1 | -1) {
     const next = direction > 0 ? ZOOMS.find((z) => z > this.zoom + 0.001) : [...ZOOMS].reverse().find((z) => z < this.zoom - 0.001);
     if (next) this.setZoom(next);
-  }
-
-  private onKey(event: KeyboardEvent) {
-    if (event.ctrlKey && event.altKey && event.key.toLowerCase() === "f") {
-      // Ctrl+Alt+F: a new footnote, as in Word.
-      event.preventDefault();
-      this.insertFootnote();
-      return;
-    }
-    if (!(event.ctrlKey || event.metaKey) || event.altKey) return;
-    const key = event.key.toLowerCase();
-    const handled = () => {
-      event.preventDefault();
-      event.stopPropagation();
-    };
-    if (key === "s") {
-      handled();
-      void this.save(event.shiftKey);
-    } else if (key === "o") {
-      handled();
-      void this.open();
-    } else if (key === "n" && !event.shiftKey) {
-      handled();
-      void this.newDocument();
-    } else if (key === "0") {
-      handled();
-      this.setZoom(1);
-    }
   }
 
   toast(text: string, kind: "info" | "error" = "info") {

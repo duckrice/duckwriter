@@ -1,0 +1,239 @@
+// Every keyboard shortcut in one list: the keys handled, and the help window
+// (F1) that lists them, both come from here, so they always agree.
+
+import { redo, undo } from "prosemirror-history";
+import { selectAll } from "prosemirror-commands";
+import type { Command } from "prosemirror-state";
+import type { EditorView } from "prosemirror-view";
+import { h } from "../dom";
+import type { DocContext } from "../docx/model";
+import {
+  clearFormatting,
+  insertPageBreak,
+  setAlign,
+  setLineSpacing,
+  setParagraphs,
+  setStyle,
+  stepIndent,
+  stepSize,
+  stepSizeBy,
+  toggleFormat,
+  toggleVertAlign,
+  formattingAt,
+} from "../editor/commands";
+import { changeListLevel, toggleList } from "../editor/lists";
+import { matches } from "../keys";
+import { insertEquation } from "./equation";
+import { choosePicture } from "./pictures";
+import { captionDialog, insertToc, toggleHeadingNumbers } from "./references";
+
+export interface ShortcutHost {
+  readonly view: EditorView;
+  readonly body: EditorView;
+  readonly ctx: DocContext;
+  newDocument(): void;
+  open(): void;
+  save(saveAs?: boolean): void;
+  insertFootnote(): void;
+  editHeader(): void;
+  zoomBy(direction: 1 | -1 | 0): void;
+  setLineGrid(on: boolean): void;
+  toggleSnap(): void;
+  /** The toolbar's boxes and menus. */
+  focusBox(box: "font" | "size" | "style"): void;
+  openMenu(menu: "symbol" | "references" | "layout" | "textColor" | "highlight"): void;
+  applyTextColor(): void;
+  applyHighlight(): void;
+  showShortcuts(): void;
+}
+
+export interface Shortcut {
+  group: string;
+  label: string;
+  /** One or more ways to press it, as shown: "Ctrl+B". */
+  keys: string[];
+  /** Left out for keys handled elsewhere (typing, Windows itself); they are only listed. */
+  run?: (host: ShortcutHost) => void;
+  /** Also works while typing in a box, such as the font size. */
+  everywhere?: boolean;
+}
+
+const cmd = (make: (ctx: DocContext) => Command) => (host: ShortcutHost) => {
+  const { view } = host;
+  make(host.ctx)(view.state, view.dispatch, view);
+  view.focus();
+};
+const plain = (command: Command) => cmd(() => command);
+
+/** Heading 1–3, if the document has that style. */
+const heading = (level: number) =>
+  cmd((ctx) => (state, dispatch) => (ctx.styles.byId.has(`Heading${level}`) ? setStyle(ctx, `Heading${level}`)(state, dispatch) : false));
+
+export const SHORTCUTS: Shortcut[] = [
+  // ---- documents
+  { group: "Documents", label: "New document", keys: ["Ctrl+N"], run: (x) => x.newDocument(), everywhere: true },
+  { group: "Documents", label: "Open", keys: ["Ctrl+O"], run: (x) => x.open(), everywhere: true },
+  { group: "Documents", label: "Save", keys: ["Ctrl+S"], run: (x) => x.save(), everywhere: true },
+  { group: "Documents", label: "Save as", keys: ["F12"], run: (x) => x.save(true), everywhere: true },
+  { group: "Documents", label: "Keyboard shortcuts (this list)", keys: ["F1"], run: (x) => x.showShortcuts(), everywhere: true },
+
+  // ---- editing
+  { group: "Editing", label: "Undo", keys: ["Ctrl+Z"], run: plain(undo) },
+  { group: "Editing", label: "Redo", keys: ["Ctrl+Y", "Ctrl+Shift+Z"], run: plain(redo) },
+  { group: "Editing", label: "Select everything", keys: ["Ctrl+A"], run: plain(selectAll) },
+  { group: "Editing", label: "Cut, copy, paste", keys: ["Ctrl+X", "Ctrl+C", "Ctrl+V"] },
+  { group: "Editing", label: "New line in the same paragraph", keys: ["Shift+Enter"] },
+  { group: "Editing", label: "Page break", keys: ["Ctrl+Enter"], run: plain(insertPageBreak()) },
+
+  // ---- text
+  { group: "Text", label: "Bold", keys: ["Ctrl+B"], run: cmd((c) => toggleFormat(c, "bold")) },
+  { group: "Text", label: "Italic", keys: ["Ctrl+I"], run: cmd((c) => toggleFormat(c, "italic")) },
+  { group: "Text", label: "Underline", keys: ["Ctrl+U"], run: cmd((c) => toggleFormat(c, "underline")) },
+  { group: "Text", label: "Strikethrough", keys: ["Ctrl+Shift+X"], run: cmd((c) => toggleFormat(c, "strike")) },
+  { group: "Text", label: "Superscript (x²)", keys: ["Ctrl++"], run: plain(toggleVertAlign("superscript")) },
+  { group: "Text", label: "Subscript (x₂)", keys: ["Ctrl+="], run: plain(toggleVertAlign("subscript")) },
+  { group: "Text", label: "Font size up, to the next size", keys: ["Ctrl+>"], run: cmd((c) => stepSize(c, 1)) },
+  { group: "Text", label: "Font size down, to the next size", keys: ["Ctrl+<"], run: cmd((c) => stepSize(c, -1)) },
+  { group: "Text", label: "Font size up by one point", keys: ["Ctrl+]"], run: cmd((c) => stepSizeBy(c, 1)) },
+  { group: "Text", label: "Font size down by one point", keys: ["Ctrl+["], run: cmd((c) => stepSizeBy(c, -1)) },
+  { group: "Text", label: "Font size: type a size (Enter to use it)", keys: ["Ctrl+Shift+P"], run: (x) => x.focusBox("size") },
+  { group: "Text", label: "Font: type a font name (Enter to use it)", keys: ["Ctrl+Shift+F"], run: (x) => x.focusBox("font") },
+  { group: "Text", label: "Text colour (the last one used)", keys: ["Ctrl+Shift+O"], run: (x) => x.applyTextColor() },
+  { group: "Text", label: "Choose a text colour", keys: ["Ctrl+Alt+Shift+O"], run: (x) => x.openMenu("textColor") },
+  { group: "Text", label: "Highlight (the last colour used)", keys: ["Ctrl+Alt+H"], run: (x) => x.applyHighlight() },
+  { group: "Text", label: "Choose a highlight colour", keys: ["Ctrl+Alt+Shift+H"], run: (x) => x.openMenu("highlight") },
+  { group: "Text", label: "Clear formatting", keys: ["Ctrl+Space"], run: cmd((c) => clearFormatting(c)) },
+
+  // ---- paragraphs
+  { group: "Paragraphs", label: "Choose a style (type it, Enter)", keys: ["Ctrl+Shift+S"], run: (x) => x.focusBox("style") },
+  { group: "Paragraphs", label: "Normal text", keys: ["Ctrl+Shift+N"], run: cmd((c) => setStyle(c, null)) },
+  { group: "Paragraphs", label: "Heading 1", keys: ["Ctrl+Alt+1"], run: heading(1) },
+  { group: "Paragraphs", label: "Heading 2", keys: ["Ctrl+Alt+2"], run: heading(2) },
+  { group: "Paragraphs", label: "Heading 3", keys: ["Ctrl+Alt+3"], run: heading(3) },
+  { group: "Paragraphs", label: "Align left", keys: ["Ctrl+L"], run: plain(setAlign("left")) },
+  { group: "Paragraphs", label: "Centre", keys: ["Ctrl+E"], run: plain(setAlign("center")) },
+  { group: "Paragraphs", label: "Align right", keys: ["Ctrl+R"], run: plain(setAlign("right")) },
+  { group: "Paragraphs", label: "Justify", keys: ["Ctrl+J"], run: plain(setAlign("justify")) },
+  { group: "Paragraphs", label: "Bullets", keys: ["Ctrl+Shift+L", "Ctrl+Shift+8"], run: cmd((c) => toggleList(c, "bullet")) },
+  { group: "Paragraphs", label: "Numbering", keys: ["Ctrl+Shift+7"], run: cmd((c) => toggleList(c, "number")) },
+  {
+    group: "Paragraphs",
+    label: "Indent more (a list item: a level in)",
+    keys: ["Ctrl+M"],
+    run: cmd((c) => (state, dispatch, view) => changeListLevel(c, 1)(state, dispatch) || stepIndent(c, 1)(state, dispatch, view)),
+  },
+  {
+    group: "Paragraphs",
+    label: "Indent less (a list item: a level out)",
+    keys: ["Ctrl+Shift+M"],
+    run: cmd((c) => (state, dispatch, view) => changeListLevel(c, -1)(state, dispatch) || stepIndent(c, -1)(state, dispatch, view)),
+  },
+  { group: "Paragraphs", label: "List item a level in / out", keys: ["Tab", "Shift+Tab"] },
+  { group: "Paragraphs", label: "Single line spacing", keys: ["Ctrl+1"], run: plain(setLineSpacing(1)) },
+  { group: "Paragraphs", label: "1.5 line spacing", keys: ["Ctrl+5"], run: plain(setLineSpacing(1.5)) },
+  { group: "Paragraphs", label: "Double line spacing", keys: ["Ctrl+2"], run: plain(setLineSpacing(2)) },
+  {
+    group: "Paragraphs",
+    label: "Space before the paragraph, on or off",
+    keys: ["Ctrl+0"],
+    run: cmd((c) => (state, dispatch) => {
+      const before = formattingAt(c, state).para.spaceBefore ?? 0;
+      return setParagraphs(() => ({ spaceBefore: before > 0 ? 0 : 12 }))(state, dispatch);
+    }),
+  },
+
+  // ---- inserting
+  { group: "Insert", label: "Equation", keys: ["Alt+="], run: (x) => insertEquation(x.view) },
+  { group: "Insert", label: "Symbol (Greek letters, maths signs…)", keys: ["Ctrl+Shift+Y"], run: (x) => x.openMenu("symbol") },
+  { group: "Insert", label: "Picture", keys: ["Ctrl+Alt+P"], run: (x) => void choosePicture(x.body, x.ctx) },
+  { group: "Insert", label: "Footnote", keys: ["Ctrl+Alt+F"], run: (x) => x.insertFootnote() },
+  { group: "Insert", label: "Caption (Figure 1, Table 1…)", keys: ["Ctrl+Alt+C"], run: (x) => captionDialog(x.body, x.ctx) },
+  { group: "Insert", label: "Cross-reference, and the other references", keys: ["Ctrl+Alt+R"], run: (x) => x.openMenu("references") },
+  { group: "Insert", label: "Table of contents", keys: ["Ctrl+Alt+T"], run: (x) => insertToc(x.body, x.ctx) },
+  { group: "Insert", label: "Numbered headings, on or off", keys: ["Ctrl+Alt+N"], run: (x) => toggleHeadingNumbers(x.body, x.ctx) },
+  { group: "Insert", label: "Edit the header and footer", keys: ["Ctrl+Alt+O"], run: (x) => x.editHeader() },
+
+  // ---- equations, headers, notes
+  { group: "Equations, headers and notes", label: "Finish the equation", keys: ["Enter"] },
+  { group: "Equations, headers and notes", label: "Leave the equation, header, footer or note", keys: ["Esc"] },
+
+  // ---- view and layout
+  { group: "View and layout", label: "Zoom in", keys: ["Ctrl+Alt++", "Ctrl+Alt+="], run: (x) => x.zoomBy(1), everywhere: true },
+  { group: "View and layout", label: "Zoom out", keys: ["Ctrl+Alt+-"], run: (x) => x.zoomBy(-1), everywhere: true },
+  { group: "View and layout", label: "Zoom to 100%", keys: ["Ctrl+Alt+0"], run: (x) => x.zoomBy(0), everywhere: true },
+  { group: "View and layout", label: "Snap pictures to the grid, on or off", keys: ["Ctrl+Alt+G"], run: (x) => x.toggleSnap() },
+  { group: "View and layout", label: "Line grid, on or off", keys: ["Ctrl+Alt+L"], run: (x) => x.setLineGrid(x.ctx.page.lineGrid === null) },
+  { group: "View and layout", label: "Move or resize a picture without snapping", keys: ["Alt (hold while dragging)"] },
+];
+
+/** The shortcut for a key press, if there is one. */
+export function shortcutFor(event: KeyboardEvent): Shortcut | null {
+  for (const s of SHORTCUTS) if (s.run && s.keys.some((k) => matches(k, event))) return s;
+  return null;
+}
+
+/** Handles shortcuts before the editor sees the key. */
+export function handleShortcuts(host: ShortcutHost) {
+  window.addEventListener(
+    "keydown",
+    (event) => {
+      if (event.defaultPrevented || document.querySelector("dialog[open]")) return;
+      const shortcut = shortcutFor(event);
+      if (!shortcut) return;
+      const target = event.target as HTMLElement | null;
+      const inBox = !!target && ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName);
+      if (inBox && !shortcut.everywhere) return;
+      event.preventDefault();
+      event.stopPropagation();
+      shortcut.run!(host);
+    },
+    true,
+  );
+}
+
+/** The help window listing every shortcut, with a box to search them. */
+export function showShortcutHelp() {
+  document.querySelector(".shortcut-help")?.remove();
+  const search = h("input", { class: "tb-input shortcut-search", placeholder: "Search, e.g. “size” or “heading”", "aria-label": "Search shortcuts" });
+  const list = h("div", { class: "shortcut-list" });
+  const draw = () => {
+    const q = search.value.trim().toLowerCase();
+    list.replaceChildren();
+    const groups = [...new Set(SHORTCUTS.map((s) => s.group))];
+    for (const group of groups) {
+      const rows = SHORTCUTS.filter((s) => s.group === group && (!q || s.label.toLowerCase().includes(q) || s.keys.join(" ").toLowerCase().includes(q) || group.toLowerCase().includes(q)));
+      if (!rows.length) continue;
+      list.append(
+        h("h3", {}, group),
+        ...rows.map((s) =>
+          h(
+            "div",
+            { class: "shortcut-row" },
+            h("span", { class: "shortcut-label" }, s.label),
+            h("span", { class: "shortcut-keys" }, ...s.keys.flatMap((k, i) => [...(i ? [h("span", { class: "shortcut-or" }, "or")] : []), keysView(k)])),
+          ),
+        ),
+      );
+    }
+    if (!list.children.length) list.append(h("p", { class: "shortcut-none" }, "No shortcut matches."));
+  };
+  const dialog = h(
+    "dialog",
+    { class: "dialog shortcut-help" },
+    h("div", { class: "shortcut-head" }, h("h2", {}, "Keyboard shortcuts"), h("button", { type: "button", class: "btn subtle small", onclick: () => dialog.close() }, "Close")),
+    search,
+    list,
+  );
+  search.addEventListener("input", draw);
+  dialog.addEventListener("close", () => dialog.remove());
+  document.body.append(dialog);
+  draw();
+  dialog.showModal();
+  search.focus();
+}
+
+/** A shortcut drawn as keys: [Ctrl] + [Shift] + [L]. */
+function keysView(spec: string): HTMLElement {
+  const parts = spec.endsWith("++") ? [...spec.slice(0, -2).split("+").filter(Boolean), "+"] : spec.split("+");
+  return h("span", { class: "keys" }, ...parts.flatMap((p, i) => [...(i ? ["+"] : []), h("kbd", {}, p)]));
+}
