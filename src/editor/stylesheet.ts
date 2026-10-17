@@ -20,17 +20,26 @@ function runCss(run: RunProps): string[] {
   return css;
 }
 
-function paraCss(para: ParaProps): string[] {
+/** A line height, rounded up to the line grid when the document has one. */
+function onGrid(lineHeight: string, grid: number | null): string {
+  if (!grid) return lineHeight;
+  const length = /^[\d.]+$/.test(lineHeight) ? `calc(${lineHeight}em)` : lineHeight;
+  return `round(up, ${length}, ${grid}pt)`;
+}
+
+function paraCss(para: ParaProps, grid: number | null = null): string[] {
   const css: string[] = [];
   css.push(`text-align:${para.align ?? "left"}`);
-  css.push(`padding-top:${pt(para.spaceBefore ?? 0)}`);
-  css.push(`padding-bottom:${pt(para.spaceAfter ?? 0)}`);
+  // On a line grid the space between paragraphs is whole grid steps too, so every line stays on the grid.
+  const space = (points: number) => (grid && points > 0 ? `round(up, ${pt(points)}, ${grid}pt)` : pt(points));
+  css.push(`padding-top:${space(para.spaceBefore ?? 0)}`);
+  css.push(`padding-bottom:${space(para.spaceAfter ?? 0)}`);
   css.push(`padding-left:${pt(para.indentLeft ?? 0)}`);
   css.push(`padding-right:${pt(para.indentRight ?? 0)}`);
   css.push(`text-indent:${pt(para.indentFirst ?? 0)}`);
-  if (para.lineSpacing !== undefined) css.push(`line-height:${lineHeightFor(para.lineSpacing)}`);
-  else if (para.lineHeight !== undefined) css.push(para.lineRule === "atLeast" ? `line-height:max(${pt(para.lineHeight)}, ${lineHeightFor(1)})` : `line-height:${pt(para.lineHeight)}`);
-  else css.push(`line-height:${lineHeightFor(1)}`);
+  if (para.lineSpacing !== undefined) css.push(`line-height:${onGrid(lineHeightFor(para.lineSpacing), grid)}`);
+  else if (para.lineHeight !== undefined) css.push(para.lineRule === "atLeast" ? `line-height:${onGrid(`max(${pt(para.lineHeight)}, ${lineHeightFor(1)}em)`, grid)}` : `line-height:${pt(para.lineHeight)}`);
+  else css.push(`line-height:${onGrid(lineHeightFor(1), grid)}`);
   return css;
 }
 
@@ -42,10 +51,11 @@ export function stylesheetFor(ctx: DocContext, scope: string): string {
   const rules: string[] = [];
   const base = resolvedRun(styles, null);
   rules.push(`${scope} { ${runCss(base).join(";")} }`);
-  rules.push(`${scope} .para:not([data-style]) { ${[...runCss(resolvedRun(styles, null)), ...paraCss(resolvedPara(styles, null))].join(";")} }`);
+  const grid = ctx.page.lineGrid;
+  rules.push(`${scope} .para:not([data-style]) { ${[...runCss(resolvedRun(styles, null)), ...paraCss(resolvedPara(styles, null), grid)].join(";")} }`);
   for (const style of styles.byId.values()) {
     if (style.type === "paragraph") {
-      const css = [...runCss(resolvedRun(styles, style.id)), ...paraCss(resolvedPara(styles, style.id))];
+      const css = [...runCss(resolvedRun(styles, style.id)), ...paraCss(resolvedPara(styles, style.id), grid)];
       const selector = `${scope} .para[data-style="${escape(style.id)}"]`;
       rules.push(`${selector} { ${css.join(";")} }`);
       if (resolvedPara(styles, style.id).contextual) {

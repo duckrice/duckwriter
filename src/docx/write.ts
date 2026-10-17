@@ -509,6 +509,11 @@ function updateSectPr(ctx: DocContext) {
   }
   parts = parts.filter((p) => localName(p) !== "titlePg");
   if (ctx.titlePage) parts.push("<w:titlePg/>");
+  if (ctx.lineGridChanged) {
+    parts = parts.filter((p) => localName(p) !== "docGrid");
+    parts.push(ctx.page.lineGrid ? `<w:docGrid w:type="lines" w:linePitch="${Math.round(ctx.page.lineGrid * TWIPS_PER_POINT)}"/>` : '<w:docGrid w:linePitch="360"/>');
+    ctx.lineGridChanged = false;
+  }
   ctx.sectPr = `${open}${ordered(parts, SECTPR_ORDER)}</w:sectPr>`;
 }
 

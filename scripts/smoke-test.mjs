@@ -752,6 +752,38 @@ await session(withPictures, 9471, async (app) => {
 });
 rmSync(withPictures, { force: true });
 
+// ---- the line grid ----------------------------------------------------------------------------
+
+await session(sample("long.docx"), 9480, async (app) => {
+  await app.clickOn(`.tb[title="Layout options"]`);
+  await app.clickText(".layout-menu .menu-item", "Line grid");
+  await sleep(500);
+  const report = await app.evaluate(`(() => {
+    const doc = document.querySelector(".doc");
+    const sheets = [...document.querySelectorAll(".page-sheet")].map((s) => s.getBoundingClientRect().top);
+    const step = parseFloat(getComputedStyle(document.querySelector('.doc > .para:not([data-style])')).lineHeight);
+    // Each line's top, measured from the top of the text area of its page, should be a whole number of steps.
+    const margin = parseFloat(getComputedStyle(doc).marginTop);
+    let off = 0, lines = 0;
+    for (const p of document.querySelectorAll(".doc > .para:not([data-style])")) {
+      const range = document.createRange(); range.selectNodeContents(p);
+      const pTop = p.getBoundingClientRect().top + parseFloat(getComputedStyle(p).paddingTop);
+      const page = sheets.filter((t) => t <= pTop + 1).length - 1;
+      const fromTop = pTop - (sheets[page] + margin);
+      const steps = fromTop / step;
+      lines++;
+      if (Math.abs(steps - Math.round(steps)) > 0.08) off++;
+    }
+    const heading = parseFloat(getComputedStyle(document.querySelector('.doc > .para[data-style="Heading1"]')).lineHeight);
+    return { step, heading, off, lines, title: document.title };
+  })()`);
+  check("with the line grid on, headings take a whole number of lines", Math.abs(report.heading / report.step - Math.round(report.heading / report.step)) < 0.01 && report.heading > report.step, JSON.stringify(report));
+  check("…and paragraphs start on the grid on every page", report.off === 0 && report.lines > 20, JSON.stringify(report));
+  check("switching it on is a change to save", report.title.startsWith("•"));
+  await app.shoot("line-grid");
+  check("no errors in the app", app.errors.length === 0, app.errors.join("; "));
+});
+
 await session(sample("not-a-docx.docx"), 9435, async (app) => {
   check("a file that isn't a Word document gets a plain message", await app.waitFor(`/isn't a Word document/.test(document.querySelector(".toast.error")?.textContent ?? "")`, 5000));
 });

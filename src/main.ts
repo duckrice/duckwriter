@@ -3,7 +3,7 @@ import type { Node } from "prosemirror-model";
 import { TextSelection } from "prosemirror-state";
 import type { EditorView } from "prosemirror-view";
 import { h } from "./dom";
-import type { DocContext } from "./docx/model";
+import { resolvedPara, resolvedRun, type DocContext } from "./docx/model";
 import { readDocx } from "./docx/read";
 import { blankDocx } from "./docx/template";
 import { writeDocx } from "./docx/write";
@@ -46,6 +46,7 @@ class App {
   private footnotes: Footnotes;
   /** Whether the first page had its own header when last opened or saved. */
   private savedTitlePage = false;
+  private lineGridSaved = true;
 
   constructor(root: HTMLElement) {
     this.toolbar = new Toolbar(this);
@@ -98,7 +99,7 @@ class App {
 
   get dirty(): boolean {
     if (!this.savedDoc) return false;
-    if (!this.body.state.doc.eq(this.savedDoc) || this.ctx.titlePage !== this.savedTitlePage) return true;
+    if (!this.body.state.doc.eq(this.savedDoc) || this.ctx.titlePage !== this.savedTitlePage || !this.lineGridSaved) return true;
     if (this.ctx.stories.some((s) => !s.saved || !s.doc.eq(s.saved))) return true;
     const fn = this.ctx.footnotes;
     return [...fn.notes].some(([id, doc]) => {
@@ -114,6 +115,21 @@ class App {
     view.dispatch(view.state.tr.setSelection(TextSelection.near(view.state.doc.resolve(at))));
     (view.nodeDOM(pos) as HTMLElement | null)?.scrollIntoView({ block: "start", behavior: "smooth" });
     view.focus();
+  }
+
+  /** Lines of text snap to an evenly spaced grid (Word's document grid), or stop doing so. */
+  setLineGrid(on: boolean) {
+    const run = resolvedRun(this.ctx.styles, null);
+    const para = resolvedPara(this.ctx.styles, null);
+    // One step: a normal line of the document's normal text, to the half point.
+    const natural = (run.size ?? 11) * 1.17 * (para.lineSpacing ?? 1);
+    this.ctx.page.lineGrid = on ? Math.round(natural * 2) / 2 : null;
+    this.ctx.lineGridChanged = true;
+    delete this.styleEl.dataset.key;
+    this.refreshStyles();
+    relayout(this.body);
+    this.lineGridSaved = false;
+    this.changed(false);
   }
 
   insertFootnote() {
@@ -138,6 +154,7 @@ class App {
     this.name = name;
     this.savedDoc = doc;
     this.savedTitlePage = ctx.titlePage;
+    this.lineGridSaved = true;
     delete this.styleEl.dataset.key;
     this.refreshStyles();
     const p = ctx.page;
@@ -272,6 +289,7 @@ class App {
     this.name = baseName(path);
     this.savedDoc = doc;
     this.savedTitlePage = this.ctx.titlePage;
+    this.lineGridSaved = true;
     this.changed(false);
     this.toast(`Saved ${this.name}`);
     return true;

@@ -392,7 +392,15 @@ function readPage(sectPr: Element | null): PageSetup {
     marginLeft: get(margin, "left", DEFAULT_PAGE.marginLeft),
     headerDistance: get(margin, "header", DEFAULT_PAGE.headerDistance),
     footerDistance: get(margin, "footer", DEFAULT_PAGE.footerDistance),
+    lineGrid: lineGridOf(child(sectPr, "docGrid")),
   };
+}
+
+/** The line pitch of a document grid that lines snap to ("lines" or "linesAndChars"). */
+function lineGridOf(grid: Element | null): number | null {
+  const type = attr(grid, "type");
+  const pitch = numAttr(grid, "linePitch");
+  return (type === "lines" || type === "linesAndChars") && pitch ? pitch / TWIPS_PER_POINT : null;
 }
 
 // ---- the body -------------------------------------------------------------------

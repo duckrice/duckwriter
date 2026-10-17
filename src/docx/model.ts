@@ -98,6 +98,8 @@ export interface PageSetup {
   /** Distance from the top of the page to the header, and from the bottom to the footer. */
   headerDistance: number;
   footerDistance: number;
+  /** Word's document grid for lines: every line takes a whole number of these (points), or null. */
+  lineGrid: number | null;
 }
 
 /** A header or footer: its own little document, in its own part of the file. */
@@ -158,6 +160,8 @@ export interface DocContext {
   stories: Story[];
   /** The first page has its own header and footer. */
   titlePage: boolean;
+  /** The line grid was switched on or off, so the section properties need updating. */
+  lineGridChanged?: boolean;
   footnotes: Footnotes;
   /** Style definitions (XML) to add to the document's styles when it is saved. */
   addedStyles: string[];
@@ -181,6 +185,7 @@ export const DEFAULT_PAGE: PageSetup = {
   marginLeft: 72,
   headerDistance: 35.4,
   footerDistance: 35.4,
+  lineGrid: null,
 };
 
 /** Follows a style's basedOn chain, nearest last, so later entries win. */

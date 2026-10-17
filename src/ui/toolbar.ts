@@ -30,6 +30,8 @@ import { icon, type IconName } from "./icons";
 export interface ToolbarHost {
   readonly view: EditorView;
   readonly ctx: DocContext;
+  /** Switches the line grid on or off. */
+  setLineGrid(on: boolean): void;
   newDocument(): void;
   open(): void;
   save(): void;
@@ -258,7 +260,21 @@ export class Toolbar {
       setSnap(!snapOn());
       this.closeMenu();
     });
-    return h("div", { class: "menu layout-menu" }, snap, h("div", { class: "menu-hint" }, "Pictures line up on a half-centimetre grid and with the margins when moved or resized. Hold Alt to place freely."));
+    const gridOn = this.host.ctx.page.lineGrid !== null;
+    const lines = h("button", { type: "button", class: `menu-item${gridOn ? " checked" : ""}` }, `${gridOn ? "✓ " : ""}Line grid`);
+    lines.addEventListener("click", () => {
+      this.host.setLineGrid(!gridOn);
+      this.closeMenu();
+    });
+    return h(
+      "div",
+      { class: "menu layout-menu" },
+      snap,
+      h("div", { class: "menu-hint" }, "Pictures line up on a half-centimetre grid and with the margins when moved or resized. Hold Alt to place freely."),
+      h("div", { class: "menu-separator" }),
+      lines,
+      h("div", { class: "menu-hint" }, "Every line of text sits on the same evenly spaced lines, on every page, as in Word's document grid."),
+    );
   }
 
   /** Captions, cross-references, numbered headings and the table of contents. */
