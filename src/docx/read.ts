@@ -9,7 +9,9 @@ import { MATH_NS, fromOmml } from "../math/omml";
 import { imageType, readPicture } from "./drawing";
 import {
   DEFAULT_PAGE,
+  originalXml,
   type Footnotes,
+  type TableBorders,
   type Story,
   TWIPS_PER_POINT,
   type DocContext,
@@ -338,7 +340,21 @@ function readStyle(el: Element, theme: DocContext["themeFonts"]): StyleDef | nul
     priority: numAttr(child(el, "uiPriority"), "val") ?? 99,
     run: readRunProps(child(el, "rPr"), theme),
     para: readParaProps(child(el, "pPr")),
+    tableBorders: tableBorders(child(child(el, "tblPr"), "tblBorders")),
   };
+}
+
+/** Whether table borders show lines, and how: undefined when the element isn't there. */
+export function tableBorders(borders: Element | null): TableBorders | undefined {
+  if (!borders) return undefined;
+  for (const side of ["insideH", "insideV", "top", "left", "bottom", "right", "start", "end"]) {
+    const el = child(borders, side);
+    const val = attr(el, "val");
+    if (!el || !val || val === "none" || val === "nil") continue;
+    const color = attr(el, "color");
+    return { size: (numAttr(el, "sz") ?? 4) / 8, color: color && /^[0-9a-f]{6}$/i.test(color) ? `#${color}` : "#000000" };
+  }
+  return null;
 }
 
 /** A style written as XML (a <w:style> element), as DuckWriter understands it. */
@@ -432,10 +448,92 @@ class BodyReader {
 
   block(el: Element): Node[] {
     if (isW(el, "p")) return [this.paragraph(el)];
-    if (isW(el, "tbl")) return [this.rawBlock(el, "Table", tablePreview(el))];
+    if (isW(el, "tbl")) {
+      try {
+        return [this.table(el)];
+      } catch (error) {
+        console.warn("Table kept as it is", error);
+        return [this.rawBlock(el, "Table", tablePreview(el))];
+      }
+    }
     if (isW(el, "sdt")) return [this.rawBlock(el, "Content control", textOf(el).slice(0, 400))];
     if (isW(el, "bookmarkStart") || isW(el, "bookmarkEnd") || isW(el, "proofErr")) return [schema.nodes.raw_block.create({ xml: this.raw(el), hidden: true })];
     return [this.rawBlock(el, el.localName, textOf(el).slice(0, 400))];
+  }
+
+  /** A Word table, with merged cells (gridSpan, vMerge) turned into column and row spans. */
+  table(tbl: Element): Node {
+    const tblPr = child(tbl, "tblPr");
+    const grid = childrenNamed(child(tbl, "tblGrid"), "gridCol").map((g) => numAttr(g, "w") ?? 0);
+    const direct = tableBorders(child(tblPr, "tblBorders"));
+    interface Cell {
+      el: Element;
+      col: number;
+      span: number;
+      rowspan: number;
+      covered: boolean;
+    }
+    const rows = childrenNamed(tbl, "tr");
+    const cells: Cell[][] = [];
+    // Which cell owns each column of the row above, to extend merged cells downwards.
+    let above: (Cell | undefined)[] = [];
+    for (const tr of rows) {
+      const row: Cell[] = [];
+      const here: (Cell | undefined)[] = [];
+      let col = numAttr(child(child(tr, "trPr"), "gridBefore"), "val") ?? 0;
+      for (const tc of childrenNamed(tr, "tc")) {
+        const tcPr = child(tc, "tcPr");
+        const span = Math.max(1, numAttr(child(tcPr, "gridSpan"), "val") ?? 1);
+        const vMerge = child(tcPr, "vMerge");
+        const continues = !!vMerge && attr(vMerge, "val") !== "restart";
+        const owner = continues ? above[col] : undefined;
+        const cell: Cell = { el: tc, col, span, rowspan: 1, covered: !!owner };
+        if (owner) owner.rowspan++;
+        for (let c = col; c < col + span; c++) here[c] = owner ?? cell;
+        row.push(cell);
+        col += span;
+      }
+      cells.push(row);
+      above = here;
+    }
+    const rowNodes = rows.map((tr, r) => {
+      const trPr = child(tr, "trPr");
+      const header = !!toggle(trPr, "tblHeader");
+      const trExtra = trPr ? children(trPr).filter((c) => !isW(c, "tblHeader")).map(this.raw).join("") : "";
+      const cellNodes = cells[r]
+        .filter((cell) => !cell.covered)
+        .map((cell) => {
+          const tcPr = child(cell.el, "tcPr");
+          const widths = grid.slice(cell.col, cell.col + cell.span);
+          const fill = attr(child(tcPr, "shd"), "fill");
+          const valign = attr(child(tcPr, "vAlign"), "val");
+          const known = new Set(["tcW", "gridSpan", "vMerge", "shd", "vAlign"]);
+          const tcExtra = tcPr ? children(tcPr).filter((c) => !(c.namespaceURI === NS.w && known.has(c.localName))).map(this.raw).join("") : "";
+          const content = children(cell.el)
+            .filter((c) => !isW(c, "tcPr"))
+            .flatMap((c) => this.block(c));
+          if (!content.some((n) => n.type !== schema.nodes.raw_block || !n.attrs.hidden)) content.push(schema.nodes.paragraph.create());
+          const type = header ? schema.nodes.table_header : schema.nodes.table_cell;
+          return type.create(
+            {
+              colspan: cell.span,
+              rowspan: cell.rowspan,
+              colwidth: widths.length === cell.span && widths.every((w) => w > 0) ? widths.map((w) => Math.round(w / 15)) : null,
+              background: fill && /^[0-9a-f]{6}$/i.test(fill) ? `#${fill}` : null,
+              valign: valign === "center" ? "middle" : valign === "bottom" ? "bottom" : null,
+              tcPr: tcExtra,
+            },
+            content,
+          );
+        });
+      return schema.nodes.table_row.create({ trPr: trExtra }, cellNodes);
+    });
+    const node = schema.nodes.table.create(
+      { tblPr: tblPr ? this.raw(tblPr) : "", style: attr(child(tblPr, "tblStyle"), "val"), borders: direct === undefined ? null : direct !== null, grid },
+      rowNodes,
+    );
+    originalXml.set(node, this.raw(tbl));
+    return node;
   }
 
   private rawBlock(el: Element, label: string, preview: string): Node {

@@ -3,7 +3,8 @@
 // saving a .docx keeps what was there. Anything DuckWriter can't edit yet is
 // kept as a "raw" node holding the original XML.
 
-import { Schema, type DOMOutputSpec, type Mark, type Node } from "prosemirror-model";
+import { Schema, type DOMOutputSpec, type Mark, type Node, type NodeSpec } from "prosemirror-model";
+import { tableNodes } from "prosemirror-tables";
 import { HIGHLIGHTS } from "../docx/model";
 
 const pt = (value: number) => `${Math.round(value * 100) / 100}pt`;
@@ -29,6 +30,46 @@ export function paragraphCss(attrs: Node["attrs"]): string {
 export function lineHeightFor(multiple: number): string {
   return String(Math.round(multiple * 1.17 * 1000) / 1000);
 }
+
+/**
+ * Tables, Word style: cells hold paragraphs (or more tables), may span rows
+ * and columns, and have a width, a shading and a vertical alignment. Table,
+ * row and cell properties DuckWriter doesn't handle are kept as XML.
+ */
+const tables = tableNodes({
+  tableGroup: "block",
+  cellContent: "block+",
+  cellAttributes: {
+    background: {
+      default: null,
+      getFromDOM: (dom) => (dom as HTMLElement).style.backgroundColor || null,
+      setDOMAttr: (value, attrs) => {
+        if (value) attrs.style = `${attrs.style ?? ""}background-color:${value};`;
+      },
+    },
+    valign: {
+      default: null,
+      setDOMAttr: (value, attrs) => {
+        if (value) attrs.style = `${attrs.style ?? ""}vertical-align:${value};`;
+      },
+    },
+    /** Other cell properties (borders, margins…), as XML. */
+    tcPr: { default: "" },
+  },
+});
+const tableSpec: NodeSpec = {
+  ...tables.table,
+  attrs: {
+    /** The table's properties as read (width, alignment, look…), as XML. */
+    tblPr: { default: "" },
+    style: { default: null },
+    /** Lines around the cells: true, false, or null to follow the table's style. */
+    borders: { default: null },
+    /** Column widths in twentieths of a point, from the file. */
+    grid: { default: [] },
+  },
+};
+const rowSpec: NodeSpec = { ...tables.table_row, attrs: { trPr: { default: "" } } };
 
 export const schema = new Schema({
   nodes: {
@@ -62,6 +103,12 @@ export const schema = new Schema({
         return ["p", attrs, 0];
       },
     },
+
+    // After the paragraph: an empty cell (or document) is filled with the first kind of block listed.
+    table: tableSpec,
+    table_row: rowSpec,
+    table_cell: tables.table_cell,
+    table_header: tables.table_header,
 
     /** Something at the top level DuckWriter can't edit yet (a table, a content control…), kept as is. */
     raw_block: {

@@ -26,6 +26,7 @@ import { matches } from "../keys";
 import { insertEquation } from "./equation";
 import { choosePicture } from "./pictures";
 import { captionDialog, insertToc, toggleHeadingNumbers } from "./references";
+import { TABLE_COMMANDS } from "./tables";
 
 export interface ShortcutHost {
   readonly view: EditorView;
@@ -42,7 +43,8 @@ export interface ShortcutHost {
   toggleAutoSave(): void;
   /** The toolbar's boxes and menus. */
   focusBox(box: "font" | "size" | "style"): void;
-  openMenu(menu: "symbol" | "references" | "layout" | "textColor" | "highlight"): void;
+  openMenu(menu: "symbol" | "references" | "layout" | "textColor" | "highlight" | "table"): void;
+  toggleTableLines(): void;
   applyTextColor(): void;
   applyHighlight(): void;
   showShortcuts(): void;
@@ -130,7 +132,7 @@ export const SHORTCUTS: Shortcut[] = [
     keys: ["Ctrl+Shift+M"],
     run: cmd((c) => (state, dispatch, view) => changeListLevel(c, -1)(state, dispatch) || stepIndent(c, -1)(state, dispatch, view)),
   },
-  { group: "Paragraphs", label: "List item a level in / out", keys: ["Tab", "Shift+Tab"] },
+  { group: "Paragraphs", label: "List item a level in / out; in a table, the next / previous cell (in the last cell, Tab adds a row)", keys: ["Tab", "Shift+Tab"] },
   { group: "Paragraphs", label: "Single line spacing", keys: ["Ctrl+1"], run: plain(setLineSpacing(1)) },
   { group: "Paragraphs", label: "1.5 line spacing", keys: ["Ctrl+5"], run: plain(setLineSpacing(1.5)) },
   { group: "Paragraphs", label: "Double line spacing", keys: ["Ctrl+2"], run: plain(setLineSpacing(2)) },
@@ -154,6 +156,19 @@ export const SHORTCUTS: Shortcut[] = [
   { group: "Insert", label: "Table of contents", keys: ["Ctrl+Alt+T"], run: (x) => insertToc(x.body, x.ctx) },
   { group: "Insert", label: "Numbered headings, on or off", keys: ["Ctrl+Alt+N"], run: (x) => toggleHeadingNumbers(x.body, x.ctx) },
   { group: "Insert", label: "Edit the header and footer", keys: ["Ctrl+Alt+O"], run: (x) => x.editHeader() },
+
+  // ---- tables
+  { group: "Tables", label: "Insert a table (choose the size with the arrow keys)", keys: ["Ctrl+Alt+Shift+T"], run: (x) => x.openMenu("table") },
+  { group: "Tables", label: "Insert a row below", keys: ["Ctrl+Alt+Shift+ArrowDown"], run: plain(TABLE_COMMANDS.rowBelow) },
+  { group: "Tables", label: "Insert a row above", keys: ["Ctrl+Alt+Shift+ArrowUp"], run: plain(TABLE_COMMANDS.rowAbove) },
+  { group: "Tables", label: "Insert a column to the right", keys: ["Ctrl+Alt+Shift+ArrowRight"], run: plain(TABLE_COMMANDS.columnRight) },
+  { group: "Tables", label: "Insert a column to the left", keys: ["Ctrl+Alt+Shift+ArrowLeft"], run: plain(TABLE_COMMANDS.columnLeft) },
+  { group: "Tables", label: "Delete the row", keys: ["Ctrl+Alt+Shift+Backspace"], run: plain(TABLE_COMMANDS.deleteRow) },
+  { group: "Tables", label: "Delete the column", keys: ["Ctrl+Alt+Shift+Delete"], run: plain(TABLE_COMMANDS.deleteColumn) },
+  { group: "Tables", label: "Merge the selected cells (select by dragging, or Shift+arrows)", keys: ["Ctrl+Alt+Shift+M"], run: plain(TABLE_COMMANDS.merge) },
+  { group: "Tables", label: "Split a merged cell", keys: ["Ctrl+Alt+Shift+N"], run: plain(TABLE_COMMANDS.split) },
+  { group: "Tables", label: "Header row, on or off", keys: ["Ctrl+Alt+Shift+R"], run: plain(TABLE_COMMANDS.headerRow) },
+  { group: "Tables", label: "Lines around the cells, on or off", keys: ["Ctrl+Alt+Shift+L"], run: (x) => x.toggleTableLines() },
 
   // ---- equations, headers, notes
   { group: "Equations, headers and notes", label: "Finish the equation", keys: ["Enter"] },

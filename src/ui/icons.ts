@@ -34,6 +34,8 @@ const PATHS = {
   picture: '<rect x="3" y="5" width="18" height="14" rx="2"/><circle cx="8.500" cy="10" r="1.500"/><path d="m21 16-5-5-8 8"/>',
   layout: '<rect x="3" y="3" width="18" height="18" rx="1"/><path d="M3 9h18M3 15h18M9 3v18M15 3v18" opacity=".55"/>',
   keyboard: '<rect x="2" y="6" width="20" height="12" rx="2"/><path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M7 14h10"/>',
+  table: '<rect x="3" y="4" width="18" height="16" rx="1.500"/><path d="M3 9.500h18M3 15h18M9 4v16M15 4v16"/>',
+  shading: '<path d="m4 13 7-7 7 7-7 7z"/><path d="M8 9 4.500 5.500M19 15s2 2.300 2 3.500a2 2 0 0 1-4 0c0-1.200 2-3.500 2-3.500z"/>',
   zoomIn: '<circle cx="11" cy="11" r="7"/><path d="m20 20-4-4M8 11h6M11 8v6"/>',
   zoomOut: '<circle cx="11" cy="11" r="7"/><path d="m20 20-4-4M8 11h6"/>',
 } as const;

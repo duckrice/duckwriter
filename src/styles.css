@@ -1207,3 +1207,115 @@ kbd {
   outline: 2px solid var(--accent);
   outline-offset: -1px;
 }
+
+/* ---- tables -------------------------------------------------------------------------- */
+
+.doc .tableWrapper {
+  margin: 0;
+  overflow-x: visible;
+}
+
+.doc table {
+  border-collapse: collapse;
+  table-layout: fixed;
+  text-indent: 0;
+}
+
+.doc td,
+.doc th {
+  position: relative;
+  box-sizing: border-box;
+  padding: 0 5.4pt;
+  vertical-align: top;
+  /* Gridlines to see the cells by; they aren't printed or saved. */
+  border: 1px dashed #c8d0d8;
+  font-weight: inherit;
+  text-align: inherit;
+}
+
+.doc table.lines > tbody > tr > :is(td, th) {
+  border: 0.5pt solid #000000;
+}
+
+.doc table.no-lines > tbody > tr > :is(td, th) {
+  border: 1px dashed #c8d0d8;
+}
+
+.doc .selectedCell::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  background: rgb(15 118 110 / 0.18);
+  pointer-events: none;
+}
+
+.doc .column-resize-handle {
+  position: absolute;
+  top: 0;
+  right: -2px;
+  bottom: 0;
+  z-index: 20;
+  width: 4px;
+  background: var(--accent);
+  pointer-events: none;
+}
+
+.doc.resize-cursor {
+  cursor: col-resize;
+}
+
+.doc tr.page-gap-row > td {
+  padding: 0;
+  border: none !important;
+  background: transparent;
+}
+
+.table-tools[hidden] {
+  display: none;
+}
+
+.tb-caption {
+  margin: 0 4px 0 2px;
+  color: var(--accent-text);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.tb.tb-text {
+  width: auto;
+  padding: 0 7px;
+  font: 12px "Segoe UI", sans-serif;
+  white-space: nowrap;
+}
+
+.table-menu {
+  width: auto;
+}
+
+.table-grid-label {
+  margin: 2px 2px 6px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.table-grid {
+  display: grid;
+  grid-template-columns: repeat(10, 18px);
+  gap: 3px;
+}
+
+.table-grid-cell {
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 2px;
+  background: var(--panel);
+  cursor: pointer;
+}
+
+.table-grid-cell.on {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}

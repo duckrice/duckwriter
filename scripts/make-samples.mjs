@@ -95,5 +95,16 @@ const longDoc = new docx.Document({
   sections: [{ children: long }],
 });
 writeFileSync(join(out, "long.docx"), await docx.Packer.toBuffer(longDoc));
+
+// A table longer than a page.
+const tableRows = [new docx.TableRow({ tableHeader: true, children: ["Run", "Temperature (°C)", "Rate (mol/s)"].map((t) => new docx.TableCell({ children: [new Paragraph({ children: [new TextRun({ text: t, bold: true })] })] })) })];
+for (let i = 1; i <= 70; i++) {
+  tableRows.push(new docx.TableRow({ children: [String(i), String(20 + i), (0.01 * i).toFixed(2)].map((t) => new docx.TableCell({ children: [new Paragraph(t)] })) }));
+}
+const tableDoc = new docx.Document({
+  styles: { default: { document: { run: { font: "Calibri", size: 22 } } } },
+  sections: [{ children: [new Paragraph("Measurements:"), new docx.Table({ columnWidths: [1500, 3500, 3500], rows: tableRows }), new Paragraph("End of the measurements.")] }],
+});
+writeFileSync(join(out, "table-long.docx"), await docx.Packer.toBuffer(tableDoc));
 writeFileSync(join(out, "not-a-docx.docx"), "This is plain text, not a Word document.");
 console.log(`Wrote samples to ${out}`);

@@ -45,6 +45,12 @@ export interface ParaProps {
   outline?: number;
 }
 
+/** A table style's borders: none, or lines of a size (points) and colour. */
+export type TableBorders = { size: number; color: string } | null;
+
+/** Tables as they were read, by node: an unchanged table is written back exactly. */
+export const originalXml = new WeakMap<Node, string>();
+
 export interface StyleDef {
   id: string;
   name: string;
@@ -57,6 +63,8 @@ export interface StyleDef {
   priority: number;
   run: RunProps;
   para: ParaProps;
+  /** For a table style: its borders (undefined if it doesn't say). */
+  tableBorders?: TableBorders;
 }
 
 export interface Styles {

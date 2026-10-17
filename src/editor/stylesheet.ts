@@ -43,6 +43,8 @@ function paraCss(para: ParaProps, grid: number | null = null): string[] {
   return css;
 }
 
+type RunPropsBorders = import("../docx/model").TableBorders | undefined;
+
 const escape = (id: string) => id.replace(/["\\]/g, "\\$&");
 
 /** CSS for the editor, scoped to `scope` (the editable area). */
@@ -62,6 +64,19 @@ export function stylesheetFor(ctx: DocContext, scope: string): string {
         rules.push(`${selector}:has(+ .para[data-style="${escape(style.id)}"]) { padding-bottom: 0 }`);
         rules.push(`${selector} + ${selector} { padding-top: 0 }`);
       }
+    } else if (style.type === "table") {
+      // A table style draws (or leaves out) the lines, and sets the spacing of the paragraphs in it.
+      const chain = styleChain(styles, style.id);
+      const borders = chain.reduce<RunPropsBorders>((b, s) => (s.tableBorders !== undefined ? s.tableBorders : b), undefined);
+      const selector = `${scope} table[data-style="${escape(style.id)}"]`;
+      if (borders) rules.push(`${selector}:not(.no-lines) > tbody > tr > :is(td, th) { border: ${Math.max(0.5, borders.size)}pt solid ${borders.color} }`);
+      else if (borders === null) rules.push(`${selector}:not(.lines) > tbody > tr > :is(td, th) { border-color: transparent }`);
+      const para = Object.assign({}, ...chain.map((s) => s.para)) as ParaProps;
+      const css: string[] = [];
+      if (para.spaceAfter !== undefined) css.push(`padding-bottom:${pt(para.spaceAfter)}`);
+      if (para.spaceBefore !== undefined) css.push(`padding-top:${pt(para.spaceBefore)}`);
+      if (para.lineSpacing !== undefined) css.push(`line-height:${lineHeightFor(para.lineSpacing)}`);
+      if (css.length) rules.push(`${selector} .para:not([data-style]) { ${css.join(";")} }`);
     } else if (style.type === "character") {
       const run: RunProps = Object.assign({}, ...styleChain(styles, style.id).map((s) => s.run));
       const css = runCss(run);

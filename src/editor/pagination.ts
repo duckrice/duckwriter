@@ -8,6 +8,7 @@
 import type { Node } from "prosemirror-model";
 import { Plugin, PluginKey, type EditorState } from "prosemirror-state";
 import { Decoration, DecorationSet, type EditorView } from "prosemirror-view";
+import { TableMap } from "prosemirror-tables";
 import { resolvedPara, type DocContext } from "../docx/model";
 import { schema } from "./schema";
 
@@ -40,6 +41,8 @@ interface Gap {
   height: number;
   /** Between two lines of a paragraph, rather than between paragraphs. */
   inline: boolean;
+  /** Between two rows of a table with this many columns. */
+  columns?: number;
 }
 
 export const paginationKey = new PluginKey<DecorationSet>("pagination");
@@ -89,6 +92,23 @@ export function relayout(view: EditorView) {
 }
 
 function gapWidget(gap: Gap): Decoration {
+  if (gap.columns) {
+    // In a table the gap is an empty row, without lines.
+    return Decoration.widget(
+      gap.pos,
+      () => {
+        const row = document.createElement("tr");
+        row.className = "page-gap-row";
+        row.contentEditable = "false";
+        const cell = document.createElement("td");
+        cell.colSpan = gap.columns!;
+        cell.style.height = `${gap.height}px`;
+        row.append(cell);
+        return row;
+      },
+      { side: -1, key: `gap:r:${Math.round(gap.height * 10)}`, ignoreSelection: true },
+    );
+  }
   return Decoration.widget(
     gap.pos,
     () => {
@@ -226,6 +246,29 @@ function layout(view: EditorView, hooks: PaginationHooks) {
       } else add(b.pos, top(), false);
       return true;
     };
+    if (b.node.type === schema.nodes.table) {
+      // A table continues on the next page between two rows.
+      const columns = TableMap.get(b.node).width;
+      b.node.forEach((row, offset, r) => {
+        const rowPos = b.pos + 1 + offset;
+        const el = view.nodeDOM(rowPos);
+        if (!(el instanceof HTMLElement)) return;
+        const rect = el.getBoundingClientRect();
+        const rowTop = y(rect.top) + shift;
+        const rowBottom = y(rect.bottom) + shift;
+        const k = pageOf(rowTop);
+        if (fits(rowBottom, k, []) || rowTop <= contentTop(k) + 1) return;
+        if (r === 0) {
+          moveWhole();
+          return;
+        }
+        const height = contentTop(k + 1) - rowTop;
+        gaps.push({ pos: rowPos, height, inline: false, columns });
+        shift += height;
+        void row;
+      });
+      continue;
+    }
     if (lines.length < 2 && !breaks.length) {
       moveWhole();
       placeNotes(pageOf(top()), allNotes);

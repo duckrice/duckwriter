@@ -88,9 +88,8 @@ describe("reading a .docx", () => {
     paras[5].forEach((n) => (link = n.marks.find((m) => m.type.name === "link")?.attrs.href ?? link));
     expect(link).toBe("https://example.com/");
 
-    expect(paras[6].type.name).toBe("raw_block");
-    expect(paras[6].attrs.label).toBe("Table");
-    expect(paras[6].attrs.preview).toContain("A1  |  B1");
+    expect(paras[6].type.name).toBe("table");
+    expect(paras[6].textContent).toBe("A1B1");
 
     const types: string[] = [];
     paras[7].forEach((n) => types.push(n.type.name));

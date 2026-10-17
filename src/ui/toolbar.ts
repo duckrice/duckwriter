@@ -24,6 +24,7 @@ import { changeListLevel, kindOf, listOf, toggleList } from "../editor/lists";
 import { schema } from "../editor/schema";
 import { insertEquation } from "./equation";
 import { choosePicture, setSnap, snapOn } from "./pictures";
+import { TABLE_COMMANDS, insertTable, isInTable, setTableLines, tableGrid } from "./tables";
 import { captionDialog, headingsNumbered, insertReference, insertToc, referenceTargets, toggleHeadingNumbers } from "./references";
 import { icon, type IconName } from "./icons";
 
@@ -67,6 +68,8 @@ export class Toolbar {
   private lastHighlight = "yellow";
   private openMenu: HTMLElement | null = null;
   private menuArrows = new Map<string, HTMLButtonElement>();
+  /** The table buttons, shown while the cursor is in a table. */
+  private tableGroup: HTMLElement;
   private styleByKeyboard = false;
 
   constructor(private host: ToolbarHost) {
@@ -106,6 +109,30 @@ export class Toolbar {
 
     const ctx = () => this.host.ctx;
     const group = (...items: HTMLElement[]) => h("div", { class: "tb-group" }, ...items);
+    const textButton = (label: string, title: string, command: () => void) => {
+      const b = h("button", { type: "button", class: "tb tb-text", title, "aria-label": title }, label);
+      b.addEventListener("mousedown", (event) => event.preventDefault());
+      b.addEventListener("click", command);
+      return b;
+    };
+    const t = TABLE_COMMANDS;
+    this.tableGroup = h(
+      "div",
+      { class: "tb-group table-tools", hidden: true },
+      h("span", { class: "tb-caption" }, "Table"),
+      textButton("+ Row above", "Insert a row above (Ctrl+Alt+Shift+Up)", () => this.run(t.rowAbove)),
+      textButton("+ Row below", "Insert a row below (Ctrl+Alt+Shift+Down)", () => this.run(t.rowBelow)),
+      textButton("+ Column left", "Insert a column to the left (Ctrl+Alt+Shift+Left)", () => this.run(t.columnLeft)),
+      textButton("+ Column right", "Insert a column to the right (Ctrl+Alt+Shift+Right)", () => this.run(t.columnRight)),
+      textButton("− Row", "Delete the row (Ctrl+Alt+Shift+Backspace)", () => this.run(t.deleteRow)),
+      textButton("− Column", "Delete the column (Ctrl+Alt+Shift+Delete)", () => this.run(t.deleteColumn)),
+      textButton("Merge", "Merge the selected cells (Ctrl+Alt+Shift+M)", () => this.run(t.merge)),
+      textButton("Split", "Split the cell (Ctrl+Alt+Shift+N)", () => this.run(t.split)),
+      textButton("Header row", "First row as a header, repeated on each page in Word (Ctrl+Alt+Shift+R)", () => this.run(t.headerRow)),
+      textButton("Lines", "Lines around the cells, on or off (Ctrl+Alt+Shift+L)", () => this.toggleTableLines()),
+      this.splitButton("shading", "Cell shading", null, () => this.shadingMenu(), () => this.shadingMenu()),
+      textButton("Delete table", "Delete the whole table", () => this.run(t.deleteTable)),
+    );
     this.el = h(
       "div",
       { class: "toolbar", role: "toolbar" },
@@ -151,6 +178,7 @@ export class Toolbar {
       ),
       group(
         this.button("picture", "Picture (Ctrl+Alt+P)", () => void choosePicture(this.host.view, this.host.ctx)),
+        this.splitButton("table", "Table (Ctrl+Alt+Shift+T)", null, () => this.tableMenu(), () => this.tableMenu()),
         this.button("equation", "Equation (Alt+=)", () => insertEquation(this.host.view)),
         this.splitButton("symbol", "Symbol (Ctrl+Shift+Y)", null, () => this.symbolMenu(), () => this.symbolMenu()),
         this.button("pageBreak", "Page break (Ctrl+Enter)", () => this.run(insertPageBreak())),
@@ -159,6 +187,7 @@ export class Toolbar {
         this.splitButton("references", "References (Ctrl+Alt+R)", null, () => this.referencesMenu(), () => this.referencesMenu()),
         this.splitButton("layout", "Layout", null, () => this.layoutMenu(), () => this.layoutMenu()),
       ),
+      this.tableGroup,
       fonts,
       sizes,
     );
@@ -198,7 +227,7 @@ export class Toolbar {
   /** Opens one of the toolbar's menus, ready to use with the arrow keys. */
   openMenuByKeyboard(name: string) {
     this.menuArrows.get(name)?.click();
-    const first = this.openMenu?.querySelector<HTMLElement>(".menu-item, .symbol-button, .swatch");
+    const first = this.openMenu?.querySelector<HTMLElement>(".menu-item, .symbol-button, .swatch, .table-grid-cell");
     first?.focus();
   }
 
@@ -250,10 +279,11 @@ export class Toolbar {
 
   /** Arrow keys move through a menu's choices; Escape closes it. */
   private menuKeys(event: KeyboardEvent, menu: HTMLElement) {
-    const items = [...menu.querySelectorAll<HTMLElement>(".menu-item, .symbol-button, .swatch")];
+    const items = [...menu.querySelectorAll<HTMLElement>(".menu-item, .symbol-button, .swatch, .table-grid-cell")];
     const at = items.indexOf(document.activeElement as HTMLElement);
-    const grid = menu.querySelector(".symbol-grid, .swatches");
-    const across = grid ? Math.max(1, Math.round(grid.clientWidth / (items[0]?.offsetWidth || 28))) : 1;
+    // How many choices make a row: those level with the one that has the focus.
+    const current = items[at] ?? items[0];
+    const across = current ? Math.max(1, items.filter((i) => i.parentElement === current.parentElement && i.offsetTop === current.offsetTop).length) : 1;
     const go = (to: number) => {
       event.preventDefault();
       items[Math.max(0, Math.min(items.length - 1, to))]?.focus();
@@ -324,6 +354,37 @@ export class Toolbar {
       this.run(setMark(schema.marks.highlight, { color: name }));
     };
     return h("div", { class: "menu" }, this.swatches(HIGHLIGHT_CHOICES, (c) => HIGHLIGHTS[c], pick, (c) => c.replace(/([A-Z])/g, " $1").toLowerCase()), none);
+  }
+
+  private tableMenu(): HTMLElement {
+    return tableGrid((rows, cols) => {
+      this.closeMenu();
+      insertTable(this.host.view, this.host.ctx, rows, cols);
+    });
+  }
+
+  private shadingMenu(): HTMLElement {
+    const none = h("button", { type: "button", class: "menu-item" }, "No shading");
+    none.addEventListener("click", () => {
+      this.run(TABLE_COMMANDS.shade(null));
+      this.closeMenu();
+    });
+    const shades = ["#f2f2f2", "#d9d9d9", "#fff2cc", "#e2efda", "#ddebf7", "#fce4d6", "#ededed", "#d9e1f2", "#ffd966", "#a9d08e", "#9bc2e6", "#f4b084"];
+    return h("div", { class: "menu" }, this.swatches(shades, (c) => c, (c) => this.run(TABLE_COMMANDS.shade(c)), (c) => c), none);
+  }
+
+  /** Lines around the table's cells, on or off: the opposite of what shows now. */
+  toggleTableLines() {
+    const { view } = this.host;
+    const $from = view.state.selection.$from;
+    for (let d = $from.depth; d > 0; d--) {
+      if ($from.node(d).type.name !== "table") continue;
+      const table = view.nodeDOM($from.before(d)) as HTMLElement | null;
+      const cell = table?.querySelector("td, th");
+      const shown = !!cell && getComputedStyle(cell).borderTopStyle === "solid" && getComputedStyle(cell).borderTopColor !== "rgba(0, 0, 0, 0)";
+      this.run(setTableLines(!shown));
+      return;
+    }
   }
 
   /** Snapping pictures to the grid. */
@@ -458,6 +519,7 @@ export class Toolbar {
     if (document.activeElement !== this.fontInput) this.fontInput.value = run.font ?? "";
     if (document.activeElement !== this.sizeInput) this.sizeInput.value = run.size !== undefined ? String(run.size) : "";
     this.syncStyles(paragraph?.attrs.style ?? ctx.styles.defaultParagraph);
+    this.tableGroup.hidden = !isInTable(view.state);
   }
 
   private syncStyles(current: string | null) {

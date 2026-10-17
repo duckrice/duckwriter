@@ -331,7 +331,7 @@ await session(sample("report.docx"), 9434, async (app) => {
   check("shows the title and headings in their styles", paras[0]?.style === "Title" && paras[1]?.style === "Heading1" && paras[7]?.style === "Heading2", JSON.stringify(paras.map((p) => p.style)));
   check("numbers the list the way the document says", paras.slice(3, 7).map((p) => p.label).join(" ") === "1. a) b) 2.", paras.slice(3, 7).map((p) => p.label).join(" "));
   check("shows the bullets", paras.slice(8, 11).every((p) => p.label === "•"), paras.slice(8, 11).map((p) => p.label).join(" "));
-  check("keeps the table, shown as a box for now", (await app.evaluate(`document.querySelector(".raw-block .raw-label")?.textContent`)) === "Table");
+  check("shows the table, ready to edit", (await app.evaluate(`document.querySelector(".doc table")?.rows.length`)) === 3);
   check(
     "red bold text is red and bold",
     await app.evaluate(`(() => {
@@ -892,6 +892,71 @@ await session(null, 9502, async (app) => {
   check("restoring brings the text back, still to be saved", await app.waitFor(`document.querySelector(".doc").textContent.includes("Work that must not be lost") && document.title.startsWith("•")`, 5000));
   check("the old copy is gone from the recovery folder", await app.waitFor(`true`) && readdirSync(recoveryDir).length === 0, readdirSync(recoveryDir).join(", "));
   check("no errors in the app", app.errors.length === 0, app.errors.join("; "));
+});
+
+// ---- tables -------------------------------------------------------------------------------------
+
+const withTable = join(tmpdir(), "duckwriter-smoke-table.docx");
+rmSync(withTable, { force: true });
+
+await session(null, 9510, async (app) => {
+  await app.debugHandle();
+  await app.type("Results:");
+  await app.key("Enter", 13);
+  // Ctrl+Alt+Shift+T: choose 2 rows × 3 columns with the arrow keys.
+  await app.key("T", 84, CTRL | 1 | SHIFT);
+  check("Ctrl+Alt+Shift+T opens the table grid", await app.waitFor(`document.activeElement?.classList.contains("table-grid-cell")`, 2000));
+  await app.key("ArrowRight", 39);
+  await app.key("ArrowRight", 39);
+  await app.key("ArrowDown", 40);
+  await app.key("Enter", 13);
+  const shape = () => app.evaluate(`[...document.querySelectorAll(".doc table")].map((t) => [...t.rows].filter((r) => !r.classList.contains("page-gap-row")).map((r) => r.cells.length).join(","))`);
+  check("a 2 × 3 table is inserted, with the cursor in the first cell", JSON.stringify(await shape()) === JSON.stringify(["3,3"]) && (await app.evaluate(`!!document.getSelection().anchorNode?.parentElement?.closest("td")`)), JSON.stringify(await shape()));
+  check("the table toolbar appears", await app.evaluate(`!document.querySelector(".table-tools").hidden`));
+  for (const text of ["Sample", "Mass", "Notes", "A", "1.2"]) {
+    await app.type(text);
+    await app.key("Tab", 9);
+  }
+  await app.type("clear");
+  await app.key("Tab", 9);
+  check("Tab moves from cell to cell, and in the last cell adds a row", JSON.stringify(await shape()) === JSON.stringify(["3,3,3"]), JSON.stringify(await shape()));
+  await app.type("B");
+  await app.key("ArrowDown", 40, CTRL | 1 | SHIFT);
+  check("Ctrl+Alt+Shift+Down adds a row below", JSON.stringify(await shape()) === JSON.stringify(["3,3,3,3"]), JSON.stringify(await shape()));
+  // Select "1.2" and "clear" by dragging, and merge them.
+  const from = await app.evaluate(`(() => { const r = [...document.querySelectorAll(".doc td")].find((c) => c.textContent === "1.2").getBoundingClientRect(); return [r.left + 8, r.top + r.height / 2]; })()`);
+  const to = await app.evaluate(`(() => { const r = [...document.querySelectorAll(".doc td")].find((c) => c.textContent === "clear").getBoundingClientRect(); return [r.left + 8, r.top + r.height / 2]; })()`);
+  await app.drag(from[0], from[1], to[0], to[1]);
+  check("dragging across cells selects them", (await app.count(".doc .selectedCell")) === 2);
+  await app.clickText(".table-tools .tb-text", "Merge");
+  check("Merge makes them one cell", JSON.stringify(await shape()) === JSON.stringify(["3,2,3,3"]), JSON.stringify(await shape()));
+  check("new tables have lines (Word's Table Grid style)", await app.evaluate(`getComputedStyle(document.querySelector(".doc td")).borderTopStyle === "solid"`));
+  await app.shoot("table");
+  await app.evaluate(`(async () => {
+    const bytes = await window.__dw.build();
+    await window.__TAURI_INTERNALS__.invoke("write_file", bytes, { headers: { "x-path": encodeURIComponent(${JSON.stringify(withTable)}) } });
+  })()`);
+  check("no errors in the app", app.errors.length === 0, app.errors.join("; "));
+});
+
+{
+  const zip = await JSZip.loadAsync(readFileSync(withTable));
+  const xml = await zip.file("word/document.xml").async("string");
+  check("the saved table is a Word table, with the merged cell", xml.includes("<w:tbl>") && xml.includes('<w:gridSpan w:val="2"/>') && xml.includes('<w:tblStyle w:val="TableGrid"/>') && (await zip.file("word/styles.xml").async("string")).includes('w:styleId="TableGrid"'));
+  rmSync(withTable, { force: true });
+}
+
+await session(sample("table-long.docx"), 9511, async (app) => {
+  const report = await app.evaluate(`(() => {
+    const sheets = [...document.querySelectorAll(".page-sheet")].map((s) => s.getBoundingClientRect());
+    const margin = parseFloat(getComputedStyle(document.querySelector(".doc")).marginTop);
+    const inside = (r) => sheets.some((s) => r.top >= s.top + margin - 3 && r.bottom <= s.bottom - margin + 3);
+    const rows = [...document.querySelectorAll(".doc table tr:not(.page-gap-row)")];
+    return { pages: sheets.length, rows: rows.length, outside: rows.filter((r) => !inside(r.getBoundingClientRect())).length, gaps: document.querySelectorAll(".page-gap-row").length };
+  })()`);
+  check("a long table continues on the next page between rows", report.pages >= 2 && report.gaps >= 1 && report.rows === 71 && report.outside === 0, JSON.stringify(report));
+  await app.evaluate(`document.querySelector(".page-gap-row").scrollIntoView({ block: "center" })`);
+  await app.shoot("table-across-pages");
 });
 
 await session(sample("not-a-docx.docx"), 9435, async (app) => {

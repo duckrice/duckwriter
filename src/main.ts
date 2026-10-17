@@ -406,8 +406,12 @@ class App {
     this.toolbar.focusBox(box);
   }
 
-  openMenu(menu: "symbol" | "references" | "layout" | "textColor" | "highlight") {
+  openMenu(menu: "symbol" | "references" | "layout" | "textColor" | "highlight" | "table") {
     this.toolbar.openMenuByKeyboard(menu);
+  }
+
+  toggleTableLines() {
+    this.toolbar.toggleTableLines();
   }
 
   applyTextColor() {

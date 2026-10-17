@@ -7,10 +7,12 @@ import { gapCursor } from "prosemirror-gapcursor";
 import { history } from "prosemirror-history";
 import { keymap } from "prosemirror-keymap";
 import type { Node } from "prosemirror-model";
-import { EditorState, Plugin, type Command } from "prosemirror-state";
+import { EditorState, Plugin, TextSelection, type Command, type Transaction } from "prosemirror-state";
 import { EditorView } from "prosemirror-view";
 import type { DocContext } from "../docx/model";
+import { addRowAfter, columnResizing, goToNextCell, isInTable, tableEditing } from "prosemirror-tables";
 import { insertTab, leaveListAtStart, newParagraph } from "./commands";
+import { DuckTableView } from "./tableview";
 import { changeListLevel, listPlugin } from "./lists";
 import { fieldsPlugin } from "./fields";
 import { ImageView, type PictureHooks } from "./imageview";
@@ -41,11 +43,34 @@ export function createState(doc: Node, ctx: () => DocContext, pages?: Omit<Pagin
           return true;
         }),
         Enter: c((x) => newParagraph(x)),
-        Tab: chainCommands(c((x) => changeListLevel(x, 1)), insertTab()),
-        "Shift-Tab": c((x) => changeListLevel(x, -1)),
+        // In a table, Tab goes to the next cell; in the last one it adds a row, as in Word.
+        Tab: chainCommands(
+          goToNextCell(1),
+          (state, dispatch) => {
+            if (!isInTable(state)) return false;
+            let added: Transaction | null = null;
+            addRowAfter(state, (tr) => (added = tr));
+            if (!added) return false;
+            const tr: Transaction = added;
+            // Into the first cell of the new row, as one step.
+            const $from = state.selection.$from;
+            let depth = $from.depth;
+            while (depth > 0 && $from.node(depth).type.name !== "table_row") depth--;
+            // Before the inserted row, not after it.
+            const rowEnd = tr.mapping.map($from.after(depth), -1);
+            tr.setSelection(TextSelection.near(tr.doc.resolve(rowEnd + 1)));
+            if (dispatch) dispatch(tr.scrollIntoView());
+            return true;
+          },
+          c((x) => changeListLevel(x, 1)),
+          insertTab(),
+        ),
+        "Shift-Tab": chainCommands(goToNextCell(-1), c((x) => changeListLevel(x, -1))),
         Backspace: c((x) => leaveListAtStart(x)),
       }),
       keymap(baseKeymap),
+      columnResizing({ View: DuckTableView, cellMinWidth: 30 }),
+      tableEditing(),
       listPlugin(ctx),
       fieldsPlugin(),
       ...(pages ? [paginationPlugin({ context: ctx, ...pages })] : []),

@@ -7,7 +7,8 @@ import { schema } from "../editor/schema";
 import { parseMath } from "../math/ast";
 import { adjustPictureXml, imageType, pictureXml, type PictureLayout } from "./drawing";
 import { toOmml } from "../math/omml";
-import { TWIPS_PER_POINT, type DocContext, type Relationship } from "./model";
+import { TableMap } from "prosemirror-tables";
+import { TWIPS_PER_POINT, originalXml, type DocContext, type Relationship } from "./model";
 import { escapeAttr, escapeText, tag } from "./xml";
 
 /** The order Word requires for the elements of a paragraph's properties. */
@@ -26,6 +27,13 @@ const RPR_ORDER = [
   "highlight", "u", "effect", "bdr", "shd", "fitText", "vertAlign", "rtl", "cs", "em", "lang", "eastAsianLayout",
   "specVanish", "oMath",
 ];
+
+const TBLPR_ORDER = [
+  "tblStyle", "tblpPr", "tblOverlap", "bidiVisual", "tblStyleRowBandSize", "tblStyleColBandSize", "tblW", "jc",
+  "tblCellSpacing", "tblInd", "tblBorders", "shd", "tblLayout", "tblCellMar", "tblLook", "tblCaption", "tblDescription",
+];
+const TRPR_ORDER = ["cnfStyle", "divId", "gridBefore", "gridAfter", "wBefore", "wAfter", "cantSplit", "trHeight", "tblHeader", "tblCellSpacing", "jc", "hidden"];
+const TCPR_ORDER = ["cnfStyle", "tcW", "gridSpan", "hMerge", "vMerge", "tcBorders", "shd", "noWrap", "tcMar", "textDirection", "tcFitText", "vAlign", "hideMark"];
 
 /** Splits a run of sibling elements written as XML into one string per element. */
 function splitElements(xml: string): string[] {
@@ -104,8 +112,87 @@ class BodyWriter {
       if (node.type === schema.nodes.paragraph) out += this.paragraph(node, index === 0 ? lead : "");
       else if (node.type === schema.nodes.raw_block) out += node.attrs.xml;
       else if (node.type === schema.nodes.toc) out += this.toc(node);
+      else if (node.type === schema.nodes.table) out += this.table(node);
     });
     return out;
+  }
+
+  /**
+   * A table. One that wasn't changed is written exactly as it was read; an
+   * edited or new one is written from the editor, with its own properties kept.
+   */
+  private table(node: Node): string {
+    const original = originalXml.get(node);
+    if (original) return original;
+    const map = TableMap.get(node);
+    const p = this.ctx.page;
+    const fallback = Math.round(twips(p.width - p.marginLeft - p.marginRight) / Math.max(1, map.width));
+    // Column widths: from the cells (resized by dragging), else as read, else equal.
+    const grid: number[] = [];
+    for (let c = 0; c < map.width; c++) {
+      let width: number | null = null;
+      for (let r = 0; r < map.height && width === null; r++) {
+        const pos = map.map[r * map.width + c];
+        const cell = node.nodeAt(pos)!;
+        const rect = map.findCell(pos);
+        const px = cell.attrs.colwidth?.[c - rect.left];
+        if (px) width = Math.round(px * 15);
+      }
+      grid.push(width ?? node.attrs.grid[c] ?? fallback);
+    }
+
+    const props = splitElements(node.attrs.tblPr.replace(/^<w:tblPr\b[^>]*>|<\/w:tblPr>$/g, "")).filter((e) => !["tblStyle", "tblBorders", "tblGrid"].includes(localName(e)));
+    const style = node.attrs.style ?? (node.attrs.tblPr ? null : "TableGrid");
+    if (style) props.push(tag("w:tblStyle", { "w:val": style }));
+    if (!props.some((e) => localName(e) === "tblW")) props.push(tag("w:tblW", { "w:w": 0, "w:type": "auto" }));
+    if (node.attrs.borders !== null) {
+      const line = node.attrs.borders ? { "w:val": "single", "w:sz": 4, "w:space": 0, "w:color": "auto" } : { "w:val": "none", "w:sz": 0, "w:space": 0, "w:color": "auto" };
+      props.push(tag("w:tblBorders", {}, ...["top", "left", "bottom", "right", "insideH", "insideV"].map((side) => tag(`w:${side}`, line))));
+    } else {
+      const kept = /<w:tblBorders\b[\s\S]*?<\/w:tblBorders>/.exec(node.attrs.tblPr)?.[0];
+      if (kept) props.push(kept);
+    }
+    if (!props.some((e) => localName(e) === "tblLook")) props.push('<w:tblLook w:val="04A0" w:firstRow="1" w:lastRow="0" w:firstColumn="1" w:lastColumn="0" w:noHBand="0" w:noVBand="1"/>');
+    let out = `<w:tbl><w:tblPr>${ordered(props, TBLPR_ORDER)}</w:tblPr><w:tblGrid>${grid.map((w) => tag("w:gridCol", { "w:w": w })).join("")}</w:tblGrid>`;
+
+    node.forEach((row, rowOffset, r) => {
+      const header = row.childCount > 0 && row.firstChild!.type === schema.nodes.table_header;
+      const trParts = splitElements(row.attrs.trPr);
+      if (header) trParts.push("<w:tblHeader/>");
+      out += `<w:tr>${trParts.length ? `<w:trPr>${ordered(trParts, TRPR_ORDER)}</w:trPr>` : ""}`;
+      for (let c = 0; c < map.width; ) {
+        const pos = map.map[r * map.width + c];
+        const rect = map.findCell(pos);
+        const cell = node.nodeAt(pos)!;
+        const span = rect.right - rect.left;
+        const width = grid.slice(rect.left, rect.right).reduce((a, b) => a + b, 0);
+        if (rect.top === r) {
+          out += this.cell(cell, width, span, cell.attrs.rowspan > 1 ? "restart" : null);
+        } else {
+          // Covered by a cell from a row above: Word needs a cell here saying so.
+          out += this.cell(null, width, span, "continue", cell);
+        }
+        c = rect.right;
+      }
+      out += "</w:tr>";
+      void rowOffset;
+    });
+    return out + "</w:tbl>";
+  }
+
+  private cell(cell: Node | null, width: number, span: number, vMerge: "restart" | "continue" | null, owner: Node | null = cell): string {
+    const a = (cell ?? owner)!.attrs;
+    const props = splitElements(a.tcPr ?? "");
+    props.push(tag("w:tcW", { "w:w": width, "w:type": "dxa" }));
+    if (span > 1) props.push(tag("w:gridSpan", { "w:val": span }));
+    if (vMerge === "restart") props.push(tag("w:vMerge", { "w:val": "restart" }));
+    else if (vMerge === "continue") props.push(tag("w:vMerge"));
+    if (a.background) props.push(tag("w:shd", { "w:val": "clear", "w:color": "auto", "w:fill": String(a.background).replace("#", "").toUpperCase() }));
+    if (a.valign) props.push(tag("w:vAlign", { "w:val": a.valign === "middle" ? "center" : a.valign }));
+    let content = cell ? this.blocks(cell) : "<w:p/>";
+    // A cell must end with a paragraph.
+    if (cell && cell.lastChild?.type !== schema.nodes.paragraph) content += "<w:p/>";
+    return `<w:tc><w:tcPr>${ordered(props, TCPR_ORDER)}</w:tcPr>${content}</w:tc>`;
   }
 
   /** A table of contents as Word writes one: a TOC field spanning its entries, so Word can update it too. */
