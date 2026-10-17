@@ -32,6 +32,7 @@ export interface ToolbarHost {
   open(): void;
   save(): void;
   editHeader(): void;
+  insertFootnote(): void;
 }
 
 const FONTS = [
@@ -136,6 +137,7 @@ export class Toolbar {
         this.splitButton("symbol", "Symbol", null, () => this.symbolMenu(), () => this.symbolMenu()),
         this.button("pageBreak", "Page break (Ctrl+Enter)", () => this.run(insertPageBreak())),
         this.button("header", "Header and footer", () => this.host.editHeader()),
+        this.button("footnote", "Footnote (Ctrl+Alt+F)", () => this.host.insertFootnote()),
       ),
       fonts,
       sizes,

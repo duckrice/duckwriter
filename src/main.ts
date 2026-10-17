@@ -10,6 +10,7 @@ import { createState, createView } from "./editor/editor";
 import { PAGE_GAP, relayout, type PageLayout } from "./editor/pagination";
 import { stylesheetFor } from "./editor/stylesheet";
 import { baseName, isDesktop, onCloseRequested, pickDocument, pickSavePath, readPath, setTitle, startupFiles, writePath } from "./platform";
+import { Footnotes } from "./ui/footnotes";
 import { HeadersAndFooters } from "./ui/headers";
 import { icon } from "./ui/icons";
 import { Toolbar } from "./ui/toolbar";
@@ -38,13 +39,20 @@ class App {
   private toasts = h("div", { class: "toasts", role: "status" });
   private wordTimer = 0;
   private headers: HeadersAndFooters;
+  private footnotes: Footnotes;
   /** Whether the first page had its own header when last opened or saved. */
   private savedTitlePage = false;
 
   constructor(root: HTMLElement) {
     this.toolbar = new Toolbar(this);
     this.headers = new HeadersAndFooters(this, this.workspace);
-    this.sheet.append(this.headers.layer);
+    this.footnotes = new Footnotes(this);
+    this.sheet.append(this.headers.layer, this.footnotes.layer);
+    // Clicking a footnote's mark in the text opens the note.
+    this.sheet.addEventListener("click", (event) => {
+      const mark = (event.target as HTMLElement).closest<HTMLElement>(".doc .footnote-ref");
+      if (mark?.dataset.id) this.footnotes.start(mark.dataset.id);
+    });
     const zoomOut = h("button", { type: "button", class: "status-button", title: "Zoom out", html: icon("zoomOut", 16), onclick: () => this.stepZoom(-1) });
     const zoomIn = h("button", { type: "button", class: "status-button", title: "Zoom in", html: icon("zoomIn", 16), onclick: () => this.stepZoom(1) });
     this.zoomLabel.addEventListener("click", () => this.setZoom(1));
@@ -78,13 +86,23 @@ class App {
 
   /** The editor being typed in: the main text, or a header or footer. */
   get view(): EditorView {
-    return this.headers.view ?? this.body;
+    return this.headers.view ?? this.footnotes.view ?? this.body;
   }
 
   get dirty(): boolean {
     if (!this.savedDoc) return false;
     if (!this.body.state.doc.eq(this.savedDoc) || this.ctx.titlePage !== this.savedTitlePage) return true;
-    return this.ctx.stories.some((s) => !s.saved || !s.doc.eq(s.saved));
+    if (this.ctx.stories.some((s) => !s.saved || !s.doc.eq(s.saved))) return true;
+    const fn = this.ctx.footnotes;
+    return [...fn.notes].some(([id, doc]) => {
+      const saved = fn.saved.get(id);
+      return !saved || !saved.eq(doc);
+    });
+  }
+
+  insertFootnote() {
+    this.headers.stop();
+    this.footnotes.insert();
   }
 
   editHeader() {
@@ -98,6 +116,7 @@ class App {
   /** Shows a document; `path` is where Save writes it (null for a new one). */
   private show(doc: Node, ctx: DocContext, name: string, path: string | null) {
     this.headers.stop();
+    this.footnotes.stop();
     this.ctx = ctx;
     this.path = path;
     this.name = name;
@@ -106,7 +125,7 @@ class App {
     this.styleEl.textContent = `${stylesheetFor(ctx, ".sheet .doc")}\n${stylesheetFor(ctx, ".hf-doc")}`;
     const p = ctx.page;
     this.sheet.style.width = `${p.width}pt`;
-    const state = createState(doc, () => this.ctx, (layout) => this.drawPages(layout));
+    const state = createState(doc, () => this.ctx, { onLayout: (layout) => this.drawPages(layout), noteHeight: (id) => this.footnotes.height(id) });
     if (this.body) this.body.updateState(state);
     else this.body = createView(this.sheet, state, { onChange: (_view, docChanged) => this.changed(docChanged) });
     const dom = this.body.dom as HTMLElement;
@@ -132,6 +151,7 @@ class App {
     this.sheet.style.height = `${layout.count * pitch - PAGE_GAP}px`;
     this.pageCount.textContent = `${layout.count} ${layout.count === 1 ? "page" : "pages"}`;
     this.headers.render(layout.count);
+    this.footnotes.render(layout);
   }
 
   private changed(docChanged: boolean) {
@@ -245,6 +265,12 @@ class App {
   }
 
   private onKey(event: KeyboardEvent) {
+    if (event.ctrlKey && event.altKey && event.key.toLowerCase() === "f") {
+      // Ctrl+Alt+F: a new footnote, as in Word.
+      event.preventDefault();
+      this.insertFootnote();
+      return;
+    }
     if (!(event.ctrlKey || event.metaKey) || event.altKey) return;
     const key = event.key.toLowerCase();
     const handled = () => {

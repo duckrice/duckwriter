@@ -24,7 +24,7 @@ import {
 } from "./commands";
 import { changeListLevel, listPlugin, toggleList } from "./lists";
 import { MathView } from "./mathview";
-import { paginationPlugin, type PageLayout } from "./pagination";
+import { paginationPlugin, type PaginationHooks } from "./pagination";
 import { editEquation, insertEquation } from "../ui/equation";
 
 export interface EditorHooks {
@@ -39,8 +39,8 @@ const heading = (ctx: () => DocContext, level: number): Command => (state, dispa
   return setStyle(ctx(), id)(state, dispatch);
 };
 
-/** @param onLayout given for the main text, which is laid out on pages; headers and footers aren't. */
-export function createState(doc: Node, ctx: () => DocContext, onLayout?: (layout: PageLayout) => void): EditorState {
+/** @param pages given for the main text, which is laid out on pages; headers, footers and notes aren't. */
+export function createState(doc: Node, ctx: () => DocContext, pages?: Omit<PaginationHooks, "context">): EditorState {
   const c = (make: (ctx: DocContext) => Command): Command => (state, dispatch, view) => make(ctx())(state, dispatch, view);
   return EditorState.create({
     doc,
@@ -91,7 +91,7 @@ export function createState(doc: Node, ctx: () => DocContext, onLayout?: (layout
       }),
       keymap(baseKeymap),
       listPlugin(ctx),
-      ...(onLayout ? [paginationPlugin({ context: ctx, onLayout })] : []),
+      ...(pages ? [paginationPlugin({ context: ctx, ...pages })] : []),
       dropCursor({ color: "#0f766e", width: 2 }),
       gapCursor(),
       new Plugin({

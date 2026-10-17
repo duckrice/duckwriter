@@ -495,6 +495,89 @@ await session(sample("report.docx"), 9439, async (app) => {
   check("headers and footers of an opened document are shown, with page numbers", headerText === "Bergen trip 2026" && footerText === "Page 1 of 1", `${headerText} / ${footerText}`);
 });
 
+// ---- footnotes ------------------------------------------------------------------------------
+
+const withNotes = join(tmpdir(), "duckwriter-smoke-notes.docx");
+rmSync(withNotes, { force: true });
+
+await session(null, 9450, async (app) => {
+  await app.debugHandle();
+  await app.type("The reaction rate doubled");
+  await app.key("f", 70, CTRL | 1); // Ctrl+Alt+F
+  check("Ctrl+Alt+F adds a footnote and opens it at the bottom of the page", await app.waitFor(`!!document.querySelector(".fn-note.editing .ProseMirror")`, 3000));
+  await app.type("Measured at 20 °C.");
+  await app.key(...ESC);
+  const notes = () => app.evaluate(`[...document.querySelectorAll(".fn-note")].map((n) => n.textContent.trim())`);
+  check("the note is shown under a line at the bottom of the page, numbered", JSON.stringify(await notes()) === JSON.stringify(["1 Measured at 20 °C."]), JSON.stringify(await notes()));
+
+  // A note added earlier in the text comes first.
+  await sleep(300);
+  await app.key("Home", 36);
+  await app.type("Surprisingly, ");
+  await app.key("f", 70, CTRL | 1);
+  await app.waitFor(`!!document.querySelector(".fn-note.editing .ProseMirror")`, 3000);
+  await app.type("Nobody expected this.");
+  await app.key(...ESC);
+  check("notes are numbered in the order of their marks", JSON.stringify(await notes()) === JSON.stringify(["1 Nobody expected this.", "2 Measured at 20 °C."]), JSON.stringify(await notes()));
+  const box = await app.evaluate(`(() => { const a = document.querySelector(".fn-area").getBoundingClientRect(); const s = document.querySelector(".page-sheet").getBoundingClientRect(); return [a.bottom, s.bottom, s.bottom - 96 * (document.querySelector(".sheet").getBoundingClientRect().width / document.querySelector(".sheet").offsetWidth)]; })()`);
+  check("the notes sit just above the bottom margin", Math.abs(box[0] - box[2]) < 2, JSON.stringify(box));
+  await app.shoot("footnotes");
+  await app.evaluate(`(async () => {
+    const bytes = await window.__dw.build();
+    await window.__TAURI_INTERNALS__.invoke("write_file", bytes, { headers: { "x-path": encodeURIComponent(${JSON.stringify(withNotes)}) } });
+  })()`);
+  check("no errors in the app", app.errors.length === 0, app.errors.join("; "));
+});
+
+{
+  const zip = await JSZip.loadAsync(readFileSync(withNotes));
+  const xml = await zip.file("word/footnotes.xml")?.async("string");
+  check("the saved file has the footnotes, in order", !!xml && xml.indexOf("Nobody expected") < xml.indexOf("Measured at 20") && xml.includes("<w:footnoteRef/>"));
+  rmSync(withNotes, { force: true });
+}
+
+// Footnotes near the end of a page: the note goes where its mark goes, and text keeps clear of it.
+await session(sample("long.docx"), 9451, async (app) => {
+  // Put a long note in the last paragraph that starts on page 1.
+  const target = await app.evaluate(`(() => {
+    const first = document.querySelectorAll(".page-sheet")[0].getBoundingClientRect();
+    const paras = [...document.querySelectorAll(".doc > .para")].filter((p) => p.getBoundingClientRect().top < first.bottom - 200);
+    const p = paras.at(-1);
+    p.scrollIntoView({ block: "center" });
+    const r = p.getBoundingClientRect();
+    return [r.left + 40, r.top + 8];
+  })()`);
+  await app.click(target[0], target[1]);
+  await app.key("End", 35);
+  await app.key("f", 70, CTRL | 1);
+  await app.waitFor(`!!document.querySelector(".fn-note.editing .ProseMirror")`, 3000);
+  await app.type("A long note. ".repeat(40));
+  await app.key(...ESC);
+  await sleep(500);
+  const report = await app.evaluate(`(() => {
+    const sheets = [...document.querySelectorAll(".page-sheet")].map((s) => s.getBoundingClientRect());
+    const pageAt = (y) => sheets.findIndex((s) => y >= s.top && y <= s.bottom);
+    const mark = document.querySelector(".doc .footnote-ref").getBoundingClientRect();
+    const note = document.querySelector(".fn-note").getBoundingClientRect();
+    const area = document.querySelector(".fn-area:not([hidden])").getBoundingClientRect();
+    // Text on the note's page must end above the notes.
+    let overlap = 0;
+    for (const p of document.querySelectorAll(".doc > .para")) {
+      const w = document.createTreeWalker(p, NodeFilter.SHOW_TEXT);
+      for (let t = w.nextNode(); t; t = w.nextNode()) {
+        const r = document.createRange(); r.selectNodeContents(t);
+        for (const x of r.getClientRects()) if (x.height >= 2 && pageAt(x.top) === pageAt(area.top) && x.bottom > area.top + 3) overlap++;
+      }
+    }
+    return { markPage: pageAt(mark.top), notePage: pageAt(note.top), overlap };
+  })()`);
+  check("a note is on the same page as its mark", report.markPage === report.notePage && report.markPage >= 0, JSON.stringify(report));
+  check("text never runs into the notes", report.overlap === 0, JSON.stringify(report));
+  await app.evaluate(`document.querySelector(".fn-area:not([hidden])").scrollIntoView({ block: "center" })`);
+  await app.shoot("footnote-near-page-end");
+  check("no errors in the app", app.errors.length === 0, app.errors.join("; "));
+});
+
 await session(sample("not-a-docx.docx"), 9435, async (app) => {
   check("a file that isn't a Word document gets a plain message", await app.waitFor(`/isn't a Word document/.test(document.querySelector(".toast.error")?.textContent ?? "")`, 5000));
 });

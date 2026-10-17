@@ -18,13 +18,20 @@ const PX = 4 / 3;
 export interface PageLayout {
   /** Number of pages. */
   count: number;
+  /** The footnotes at the bottom of each page, by id. */
+  notes: string[][];
 }
 
 export interface PaginationHooks {
   context(): DocContext;
   /** Called after every layout. */
   onLayout(layout: PageLayout): void;
+  /** How tall a footnote is at the bottom of a page, in pixels. */
+  noteHeight?(id: string): number;
 }
+
+/** The line above the footnotes, with the space around it, in pixels. */
+export const NOTE_SEPARATOR = 16;
 
 interface Gap {
   pos: number;
@@ -155,6 +162,28 @@ function layout(view: EditorView, hooks: PaginationHooks) {
   });
   const props = (node: Node) => (node.type === schema.nodes.paragraph ? resolvedPara(ctx.styles, node.attrs.style) : {});
 
+  // Footnotes take room at the bottom of the page their mark is on.
+  const reserved: number[] = [];
+  const notesOn: string[][] = [];
+  const noteHeight = (id: string) => hooks.noteHeight?.(id) ?? 0;
+  /** The room footnotes take on page k if `ids` are added there. */
+  const noteRoom = (k: number, ids: string[]) => {
+    const extra = ids.reduce((sum, id) => sum + noteHeight(id), 0);
+    const has = (notesOn[k]?.length ?? 0) > 0;
+    return (reserved[k] ?? 0) + extra + (!has && ids.length ? NOTE_SEPARATOR : 0);
+  };
+  const placeNotes = (k: number, ids: string[]) => {
+    if (!ids.length) return;
+    reserved[k] = noteRoom(k, ids);
+    (notesOn[k] ??= []).push(...ids);
+  };
+  const unplaceNotes = (k: number, ids: string[]) => {
+    if (!ids.length || !notesOn[k]) return;
+    notesOn[k] = notesOn[k].filter((id) => !ids.includes(id));
+    reserved[k] = notesOn[k].length ? notesOn[k].reduce((sum, id) => sum + noteHeight(id), NOTE_SEPARATOR) : 0;
+  };
+  const fits = (bottom: number, k: number, ids: string[]) => bottom <= contentBottom(k) - noteRoom(k, ids) + 0.5;
+
   for (let i = 0; i < blocks.length; i++) {
     const b = blocks[i];
     const top = () => b.top + shift;
@@ -166,27 +195,37 @@ function layout(view: EditorView, hooks: PaginationHooks) {
     }
 
     const breaks: { pos: number; bottom: number }[] = [];
+    const notes: { id: string; y: number }[] = [];
     if (b.node.type === schema.nodes.paragraph) {
       b.node.forEach((child, offset) => {
-        if (child.type !== schema.nodes.page_break) return;
+        if (child.type !== schema.nodes.page_break && child.type !== schema.nodes.footnote) return;
         const el = view.nodeDOM(b.pos + 1 + offset);
-        if (el instanceof HTMLElement) breaks.push({ pos: b.pos + 1 + offset + child.nodeSize, bottom: y(el.getBoundingClientRect().bottom) });
+        if (!(el instanceof HTMLElement)) return;
+        const r = el.getBoundingClientRect();
+        if (child.type === schema.nodes.page_break) breaks.push({ pos: b.pos + 1 + offset + child.nodeSize, bottom: y(r.bottom) });
+        else notes.push({ id: child.attrs.id, y: y((r.top + r.bottom) / 2) });
       });
     }
-    if (b.bottom + shift <= contentBottom(k) + 0.5 && !breaks.length) continue;
+    const allNotes = notes.map((n) => n.id);
+    if (!breaks.length && fits(b.bottom + shift, k, allNotes)) {
+      placeNotes(k, allNotes);
+      continue;
+    }
 
     const lines = b.node.type === schema.nodes.paragraph ? linesOf(b.el, origin.top, scale) : [];
     const moveWhole = () => {
-      if (top() <= contentTop(pageOf(top())) + 1) return;
+      if (top() <= contentTop(pageOf(top())) + 1) return false;
       // A heading just before goes along, so it isn't left alone at the bottom of the page.
       const prev = blocks[i - 1];
       const prevTop = prev ? prev.top + shift : 0;
       if (prev && props(prev.node).keepNext && !gaps.some((g) => g.pos === prev.pos) && pageOf(prevTop) === pageOf(top()) && prevTop > contentTop(pageOf(prevTop)) + 1) {
         add(prev.pos, prevTop, false);
       } else add(b.pos, top(), false);
+      return true;
     };
     if (lines.length < 2 && !breaks.length) {
       moveWhole();
+      placeNotes(pageOf(top()), allNotes);
       continue;
     }
 
@@ -196,8 +235,17 @@ function layout(view: EditorView, hooks: PaginationHooks) {
       const pos = Math.max(b.pos + 1, Math.min(found.pos, b.pos + b.node.nodeSize - 1));
       return pos > b.pos + 1 ? pos : null;
     };
+    const notesIn = (line: Line) => notes.filter((n) => n.y >= line.top - 1 && n.y <= line.bottom + 1).map((n) => n.id);
+    /** Where each line's notes were placed, to take them back when the line moves on. */
+    const placed: { k: number; ids: string[] }[] = [];
+    const takeBack = (from: number) => {
+      for (let m = from; m < placed.length; m++) if (placed[m]) unplaceNotes(placed[m].k, placed[m].ids);
+      placed.length = from;
+    };
     let handledBreak = 0;
-    for (let n = 0; n < lines.length; n++) {
+    let movedWhole = false;
+    let n = 0;
+    while (n < lines.length) {
       const line = lines[n];
       // Page breaks above this line send it (and what follows) to a new page.
       while (handledBreak < breaks.length && breaks[handledBreak].bottom <= line.top + 0.5) {
@@ -206,16 +254,35 @@ function layout(view: EditorView, hooks: PaginationHooks) {
       }
       const lineTop = line.top + shift;
       k = pageOf(lineTop);
-      if (line.bottom + shift <= contentBottom(k) + 0.5) continue;
-      // The first line doesn't fit, or only one line would stay behind: the paragraph moves.
-      if (n <= 1) {
-        moveWhole();
+      const ids = notesIn(line);
+      // It fits, or it is already at the top of a page and can't do better.
+      if (fits(line.bottom + shift, k, ids) || lineTop <= contentTop(k) + 1) {
+        placeNotes(k, ids);
+        placed[n] = { k, ids };
+        n++;
         continue;
+      }
+      // The first line doesn't fit, or only one line would stay behind: the paragraph moves.
+      if (n <= 1 && !movedWhole) {
+        movedWhole = true;
+        takeBack(0);
+        if (moveWhole()) {
+          n = 0;
+          continue;
+        }
       }
       // Don't leave the last line alone at the top of the next page.
       const from = n === lines.length - 1 && n >= 3 ? n - 1 : n;
       const pos = lineStart(lines[from]);
-      if (pos !== null) add(pos, lines[from].top + shift, true);
+      if (pos === null) {
+        placeNotes(k, ids);
+        placed[n] = { k, ids };
+        n++;
+        continue;
+      }
+      takeBack(from);
+      add(pos, lines[from].top + shift, true);
+      n = from;
     }
     for (; handledBreak < breaks.length; handledBreak++) add(breaks[handledBreak].pos, breaks[handledBreak].bottom + shift, true);
   }
@@ -226,5 +293,5 @@ function layout(view: EditorView, hooks: PaginationHooks) {
   gaps.sort((a, b) => a.pos - b.pos || Number(a.inline) - Number(b.inline));
   view.dispatch(view.state.tr.setMeta(paginationKey, DecorationSet.create(view.state.doc, gaps.map(gapWidget))).setMeta("addToHistory", false));
   sheet.style.minHeight = "";
-  hooks.onLayout({ count });
+  hooks.onLayout({ count, notes: Array.from({ length: count }, (_, k) => notesOn[k] ?? []) });
 }

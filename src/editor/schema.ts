@@ -120,6 +120,18 @@ export const schema = new Schema({
       toDOM: (node) => ["span", { class: "field", "data-instr": fieldKind(node.attrs.instr), title: node.attrs.instr.trim() }, node.attrs.result || " "],
     },
 
+    /**
+     * The mark of a footnote in the text. Its number comes from its place in
+     * the document; the note itself lives with the document's footnotes.
+     */
+    footnote: {
+      group: "inline",
+      inline: true,
+      atom: true,
+      attrs: { id: {}, xml: { default: null } },
+      toDOM: (node) => ["span", { class: "footnote-ref", "data-id": node.attrs.id, title: "Footnote" }],
+    },
+
     /** A part of a paragraph DuckWriter can't edit yet (a picture, a field, a bookmark…), kept as is. */
     raw_inline: {
       group: "inline",

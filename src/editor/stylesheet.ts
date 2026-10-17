@@ -14,6 +14,7 @@ function runCss(run: RunProps): string[] {
   if (run.italic !== undefined) css.push(`font-style:${run.italic ? "italic" : "normal"}`);
   if (run.color) css.push(`color:${run.color}`);
   if (run.highlight) css.push(`background-color:${HIGHLIGHTS[run.highlight] ?? run.highlight}`);
+  if (run.vertAlign) css.push(run.vertAlign === "superscript" ? "vertical-align:super;font-size:smaller" : "vertical-align:sub;font-size:smaller");
   const lines = [run.underline && "underline", run.strike && "line-through"].filter(Boolean);
   if (run.underline !== undefined || run.strike !== undefined) css.push(`text-decoration-line:${lines.length ? lines.join(" ") : "none"}`);
   return css;

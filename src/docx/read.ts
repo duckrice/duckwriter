@@ -8,6 +8,7 @@ import { toLatex } from "../math/ast";
 import { MATH_NS, fromOmml } from "../math/omml";
 import {
   DEFAULT_PAGE,
+  type Footnotes,
   type Story,
   TWIPS_PER_POINT,
   type DocContext,
@@ -89,6 +90,32 @@ export async function readDocx(bytes: Uint8Array): Promise<OpenedDocument> {
     stories.push({ kind, type, path, rid, rootStart: /<w:(?:hdr|ftr)[^>]*>/.exec(partXml)?.[0] ?? null, prefixes: partPrefixes, rels: partRels, doc, saved: doc });
   }
 
+  const footnotes: Footnotes = { path: null, rootStart: null, prefixes: new Set(), rels: new Map(), special: [], notes: new Map(), saved: new Map() };
+  const footnotesPath = partFor("footnotes");
+  const footnotesXml = await text(footnotesPath);
+  if (footnotesPath && footnotesXml) {
+    const partDir = footnotesPath.slice(0, footnotesPath.lastIndexOf("/") + 1);
+    const partRoot = parseXml(footnotesXml).documentElement;
+    footnotes.path = footnotesPath;
+    footnotes.rootStart = /<w:footnotes\b[^>]*>/.exec(footnotesXml)?.[0] ?? null;
+    footnotes.prefixes = declaredPrefixes(partRoot);
+    footnotes.rels = await readRels(zip, `${partDir}_rels/${footnotesPath.slice(partDir.length)}.rels`);
+    const noteReader = new BodyReader(footnotes.prefixes, footnotes.rels, themeFonts);
+    for (const note of childrenNamed(partRoot, "footnote")) {
+      const id = attr(note, "id") ?? "";
+      const type = attr(note, "type");
+      if (type && type !== "normal") {
+        footnotes.special.push(rawXml(note, footnotes.prefixes));
+        continue;
+      }
+      const content = children(note).flatMap((el) => noteReader.block(el));
+      if (!content.length) content.push(schema.nodes.paragraph.create());
+      const doc = schema.nodes.doc.create(null, content);
+      footnotes.notes.set(id, doc);
+      footnotes.saved.set(id, doc);
+    }
+  }
+
   const context: DocContext = {
     zip,
     documentXml,
@@ -103,6 +130,8 @@ export async function readDocx(bytes: Uint8Array): Promise<OpenedDocument> {
     page: readPage(finalSectPr),
     stories,
     titlePage: !!toggle(finalSectPr, "titlePg"),
+    footnotes,
+    addedStyles: [],
   };
   return { doc: schema.nodes.doc.create(null, blocks), context };
 }
@@ -243,25 +272,36 @@ function readStyles(text: string | null, theme: DocContext["themeFonts"]): Style
   styles.defaultRun = { font: "Times New Roman", size: 10, ...readRunProps(child(child(defaults, "rPrDefault"), "rPr"), theme) };
   styles.defaultPara = readParaProps(child(child(defaults, "pPrDefault"), "pPr"));
   for (const el of childrenNamed(root, "style")) {
-    const id = attr(el, "styleId");
-    if (!id) continue;
-    const type = (attr(el, "type") ?? "paragraph") as StyleDef["type"];
-    const style: StyleDef = {
-      id,
-      name: attr(child(el, "name"), "val") ?? id,
-      type,
-      basedOn: attr(child(el, "basedOn"), "val") ?? undefined,
-      next: attr(child(el, "next"), "val") ?? undefined,
-      quick: !!child(el, "qFormat"),
-      hidden: !!child(el, "semiHidden") || !!child(el, "hidden"),
-      priority: numAttr(child(el, "uiPriority"), "val") ?? 99,
-      run: readRunProps(child(el, "rPr"), theme),
-      para: readParaProps(child(el, "pPr")),
-    };
-    styles.byId.set(id, style);
-    if (type === "paragraph" && attr(el, "default") === "1") styles.defaultParagraph = id;
+    const style = readStyle(el, theme);
+    if (!style) continue;
+    styles.byId.set(style.id, style);
+    if (style.type === "paragraph" && attr(el, "default") === "1") styles.defaultParagraph = style.id;
   }
   return styles;
+}
+
+function readStyle(el: Element, theme: DocContext["themeFonts"]): StyleDef | null {
+  const id = attr(el, "styleId");
+  if (!id) return null;
+  return {
+    id,
+    name: attr(child(el, "name"), "val") ?? id,
+    type: (attr(el, "type") ?? "paragraph") as StyleDef["type"],
+    basedOn: attr(child(el, "basedOn"), "val") ?? undefined,
+    next: attr(child(el, "next"), "val") ?? undefined,
+    quick: !!child(el, "qFormat"),
+    hidden: !!child(el, "semiHidden") || !!child(el, "hidden"),
+    priority: numAttr(child(el, "uiPriority"), "val") ?? 99,
+    run: readRunProps(child(el, "rPr"), theme),
+    para: readParaProps(child(el, "pPr")),
+  };
+}
+
+/** A style written as XML (a <w:style> element), as DuckWriter understands it. */
+export function styleFromXml(xml: string, theme: DocContext["themeFonts"]): StyleDef | null {
+  const root = parseXml(`<w:styles xmlns:w="${NS.w}">${xml}</w:styles>`).documentElement;
+  const el = childrenNamed(root, "style")[0];
+  return el ? readStyle(el, theme) : null;
 }
 
 function readNumbering(text: string | null): Numbering {
@@ -495,6 +535,15 @@ class BodyReader {
         case "tab":
           text += "\t";
           break;
+        case "footnoteRef":
+          // The note's own number; written again when the note is saved.
+          break;
+        case "footnoteReference": {
+          flush();
+          const xml = `${startTag(r)}>${rPr ? this.raw(rPr) : ""}${this.raw(el)}</${r.tagName}>`;
+          out.push(schema.nodes.footnote.create({ id: attr(el, "id") ?? "", xml }, null, marks));
+          break;
+        }
         case "noBreakHyphen":
           text += "‑";
           break;

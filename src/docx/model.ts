@@ -121,6 +121,20 @@ export interface Relationship {
   external: boolean;
 }
 
+/** The document's footnotes: a part of their own, each note a little document. */
+export interface Footnotes {
+  /** Path of the part; null until the first footnote is saved. */
+  path: string | null;
+  rootStart: string | null;
+  prefixes: Set<string>;
+  rels: Map<string, Relationship>;
+  /** The separator lines and the like (ids -1 and 0), kept as XML. */
+  special: string[];
+  notes: Map<string, Node>;
+  /** The notes as last saved, to tell whether they changed. */
+  saved: Map<string, Node>;
+}
+
 export interface DocContext {
   zip: JSZip;
   /** The original word/document.xml, which saving rewrites the body of. */
@@ -142,6 +156,9 @@ export interface DocContext {
   stories: Story[];
   /** The first page has its own header and footer. */
   titlePage: boolean;
+  footnotes: Footnotes;
+  /** Style definitions (XML) to add to the document's styles when it is saved. */
+  addedStyles: string[];
 }
 
 export const TWIPS_PER_POINT = 20;

@@ -6,7 +6,7 @@ import type { Mark, Node } from "prosemirror-model";
 import { schema } from "../editor/schema";
 import { parseMath } from "../math/ast";
 import { toOmml } from "../math/omml";
-import { TWIPS_PER_POINT, type DocContext, type Relationship, type Story } from "./model";
+import { TWIPS_PER_POINT, type DocContext, type Relationship } from "./model";
 import { escapeAttr, escapeText, tag } from "./xml";
 
 /** The order Word requires for the elements of a paragraph's properties. */
@@ -64,6 +64,8 @@ const twips = (points: number) => Math.round(points * TWIPS_PER_POINT);
 export async function writeDocx(doc: Node, ctx: DocContext): Promise<Uint8Array> {
   // Headers and footers first: new ones change the section properties.
   await writeStories(ctx);
+  await writeFootnotes(doc, ctx);
+  await writeAddedStyles(ctx);
   updateSectPr(ctx);
   const writer = new BodyWriter(ctx);
   const body = writer.body(doc);
@@ -82,26 +84,27 @@ export async function writeDocx(doc: Node, ctx: DocContext): Promise<Uint8Array>
 }
 
 class BodyWriter {
-  /** @param story a header or footer being written, whose links live in its own part. */
+  /** @param story a header, footer or the footnotes being written, whose links live in their own part. */
   constructor(
     private ctx: DocContext,
-    private story: Story | null = null,
+    private story: { rels: Map<string, Relationship> } | null = null,
   ) {}
 
   body(doc: Node): string {
     return this.blocks(doc) + this.ctx.sectPr;
   }
 
-  blocks(doc: Node): string {
+  /** @param lead XML put at the start of the first paragraph (a footnote's own number). */
+  blocks(doc: Node, lead = ""): string {
     let out = "";
-    doc.forEach((node) => {
-      if (node.type === schema.nodes.paragraph) out += this.paragraph(node);
+    doc.forEach((node, _offset, index) => {
+      if (node.type === schema.nodes.paragraph) out += this.paragraph(node, index === 0 ? lead : "");
       else if (node.type === schema.nodes.raw_block) out += node.attrs.xml;
     });
     return out;
   }
 
-  paragraph(node: Node): string {
+  paragraph(node: Node, lead = ""): string {
     const a = node.attrs;
     const props: string[] = [];
     if (a.style) props.push(tag("w:pStyle", { "w:val": a.style }));
@@ -129,7 +132,7 @@ class BodyWriter {
     if (a.align) props.push(tag("w:jc", { "w:val": a.align === "justify" ? "both" : a.align }));
     props.push(...splitElements(a.extra));
     const pPr = props.length ? `<w:pPr>${ordered(props, PPR_ORDER)}</w:pPr>` : "";
-    return `<w:p>${pPr}${this.inlines(node)}</w:p>`;
+    return `<w:p>${pPr}${lead}${this.inlines(node)}</w:p>`;
   }
 
   /** The paragraph's content; neighbouring pieces with the same link share one hyperlink element. */
@@ -162,6 +165,9 @@ class BodyWriter {
     if (node.type === schema.nodes.raw_inline) return node.attrs.xml;
     if (node.type === schema.nodes.math) return this.equation(node);
     if (node.type === schema.nodes.field) return this.field(node);
+    if (node.type === schema.nodes.footnote) {
+      return node.attrs.xml ?? `<w:r>${this.runProps(node.marks) || '<w:rPr><w:rStyle w:val="FootnoteReference"/></w:rPr>'}<w:footnoteReference w:id="${escapeAttr(node.attrs.id)}"/></w:r>`;
+    }
     return "";
   }
 
@@ -306,6 +312,80 @@ ${start}${new BodyWriter(ctx, story).blocks(story.doc)}</${info.root}>`;
     story.rootStart = start;
     story.saved = story.doc;
   }
+}
+
+// ---- footnotes ----------------------------------------------------------------------
+
+const FOOTNOTES = {
+  type: "http://schemas.openxmlformats.org/officeDocument/2006/relationships/footnotes",
+  content: "application/vnd.openxmlformats-officedocument.wordprocessingml.footnotes+xml",
+};
+const SEPARATORS = [
+  '<w:footnote w:type="separator" w:id="-1"><w:p><w:pPr><w:spacing w:after="0" w:line="240" w:lineRule="auto"/></w:pPr><w:r><w:separator/></w:r></w:p></w:footnote>',
+  '<w:footnote w:type="continuationSeparator" w:id="0"><w:p><w:pPr><w:spacing w:after="0" w:line="240" w:lineRule="auto"/></w:pPr><w:r><w:continuationSeparator/></w:r></w:p></w:footnote>',
+];
+/** The number at the start of a note. */
+const NOTE_NUMBER = '<w:r><w:rPr><w:rStyle w:val="FootnoteReference"/></w:rPr><w:footnoteRef/></w:r>';
+
+/** The footnotes the text refers to, in order. */
+function referencedNotes(doc: Node): string[] {
+  const ids: string[] = [];
+  doc.descendants((n) => {
+    if (n.type === schema.nodes.footnote && !ids.includes(n.attrs.id)) ids.push(n.attrs.id);
+  });
+  return ids;
+}
+
+async function writeFootnotes(doc: Node, ctx: DocContext) {
+  const fn = ctx.footnotes;
+  const ids = referencedNotes(doc).filter((id) => fn.notes.has(id));
+  const unchanged =
+    ids.length === fn.saved.size && ids.every((id) => fn.saved.get(id) && fn.notes.get(id)!.eq(fn.saved.get(id)!));
+  if (unchanged && (fn.path || !ids.length)) return;
+  if (!fn.path) {
+    const dir = documentDir(ctx);
+    fn.path = `${dir}footnotes.xml`;
+    ctx.addedRels.set(newRelId(ctx), { type: FOOTNOTES.type, target: "footnotes.xml", external: false });
+    await addContentType(ctx, `/${fn.path}`, FOOTNOTES.content);
+    await addFootnoteSettings(ctx);
+  }
+  const special = fn.special.length ? fn.special : SEPARATORS;
+  const writer = new BodyWriter(ctx, fn);
+  const notes = ids.map((id) => `<w:footnote w:id="${escapeAttr(id)}">${writer.blocks(fn.notes.get(id)!, NOTE_NUMBER)}</w:footnote>`);
+  const start = fn.rootStart ?? NEW_ROOT("w:footnotes");
+  ctx.zip.file(fn.path, `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n${start}${special.join("")}${notes.join("")}</w:footnotes>`);
+  fn.rootStart = start;
+  fn.special = special;
+  fn.saved = new Map(ids.map((id) => [id, fn.notes.get(id)!]));
+}
+
+/** Word lists the separator notes in the settings. */
+async function addFootnoteSettings(ctx: DocContext) {
+  const path = `${documentDir(ctx)}settings.xml`;
+  const xml = await ctx.zip.file(path)?.async("string");
+  if (!xml || xml.includes("<w:footnotePr")) return;
+  const props = '<w:footnotePr><w:footnote w:id="-1"/><w:footnote w:id="0"/></w:footnotePr>';
+  const at = xml.search(/<w:(endnotePr|compat|docVars|rsids|mathPr|attachedSchema|themeFontLang|clrSchemeMapping|doNotIncludeSubdocsInStats|doNotAutoCompressPictures|forceUpgrade|captions|readModeInkLockDown|smartTagType|schemaLibrary|shapeDefaults|doNotEmbedSmartTags|decimalSymbol|listSeparator)\b/);
+  const end = xml.lastIndexOf("</w:settings>");
+  ctx.zip.file(path, at >= 0 ? xml.slice(0, at) + props + xml.slice(at) : xml.slice(0, end) + props + xml.slice(end));
+}
+
+/** Adds the style definitions DuckWriter needed (for footnotes, captions…) to the document's styles. */
+async function writeAddedStyles(ctx: DocContext) {
+  if (!ctx.addedStyles.length) return;
+  const rel = [...ctx.rels.values(), ...ctx.addedRels.values()].find((r) => r.type.endsWith("/styles"));
+  if (!rel) return;
+  const path = documentDir(ctx) + rel.target.replace(/^\//, "");
+  let xml = await ctx.zip.file(path)?.async("string");
+  if (!xml) return;
+  for (const style of ctx.addedStyles) {
+    const id = /w:styleId="([^"]+)"/.exec(style)?.[1];
+    if (id && xml.includes(`w:styleId="${id}"`)) continue;
+    const end = xml.lastIndexOf("</w:styles>");
+    xml = xml.slice(0, end) + style + xml.slice(end);
+  }
+  ctx.zip.file(path, xml);
+  ctx.addedStyles = [];
 }
 
 /** The order Word requires for the elements of section properties. */

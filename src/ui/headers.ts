@@ -6,12 +6,14 @@ import { DOMSerializer } from "prosemirror-model";
 import type { EditorView } from "prosemirror-view";
 import { h } from "../dom";
 import type { DocContext, Story } from "../docx/model";
+import { ensureStyles } from "../docx/builtins";
 import { createState, createView } from "../editor/editor";
 import { PAGE_GAP } from "../editor/pagination";
 import { schema } from "../editor/schema";
 
 export interface HeaderHost {
   readonly ctx: DocContext;
+  readonly body: EditorView;
   /** Called when a header or footer changed, or editing started or stopped. */
   storiesChanged(): void;
 }
@@ -134,6 +136,7 @@ export class HeadersAndFooters {
     const isNew = !story;
     if (!story) {
       const style = kind === "header" ? "Header" : "Footer";
+      ensureStyles(ctx, style);
       story = {
         kind,
         type: ctx.titlePage && page === 0 ? "first" : "default",
@@ -168,6 +171,7 @@ export class HeadersAndFooters {
       if ((event as KeyboardEvent).key === "Escape") {
         event.preventDefault();
         this.stop();
+        this.host.body.focus();
       }
     });
     this.editing = { kind, page, story: s, view, isNew };

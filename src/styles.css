@@ -816,3 +816,89 @@ span.page-gap.inline {
   background: #e8ecf0;
   border-radius: 2px;
 }
+
+/* ---- footnotes ---------------------------------------------------------------------- */
+
+.doc {
+  counter-reset: footnote;
+}
+
+.footnote-ref {
+  cursor: pointer;
+  text-indent: 0;
+}
+
+.footnote-ref::after {
+  counter-increment: footnote;
+  content: counter(footnote);
+}
+
+/* A mark without the superscript style still looks like one. */
+.doc .footnote-ref:not([data-cstyle] .footnote-ref)::after {
+  vertical-align: super;
+  font-size: 0.7em;
+}
+
+.fn-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  pointer-events: none;
+}
+
+.fn-measure {
+  position: absolute;
+  left: -10000px;
+  top: 0;
+  visibility: hidden;
+}
+
+.fn-area {
+  position: absolute;
+  transform: translateY(-100%);
+  pointer-events: auto;
+}
+
+.fn-area[hidden] {
+  display: none;
+}
+
+.fn-separator {
+  width: 33%;
+  height: 0;
+  margin: 7px 0 8px;
+  border-top: 1px solid #000000;
+}
+
+.fn-note {
+  border-radius: 2px;
+  cursor: pointer;
+}
+
+.fn-note:hover {
+  background: #f3f6f8;
+}
+
+.fn-note.editing {
+  position: relative;
+  outline: 1px dashed var(--accent);
+  background: #ffffff;
+  cursor: text;
+}
+
+.fn-number {
+  vertical-align: super;
+  font-size: 0.7em;
+}
+
+.fn-note.editing .editing-number {
+  position: absolute;
+  left: 0;
+  top: 0;
+  font-size: 7pt;
+  color: #000000;
+}
+
+.fn-note.editing .fn-doc {
+  padding-left: 0.6em;
+}
