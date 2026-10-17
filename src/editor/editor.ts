@@ -46,7 +46,8 @@ export function setLinkOpener(open: typeof linkOpener) {
 }
 
 /** @param pages given for the main text, which is laid out on pages; headers, footers and notes aren't. */
-export function createState(doc: Node, ctx: () => DocContext, pages?: Omit<PaginationHooks, "context">): EditorState {
+/** @param extra more plugins: writing together adds its own. */
+export function createState(doc: Node, ctx: () => DocContext, pages?: Omit<PaginationHooks, "context">, extra: Plugin[] = []): EditorState {
   const c = (make: (ctx: DocContext) => Command): Command => (state, dispatch, view) => make(ctx())(state, dispatch, view);
   return EditorState.create({
     doc,
@@ -116,6 +117,7 @@ export function createState(doc: Node, ctx: () => DocContext, pages?: Omit<Pagin
           },
         },
       }),
+      ...extra,
     ],
   });
 }

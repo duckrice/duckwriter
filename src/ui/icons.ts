@@ -26,6 +26,7 @@ const PATHS = {
   painter: '<rect x="4" y="3" width="14" height="6" rx="1"/><path d="M18 6h2v5h-8v3"/><rect x="10" y="14" width="4" height="7" rx="1"/>',
   clearFormat: '<path d="M6 5h12M12 5 9 19M4 20 20 4"/>',
   link: '<path d="M10 14a4 4 0 0 0 5.700.300l3-3a4 4 0 0 0-5.700-5.700l-1.500 1.500"/><path d="M14 10a4 4 0 0 0-5.700-.300l-3 3a4 4 0 0 0 5.700 5.700l1.500-1.500"/>',
+  share: '<circle cx="8" cy="8" r="3"/><circle cx="17" cy="9" r="2.500"/><path d="M3 20c0-3 2.200-5 5-5s5 2 5 5M13.500 19c.3-2.400 1.800-4 3.500-4 2 0 4 1.600 4 4"/>',
   comment: '<path d="M4 5h16v11H9l-5 4z"/><path d="M8 9h8M8 12h5"/>',
   track: '<path d="M4 20h4L19 9l-4-4L4 16z"/><path d="M13 7l4 4"/><path d="M14 20h6" opacity=".55"/>',
   prevChange: '<path d="m6 15 6-6 6 6"/>',

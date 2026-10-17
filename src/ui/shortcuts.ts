@@ -51,6 +51,7 @@ export interface ShortcutHost {
   nextSpellingMistake(): void;
   toggleSpelling(): void;
   newComment(): void;
+  share(): void;
   pageSetup(): void;
   wordCount(): void;
   toggleNavigation(): void;
@@ -194,6 +195,7 @@ export const SHORTCUTS: Shortcut[] = [
   { group: "Insert", label: "Reference list (bibliography)", keys: ["Alt+Shift+B"], run: (x) => insertBibliography(x.body, x.ctx) },
   { group: "Insert", label: "Sources and citation style (BibTeX, DOI)", keys: ["Alt+Shift+S"], run: (x) => manageSources(x.body, x.ctx) },
   { group: "Insert", label: "Follow a link", keys: ["Ctrl+click"] },
+  { group: "Review", label: "Write together: share this document, or join one", keys: ["Alt+Shift+W"], run: (x) => x.share(), everywhere: true },
   { group: "Review", label: "New comment", keys: ["Ctrl+Alt+M"], run: (x) => x.newComment() },
   { group: "Review", label: "Track changes, on or off", keys: ["Ctrl+Shift+E"], run: (x) => x.toggleTracking(), everywhere: true },
   { group: "Review", label: "Next change or comment", keys: ["Alt+PageDown"], run: (x) => x.stepChange(1) },

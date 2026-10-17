@@ -49,6 +49,7 @@ export interface ToolbarHost {
   showShortcuts(): void;
   find(replace: boolean): void;
   newComment(): void;
+  share(): void;
   openRecent(path: string): void;
   pageSetup(): void;
   toggleTracking(): void;
@@ -213,6 +214,7 @@ export class Toolbar {
         this.splitButton("layout", "Layout", null, () => this.layoutMenu(), () => this.layoutMenu()),
       ),
       group(
+        this.button("share", "Write together: share this document or join one (Alt+Shift+W)", () => this.host.share()),
         this.button("comment", "New comment (Ctrl+Alt+M)", () => this.host.newComment()),
         this.button("track", "Track changes (Ctrl+Shift+E)", () => this.host.toggleTracking()),
         this.button("prevChange", "Previous change or comment (Alt+PageUp)", () => this.host.stepChange(-1)),

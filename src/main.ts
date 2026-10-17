@@ -14,6 +14,10 @@ import { pageSetup } from "./ui/pagesetup";
 import { NavigationPane } from "./ui/navigation";
 import { count, showCounts } from "./ui/wordcount";
 import { offerUpdate } from "./updates";
+import type { Plugin } from "prosemirror-state";
+import type { CollabSession } from "./collab/session";
+import { joinSharing, showSharing, startSharing, stopSharing } from "./ui/share";
+import type { Method } from "./collab/invite";
 import { schema } from "./editor/schema";
 import { PAGE_GAP, relayout, setPageGap, type PageLayout } from "./editor/pagination";
 import { invoke } from "@tauri-apps/api/core";
@@ -41,7 +45,7 @@ class App {
   /** The editor of the main text. */
   body!: EditorView;
   private path: string | null = null;
-  private name = "Document1.docx";
+  name = "Document1.docx";
   /** The document as last opened or saved, to tell whether there are unsaved changes. */
   private savedDoc: Node | null = null;
   private zoom = 1;
@@ -66,6 +70,11 @@ class App {
   private headers: HeadersAndFooters;
   private findBar: FindBar;
   private comments: CommentsPane;
+  /** Writing together, when this document is shared or joined. */
+  collab: CollabSession | null = null;
+  /** The file as last opened or saved: someone joining starts from it. */
+  private base: Uint8Array | null = null;
+  private shareStatus = h("button", { type: "button", class: "status-button share-status", hidden: true, title: "Writing together (Alt+Shift+W)" });
   private navigation: NavigationPane;
   private navButton = h("button", { type: "button", class: "status-button nav-button", title: "Headings: the navigation pane (Alt+Shift+N)" }, "☰ Headings");
   private trackStatus = h("button", { type: "button", class: "status-button track-status", hidden: true, title: "Changes are tracked (Ctrl+Shift+E to stop)" }, "Tracking changes");
@@ -120,7 +129,10 @@ class App {
       get zoom() {
         return app.zoom;
       },
-      commentsChanged: () => this.changed(false, true),
+      commentsChanged: () => {
+        this.changed(false, true);
+        this.collab?.commentsChanged();
+      },
     });
     this.sheet.append(this.comments.el);
     this.navigation = new NavigationPane({
@@ -135,6 +147,8 @@ class App {
     this.navButton.addEventListener("click", () => this.toggleNavigation());
     this.navButton.classList.toggle("active", this.navigation.open);
     this.trackStatus.addEventListener("click", () => this.toggleTracking());
+    this.shareStatus.addEventListener("click", () => this.share());
+    this.workspace.addEventListener("duckwriter-sources", () => this.collab?.sourcesChanged());
     setLinkOpener((href, anchor) => {
       if (href) {
         if (isDesktop) invoke("open_url", { url: href }).catch((error) => this.toast(message(error), "error"));
@@ -177,7 +191,7 @@ class App {
     const zoomIn = h("button", { type: "button", class: "status-button", title: "Zoom in", html: icon("zoomIn", 16), onclick: () => this.stepZoom(1) });
     this.zoomLabel.addEventListener("click", () => this.setZoom(1));
     this.words.addEventListener("click", () => this.wordCount());
-    const status = h("footer", { class: "statusbar" }, this.navButton, this.pageCount, this.words, h("span", { class: "status-spacer" }), this.trackStatus, this.spellStatus, this.saveStatus, zoomOut, this.zoomLabel, zoomIn);
+    const status = h("footer", { class: "statusbar" }, this.navButton, this.pageCount, this.words, h("span", { class: "status-spacer" }), this.shareStatus, this.trackStatus, this.spellStatus, this.saveStatus, zoomOut, this.zoomLabel, zoomIn);
     document.head.append(this.styleEl, this.pageRule);
     root.append(this.toolbar.el, h("div", { class: "main-row" }, this.navigation.el, this.workspace), status, this.toasts);
 
@@ -200,6 +214,7 @@ class App {
     handleShortcuts(this);
     onCloseRequested(async () => {
       const close = await this.confirmDiscard();
+      if (close) this.leaveSharing();
       // Closed on purpose: the recovery copy isn't needed.
       if (close) await this.autosave.clearRecovery();
       return close;
@@ -297,7 +312,7 @@ class App {
   }
 
   /** Shows a document; `path` is where Save writes it (null for a new one). */
-  private show(doc: Node, ctx: DocContext, name: string, path: string | null) {
+  private show(doc: Node, ctx: DocContext, name: string, path: string | null, plugins: Plugin[] = []) {
     this.headers.stop();
     this.footnotes.stop();
     this.ctx = ctx;
@@ -309,7 +324,7 @@ class App {
     delete this.styleEl.dataset.key;
     this.refreshStyles();
     this.sheet.style.width = `${ctx.page.width}pt`;
-    const state = createState(doc, () => this.ctx, { onLayout: (layout) => this.drawPages(layout), noteHeight: (id) => this.footnotes.height(id) });
+    const state = createState(doc, () => this.ctx, { onLayout: (layout) => this.drawPages(layout), noteHeight: (id) => this.footnotes.height(id) }, plugins);
     if (this.body) this.body.updateState(state);
     else {
       this.body = createView(this.sheet, state, {
@@ -365,6 +380,7 @@ class App {
     if (contentChanged) this.autosave?.changed();
     this.findBar?.update();
     this.comments?.render();
+    if (this.collab?.active) this.collab.afterChange();
     this.navigation?.update(docChanged);
     this.placeSheet();
     this.trackStatus.hidden = !this.ctx?.trackChanges;
@@ -402,11 +418,70 @@ class App {
     return !this.path && !this.dirty && this.body.state.doc.textContent === "" && this.body.state.doc.childCount === 1;
   }
 
+  // ---- writing together -----------------------------------------------------------
+
+  /** Write together (Alt+Shift+W): share, join, or see who is here. */
+  share() {
+    showSharing(this);
+  }
+
+  /** As the dialog does (and for tests): share by `method`, or join from an invitation. */
+  shareBy(method: Method, place: string): Promise<string> {
+    return startSharing(this, method, place);
+  }
+
+  joinBy(invite: string, folder = ""): Promise<void> {
+    return joinSharing(this, invite, folder);
+  }
+
+  baseBytes(): Uint8Array {
+    return this.base ?? new Uint8Array();
+  }
+
+  get folder(): string | null {
+    return this.path ? this.path.slice(0, Math.max(this.path.lastIndexOf("\\"), this.path.lastIndexOf("/"))) : null;
+  }
+
+  openShared(doc: Node, ctx: DocContext, name: string, plugins: Plugin[]) {
+    this.show(doc, ctx, `${name.replace(/\.docx$/i, "")} (shared).docx`, null, plugins);
+  }
+
+  setPlugins(add: Plugin[], remove: Plugin[]) {
+    const state = this.body.state;
+    this.body.updateState(state.reconfigure({ plugins: [...state.plugins.filter((p) => !remove.includes(p)), ...add] }));
+  }
+
+  sharingChanged() {
+    const session = this.collab?.active ? this.collab : null;
+    this.shareStatus.hidden = !session;
+    if (session) this.shareStatus.textContent = `👥 ${session.role === "host" ? "Sharing" : "Shared"} · ${session.people.size}`;
+    this.toolbar.update();
+  }
+
+  commentsUpdated() {
+    this.comments.render();
+    this.changed(false, true);
+  }
+
+  sideUpdated() {
+    // Laying the pages out again draws the headers, footers and footnotes anew.
+    relayout(this.body);
+    this.changed(false, true);
+  }
+
+  /** Opening another document here ends writing together on this one. */
+  private leaveSharing() {
+    if (this.collab?.active) stopSharing(this);
+  }
+
   async newDocument(ask = true) {
     // Another document gets a window of its own, as in Word.
     if (ask && isDesktop && !this.blank) return void openWindow(null).catch((error) => this.toast(message(error), "error"));
     if (ask && !(await this.confirmDiscard())) return;
-    const { doc, context } = await readDocx(await blankDocx());
+    this.leaveSharing();
+    const bytes = await blankDocx();
+    const { doc, context } = await readDocx(bytes);
+    this.base = bytes;
     this.show(doc, context, "Document1.docx", null);
   }
 
@@ -459,6 +534,8 @@ class App {
     }
     try {
       const { doc, context } = await readDocx(bytes);
+      this.leaveSharing();
+      this.base = bytes;
       this.show(doc, context, name, path);
       if (path) addRecent(path);
     } catch (error) {
@@ -492,7 +569,9 @@ class App {
     const doc = this.body.state.doc;
     const titlePage = this.ctx.titlePage;
     try {
-      await writePath(path, await this.build());
+      const bytes = await this.build();
+      await writePath(path, bytes);
+      this.base = bytes;
     } catch (error) {
       if (!quiet) this.toast(`Couldn't save: ${message(error)}`, "error");
       return false;

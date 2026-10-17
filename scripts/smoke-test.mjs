@@ -1156,6 +1156,60 @@ await session(sample("letterhead.docx"), 9572, async (app) => {
   await app.shoot("header-logo");
 });
 
+// ---- writing together: two DuckWriters, three ways of connecting --------------------------------
+
+const relayPort = 8799;
+const relay = spawn(process.execPath, [join(root, "server", "relay.mjs")], { env: { ...process.env, PORT: String(relayPort) }, stdio: "ignore" });
+const liveFolder = mkdtempSync(join(tmpdir(), "duckwriter-live-"));
+await sleep(800);
+
+for (const [method, place, ports] of [
+  ["lan", "", [9580, 9581]],
+  ["relay", `ws://127.0.0.1:${relayPort}`, [9582, 9583]],
+  ["folder", liveFolder, [9584, 9585]],
+]) {
+  // Profiles of their own: the names they type stay out of the other tests.
+  const kariProfile = mkdtempSync(join(tmpdir(), "duckwriter-smoke-a-"));
+  const otherProfile = mkdtempSync(join(tmpdir(), "duckwriter-smoke-b-"));
+  await session(null, ports[0], async (kari) => {
+    await kari.evaluate(`localStorage.setItem("duckwriter.author", "Kari")`);
+    await kari.debugHandle();
+    await kari.type("Hello");
+    const invite = await kari.evaluate(`window.__dw.shareBy(${JSON.stringify(method)}, ${JSON.stringify(place)})`);
+    check(`${method}: sharing gives an invitation`, typeof invite === "string" && invite.startsWith("DW1."), String(invite));
+    await session(null, ports[1], async (ola) => {
+      await ola.evaluate(`localStorage.setItem("duckwriter.author", "Ola")`);
+      await ola.debugHandle();
+      await ola.evaluate(`window.__dw.joinBy(${JSON.stringify(invite)}, ${JSON.stringify(method === "folder" ? liveFolder : "")})`);
+      const textOf = (app) => app.evaluate(`window.__dw.body.state.doc.textContent`);
+      check(`${method}: joining opens the shared document`, (await textOf(ola)) === "Hello" && (await ola.evaluate(`document.title.includes("(shared)")`)), await textOf(ola));
+      // Both type at once.
+      await kari.key("End", 35, CTRL);
+      await ola.key("Home", 36, CTRL);
+      await kari.type(", world");
+      await ola.type("Dear Kari: ");
+      const same = async () => (await textOf(kari)) === "Dear Kari: Hello, world" && (await textOf(ola)) === "Dear Kari: Hello, world";
+      let ok = false;
+      for (let i = 0; i < 40 && !ok; i++) {
+        await sleep(250);
+        ok = await same();
+      }
+      check(`${method}: what both type at the same time ends up the same for both`, ok, `${await textOf(kari)} | ${await textOf(ola)}`);
+      const caret = await kari.waitFor(`[...document.querySelectorAll(".doc .peer-label")].some((l) => l.textContent === "Ola")`, 10000);
+      check(`${method}: each sees where the other's cursor is, with their name`, caret && (await ola.waitFor(`[...document.querySelectorAll(".doc .peer-label")].some((l) => l.textContent === "Kari")`, 10000)));
+      check(`${method}: the status bar says who is there`, /Sharing · 2/.test(await kari.evaluate(`document.querySelector(".share-status").textContent`)));
+      if (method === "lan") await kari.shoot("writing-together");
+      await kari.evaluate(`window.__dw.collab.stop()`);
+      check(`${method}: when the sharer stops, the other keeps their copy`, await ola.waitFor(`document.querySelector(".share-status").hidden && window.__dw.body.state.doc.textContent === "Dear Kari: Hello, world"`, 8000));
+      check(`${method}: no errors in either app`, kari.errors.length === 0 && ola.errors.length === 0, [...kari.errors, ...ola.errors].join("; "));
+    }, { profileDir: otherProfile });
+  }, { profileDir: kariProfile });
+  rmSync(kariProfile, { recursive: true, force: true });
+  rmSync(otherProfile, { recursive: true, force: true });
+}
+relay.kill();
+rmSync(liveFolder, { recursive: true, force: true });
+
 // ---- links ----------------------------------------------------------------------------------------
 
 await session(null, 9560, async (app) => {

@@ -1,0 +1,17 @@
+{
+  "name": "duckwriter-relay",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Passes encrypted messages between people writing a DuckWriter document together.",
+  "type": "module",
+  "main": "relay.mjs",
+  "scripts": {
+    "start": "node relay.mjs"
+  },
+  "dependencies": {
+    "ws": "^8.18.0"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

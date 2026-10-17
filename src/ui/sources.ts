@@ -15,6 +15,8 @@ import { schema } from "../editor/schema";
 function refresh(view: EditorView, ctx: DocContext) {
   ctx.bibliography.version++;
   view.dispatch(view.state.tr.setMeta(citationsKey, true));
+  // Others writing along get the sources too.
+  view.dom.dispatchEvent(new CustomEvent("duckwriter-sources", { bubbles: true }));
 }
 
 const label = (s: Source) => {
