@@ -10,6 +10,7 @@ import { createState, createView } from "./editor/editor";
 import { PAGE_GAP, relayout, type PageLayout } from "./editor/pagination";
 import { stylesheetFor } from "./editor/stylesheet";
 import { baseName, isDesktop, onCloseRequested, pickDocument, pickSavePath, readPath, setTitle, startupFiles, writePath } from "./platform";
+import { HeadersAndFooters } from "./ui/headers";
 import { icon } from "./ui/icons";
 import { Toolbar } from "./ui/toolbar";
 
@@ -17,7 +18,8 @@ const ZOOMS = [0.5, 0.67, 0.75, 0.9, 1, 1.1, 1.25, 1.5, 1.75, 2, 2.5, 3];
 
 class App {
   ctx!: DocContext;
-  view!: EditorView;
+  /** The editor of the main text. */
+  body!: EditorView;
   private path: string | null = null;
   private name = "Document1.docx";
   /** The document as last opened or saved, to tell whether there are unsaved changes. */
@@ -35,9 +37,14 @@ class App {
   private zoomLabel = h("button", { type: "button", class: "status-button", title: "Reset zoom to 100%" });
   private toasts = h("div", { class: "toasts", role: "status" });
   private wordTimer = 0;
+  private headers: HeadersAndFooters;
+  /** Whether the first page had its own header when last opened or saved. */
+  private savedTitlePage = false;
 
   constructor(root: HTMLElement) {
     this.toolbar = new Toolbar(this);
+    this.headers = new HeadersAndFooters(this, this.workspace);
+    this.sheet.append(this.headers.layer);
     const zoomOut = h("button", { type: "button", class: "status-button", title: "Zoom out", html: icon("zoomOut", 16), onclick: () => this.stepZoom(-1) });
     const zoomIn = h("button", { type: "button", class: "status-button", title: "Zoom in", html: icon("zoomIn", 16), onclick: () => this.stepZoom(1) });
     this.zoomLabel.addEventListener("click", () => this.setZoom(1));
@@ -57,6 +64,10 @@ class App {
         this.view.focus();
       }
     });
+    // Double-clicking the text while editing a header goes back to the text.
+    this.sheet.addEventListener("dblclick", (event) => {
+      if (this.headers.view && !this.headers.layer.contains(event.target as HTMLElement)) this.headers.stop();
+    });
     window.addEventListener("keydown", (event) => this.onKey(event));
     onCloseRequested(() => this.confirmDiscard());
     window.addEventListener("beforeunload", (event) => {
@@ -65,29 +76,46 @@ class App {
     this.setZoom(1);
   }
 
+  /** The editor being typed in: the main text, or a header or footer. */
+  get view(): EditorView {
+    return this.headers.view ?? this.body;
+  }
+
   get dirty(): boolean {
-    return !!this.savedDoc && !this.view.state.doc.eq(this.savedDoc);
+    if (!this.savedDoc) return false;
+    if (!this.body.state.doc.eq(this.savedDoc) || this.ctx.titlePage !== this.savedTitlePage) return true;
+    return this.ctx.stories.some((s) => !s.saved || !s.doc.eq(s.saved));
+  }
+
+  editHeader() {
+    this.headers.start("header", 0);
+  }
+
+  storiesChanged() {
+    this.changed(false);
   }
 
   /** Shows a document; `path` is where Save writes it (null for a new one). */
   private show(doc: Node, ctx: DocContext, name: string, path: string | null) {
+    this.headers.stop();
     this.ctx = ctx;
     this.path = path;
     this.name = name;
     this.savedDoc = doc;
-    this.styleEl.textContent = stylesheetFor(ctx, ".sheet .doc");
+    this.savedTitlePage = ctx.titlePage;
+    this.styleEl.textContent = `${stylesheetFor(ctx, ".sheet .doc")}\n${stylesheetFor(ctx, ".hf-doc")}`;
     const p = ctx.page;
     this.sheet.style.width = `${p.width}pt`;
     const state = createState(doc, () => this.ctx, (layout) => this.drawPages(layout));
-    if (this.view) this.view.updateState(state);
-    else this.view = createView(this.sheet, state, { onChange: (_view, docChanged) => this.changed(docChanged) });
-    const dom = this.view.dom as HTMLElement;
+    if (this.body) this.body.updateState(state);
+    else this.body = createView(this.sheet, state, { onChange: (_view, docChanged) => this.changed(docChanged) });
+    const dom = this.body.dom as HTMLElement;
     dom.style.margin = `${p.marginTop}pt ${p.marginRight}pt 0 ${p.marginLeft}pt`;
     dom.style.minHeight = `${p.height - p.marginTop - p.marginBottom}pt`;
-    relayout(this.view);
+    relayout(this.body);
     this.workspace.scrollTop = 0;
     this.changed(true);
-    this.view.focus();
+    this.body.focus();
   }
 
   /** Draws a sheet of paper behind each page of text. */
@@ -103,6 +131,7 @@ class App {
     });
     this.sheet.style.height = `${layout.count * pitch - PAGE_GAP}px`;
     this.pageCount.textContent = `${layout.count} ${layout.count === 1 ? "page" : "pages"}`;
+    this.headers.render(layout.count);
   }
 
   private changed(docChanged: boolean) {
@@ -115,7 +144,8 @@ class App {
   }
 
   private countWords() {
-    const text = this.view.state.doc.textBetween(0, this.view.state.doc.content.size, " ", " ");
+    const doc = this.body.state.doc;
+    const text = doc.textBetween(0, doc.content.size, " ", " ");
     const count = (text.match(/[\p{L}\p{N}][\p{L}\p{N}'’\-.]*/gu) ?? []).length;
     this.words.textContent = `${count.toLocaleString()} ${count === 1 ? "word" : "words"}`;
   }
@@ -163,7 +193,7 @@ class App {
 
   /** The document as .docx bytes. */
   async build(): Promise<Uint8Array> {
-    return writeDocx(this.view.state.doc, this.ctx);
+    return writeDocx(this.body.state.doc, this.ctx);
   }
 
   /** Saves; resolves to false if cancelled or failed. */
@@ -173,7 +203,7 @@ class App {
       path = await pickSavePath(this.name);
       if (!path) return false;
     }
-    const doc = this.view.state.doc;
+    const doc = this.body.state.doc;
     try {
       await writePath(path, await this.build());
     } catch (error) {
@@ -183,6 +213,7 @@ class App {
     if (isDesktop) this.path = path;
     this.name = baseName(path);
     this.savedDoc = doc;
+    this.savedTitlePage = this.ctx.titlePage;
     this.changed(false);
     this.toast(`Saved ${this.name}`);
     return true;

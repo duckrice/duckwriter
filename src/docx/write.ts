@@ -6,7 +6,7 @@ import type { Mark, Node } from "prosemirror-model";
 import { schema } from "../editor/schema";
 import { parseMath } from "../math/ast";
 import { toOmml } from "../math/omml";
-import { TWIPS_PER_POINT, type DocContext } from "./model";
+import { TWIPS_PER_POINT, type DocContext, type Relationship, type Story } from "./model";
 import { escapeAttr, escapeText, tag } from "./xml";
 
 /** The order Word requires for the elements of a paragraph's properties. */
@@ -62,6 +62,9 @@ function ordered(elements: string[], order: string[]): string {
 const twips = (points: number) => Math.round(points * TWIPS_PER_POINT);
 
 export async function writeDocx(doc: Node, ctx: DocContext): Promise<Uint8Array> {
+  // Headers and footers first: new ones change the section properties.
+  await writeStories(ctx);
+  updateSectPr(ctx);
   const writer = new BodyWriter(ctx);
   const body = writer.body(doc);
 
@@ -79,15 +82,23 @@ export async function writeDocx(doc: Node, ctx: DocContext): Promise<Uint8Array>
 }
 
 class BodyWriter {
-  constructor(private ctx: DocContext) {}
+  /** @param story a header or footer being written, whose links live in its own part. */
+  constructor(
+    private ctx: DocContext,
+    private story: Story | null = null,
+  ) {}
 
   body(doc: Node): string {
+    return this.blocks(doc) + this.ctx.sectPr;
+  }
+
+  blocks(doc: Node): string {
     let out = "";
     doc.forEach((node) => {
       if (node.type === schema.nodes.paragraph) out += this.paragraph(node);
       else if (node.type === schema.nodes.raw_block) out += node.attrs.xml;
     });
-    return out + this.ctx.sectPr;
+    return out;
   }
 
   paragraph(node: Node): string {
@@ -150,7 +161,15 @@ class BodyWriter {
     if (node.type === schema.nodes.page_break) return `<w:r>${this.runProps(node.marks)}<w:br w:type="page"/></w:r>`;
     if (node.type === schema.nodes.raw_inline) return node.attrs.xml;
     if (node.type === schema.nodes.math) return this.equation(node);
+    if (node.type === schema.nodes.field) return this.field(node);
     return "";
+  }
+
+  private field(node: Node): string {
+    const { instr, result, xml, original } = node.attrs;
+    if (xml && original === `${instr}|${result}`) return xml;
+    const rPr = this.runProps(node.marks);
+    return `<w:fldSimple w:instr="${escapeAttr(instr)}"><w:r>${rPr}${textXml(result || " ")}</w:r></w:fldSimple>`;
   }
 
   private equation(node: Node): string {
@@ -170,6 +189,12 @@ class BodyWriter {
     const { href, anchor } = mark.attrs;
     if (anchor && !href) return `<w:hyperlink w:anchor="${escapeAttr(anchor)}" w:history="1">${content}</w:hyperlink>`;
     let rid: string | null = mark.attrs.rid;
+    if (this.story) {
+      // A link in a header keeps its relationship; a new one is written as plain text for now.
+      const known = rid ? this.story.rels.get(rid) : undefined;
+      if (!known || known.target !== href) return content;
+      return `<w:hyperlink r:id="${escapeAttr(rid!)}" w:history="1">${content}</w:hyperlink>`;
+    }
     const known = rid ? (this.ctx.rels.get(rid) ?? this.ctx.addedRels.get(rid)) : undefined;
     if (!known || known.target !== href) rid = this.addLinkRel(href);
     const ns = this.ctx.prefixes.has("r") ? "" : ` xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"`;
@@ -244,6 +269,72 @@ function textXml(text: string): string {
   return out;
 }
 
+// ---- headers and footers -----------------------------------------------------------
+
+const STORY = {
+  header: { root: "w:hdr", type: "http://schemas.openxmlformats.org/officeDocument/2006/relationships/header", content: "application/vnd.openxmlformats-officedocument.wordprocessingml.header+xml" },
+  footer: { root: "w:ftr", type: "http://schemas.openxmlformats.org/officeDocument/2006/relationships/footer", content: "application/vnd.openxmlformats-officedocument.wordprocessingml.footer+xml" },
+};
+
+const NEW_ROOT = (tag: string) =>
+  `<${tag} xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:m="http://schemas.openxmlformats.org/officeDocument/2006/math">`;
+
+function newRelId(ctx: DocContext): string {
+  let n = ctx.rels.size + ctx.addedRels.size + 1;
+  while (ctx.rels.has(`rId${n}`) || ctx.addedRels.has(`rId${n}`)) n++;
+  return `rId${n}`;
+}
+
+async function writeStories(ctx: DocContext) {
+  const dir = documentDir(ctx);
+  for (const story of ctx.stories) {
+    if (story.path && story.saved && story.doc.eq(story.saved)) continue;
+    const info = STORY[story.kind];
+    if (!story.path) {
+      let n = 1;
+      while (ctx.zip.file(`${dir}${story.kind}${n}.xml`)) n++;
+      story.path = `${dir}${story.kind}${n}.xml`;
+      story.rid = newRelId(ctx);
+      const rel: Relationship = { type: info.type, target: `${story.kind}${n}.xml`, external: false };
+      ctx.addedRels.set(story.rid, rel);
+      await addContentType(ctx, `/${story.path}`, info.content);
+    }
+    const start = story.rootStart ?? NEW_ROOT(info.root);
+    const xml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+${start}${new BodyWriter(ctx, story).blocks(story.doc)}</${info.root}>`;
+    ctx.zip.file(story.path, xml);
+    story.rootStart = start;
+    story.saved = story.doc;
+  }
+}
+
+/** The order Word requires for the elements of section properties. */
+const SECTPR_ORDER = [
+  "headerReference", "footerReference", "footnotePr", "endnotePr", "type", "pgSz", "pgMar", "paperSrc", "pgBorders",
+  "lnNumType", "pgNumType", "cols", "formProt", "vAlign", "noEndnote", "titlePg", "textDirection", "bidi", "rtlGutter",
+  "docGrid", "printerSettings", "sectPrChange",
+];
+
+/** Points the section at its headers and footers, and says whether the first page has its own. */
+function updateSectPr(ctx: DocContext) {
+  const xml = ctx.sectPr || "<w:sectPr></w:sectPr>";
+  const start = /^<w:sectPr\b[^>]*?(\/?)>/.exec(xml);
+  if (!start) return;
+  const open = start[0].replace(/\/>$/, ">");
+  const inner = start[1] ? "" : xml.slice(start[0].length, xml.lastIndexOf("</w:sectPr>"));
+  let parts = splitElements(inner);
+  const ns = ctx.prefixes.has("r") ? "" : ` xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"`;
+  for (const story of ctx.stories) {
+    if (!story.rid || parts.some((p) => p.includes(`"${story.rid}"`))) continue;
+    const name = `${story.kind}Reference`;
+    parts = parts.filter((p) => !(localName(p) === name && p.includes(`w:type="${story.type}"`)));
+    parts.push(`<w:${name} w:type="${story.type}" r:id="${story.rid}"${ns}/>`);
+  }
+  parts = parts.filter((p) => localName(p) !== "titlePg");
+  if (ctx.titlePage) parts.push("<w:titlePg/>");
+  ctx.sectPr = `${open}${ordered(parts, SECTPR_ORDER)}</w:sectPr>`;
+}
+
 // ---- other parts ------------------------------------------------------------------
 
 const NUMBERING_TYPE = "http://schemas.openxmlformats.org/officeDocument/2006/relationships/numbering";
@@ -265,9 +356,7 @@ async function writeNumbering(ctx: DocContext) {
   if (!path || !xml) {
     path = `${dir}numbering.xml`;
     xml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<w:numbering xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"></w:numbering>`;
-    let n = ctx.rels.size + ctx.addedRels.size + 1;
-    while (ctx.rels.has(`rId${n}`) || ctx.addedRels.has(`rId${n}`)) n++;
-    ctx.addedRels.set(`rId${n}`, { type: NUMBERING_TYPE, target: "numbering.xml", external: false });
+    ctx.addedRels.set(newRelId(ctx), { type: NUMBERING_TYPE, target: "numbering.xml", external: false });
     await addContentType(ctx, `/${path}`, NUMBERING_CONTENT);
   }
   // All abstract definitions come before the list instances.

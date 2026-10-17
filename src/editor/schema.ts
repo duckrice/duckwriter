@@ -106,6 +106,20 @@ export const schema = new Schema({
       toDOM: (node) => ["span", { class: "math", "data-latex": node.attrs.latex }, node.attrs.latex],
     },
 
+    /**
+     * A field: text Word works out itself, like a page number (PAGE), the
+     * number of pages (NUMPAGES), a figure number (SEQ Figure) or a reference
+     * to one (REF). `result` is the text shown; `xml` is the field as read,
+     * written back unchanged while the instruction and result stay the same.
+     */
+    field: {
+      group: "inline",
+      inline: true,
+      atom: true,
+      attrs: { instr: {}, result: { default: "" }, xml: { default: null }, original: { default: null } },
+      toDOM: (node) => ["span", { class: "field", "data-instr": fieldKind(node.attrs.instr), title: node.attrs.instr.trim() }, node.attrs.result || " "],
+    },
+
     /** A part of a paragraph DuckWriter can't edit yet (a picture, a field, a bookmark…), kept as is. */
     raw_inline: {
       group: "inline",
@@ -177,6 +191,11 @@ export const schema = new Schema({
     },
   },
 });
+
+/** The kind of a field, from its instruction: " PAGE  \* MERGEFORMAT " is "PAGE". */
+export function fieldKind(instr: string): string {
+  return (instr.trim().split(/\s+/)[0] ?? "").toUpperCase();
+}
 
 /** A font name as CSS, with a fallback of the same kind. */
 export function cssFontFamily(family: string): string {

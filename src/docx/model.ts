@@ -3,6 +3,7 @@
 // puts back everything that wasn't changed.
 
 import type JSZip from "jszip";
+import type { Node } from "prosemirror-model";
 
 export type Align = "left" | "center" | "right" | "justify";
 
@@ -92,6 +93,26 @@ export interface PageSetup {
   marginRight: number;
   marginBottom: number;
   marginLeft: number;
+  /** Distance from the top of the page to the header, and from the bottom to the footer. */
+  headerDistance: number;
+  footerDistance: number;
+}
+
+/** A header or footer: its own little document, in its own part of the file. */
+export interface Story {
+  kind: "header" | "footer";
+  /** Which pages it is for: all ("default"), the first page, or even pages. */
+  type: "default" | "first" | "even";
+  /** Path of its part in the file; null until it is first saved. */
+  path: string | null;
+  rid: string | null;
+  /** The part's root start tag as read, with its namespace declarations. */
+  rootStart: string | null;
+  prefixes: Set<string>;
+  rels: Map<string, Relationship>;
+  doc: Node;
+  /** The content as last saved, to tell whether it changed. */
+  saved: Node | null;
 }
 
 export interface Relationship {
@@ -117,6 +138,10 @@ export interface DocContext {
   /** The document's final section properties, as XML. */
   sectPr: string;
   page: PageSetup;
+  /** Headers and footers. */
+  stories: Story[];
+  /** The first page has its own header and footer. */
+  titlePage: boolean;
 }
 
 export const TWIPS_PER_POINT = 20;
@@ -129,6 +154,8 @@ export const DEFAULT_PAGE: PageSetup = {
   marginRight: 72,
   marginBottom: 72,
   marginLeft: 72,
+  headerDistance: 35.4,
+  footerDistance: 35.4,
 };
 
 /** Follows a style's basedOn chain, nearest last, so later entries win. */

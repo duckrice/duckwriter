@@ -30,6 +30,10 @@ const report = new docx.Document({
   },
   sections: [
     {
+      headers: { default: new docx.Header({ children: [new Paragraph({ alignment: AlignmentType.RIGHT, children: [new TextRun({ text: "Bergen trip 2026", color: "808080" })] })] }) },
+      footers: {
+        default: new docx.Footer({ children: [new Paragraph({ alignment: AlignmentType.CENTER, children: [new TextRun({ children: ["Page ", docx.PageNumber.CURRENT, " of ", docx.PageNumber.TOTAL_PAGES] })] })] }),
+      },
       children: [
         new Paragraph({ heading: HeadingLevel.TITLE, children: [new TextRun("Club trip to Bergen")] }),
         new Paragraph({ heading: HeadingLevel.HEADING_1, children: [new TextRun("Plan")] }),

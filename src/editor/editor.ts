@@ -39,7 +39,8 @@ const heading = (ctx: () => DocContext, level: number): Command => (state, dispa
   return setStyle(ctx(), id)(state, dispatch);
 };
 
-export function createState(doc: Node, ctx: () => DocContext, onLayout: (layout: PageLayout) => void = () => {}): EditorState {
+/** @param onLayout given for the main text, which is laid out on pages; headers and footers aren't. */
+export function createState(doc: Node, ctx: () => DocContext, onLayout?: (layout: PageLayout) => void): EditorState {
   const c = (make: (ctx: DocContext) => Command): Command => (state, dispatch, view) => make(ctx())(state, dispatch, view);
   return EditorState.create({
     doc,
@@ -90,7 +91,7 @@ export function createState(doc: Node, ctx: () => DocContext, onLayout: (layout:
       }),
       keymap(baseKeymap),
       listPlugin(ctx),
-      paginationPlugin({ context: ctx, onLayout }),
+      ...(onLayout ? [paginationPlugin({ context: ctx, onLayout })] : []),
       dropCursor({ color: "#0f766e", width: 2 }),
       gapCursor(),
       new Plugin({
@@ -107,10 +108,11 @@ export function createState(doc: Node, ctx: () => DocContext, onLayout: (layout:
   });
 }
 
-export function createView(host: HTMLElement, state: EditorState, hooks: EditorHooks): EditorView {
+/** @param className "doc" for the main text, "hf-doc" for a header or footer. */
+export function createView(host: HTMLElement, state: EditorState, hooks: EditorHooks, className = "doc"): EditorView {
   const view: EditorView = new EditorView(host, {
     state,
-    attributes: { spellcheck: "true", class: "doc" },
+    attributes: { spellcheck: "true", class: className },
     nodeViews: {
       math: (node, v, getPos) => new MathView(node, v, getPos, (pos) => editEquation(v, pos)),
     },

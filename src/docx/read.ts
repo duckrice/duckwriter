@@ -8,6 +8,7 @@ import { toLatex } from "../math/ast";
 import { MATH_NS, fromOmml } from "../math/omml";
 import {
   DEFAULT_PAGE,
+  type Story,
   TWIPS_PER_POINT,
   type DocContext,
   type ListLevel,
@@ -66,6 +67,28 @@ export async function readDocx(bytes: Uint8Array): Promise<OpenedDocument> {
   }
   if (!blocks.some((b) => b.type === schema.nodes.paragraph)) blocks.push(schema.nodes.paragraph.create());
 
+  const finalSectPr = child(body, "sectPr");
+  const stories: Story[] = [];
+  for (const ref of finalSectPr ? children(finalSectPr) : []) {
+    const kind = isW(ref, "headerReference") ? "header" : isW(ref, "footerReference") ? "footer" : null;
+    const rid = ref.getAttributeNS(NS.r, "id");
+    const rel = rid ? rels.get(rid) : undefined;
+    if (!kind || !rid || !rel) continue;
+    const path = resolvePath(dir, rel.target);
+    const partXml = await text(path);
+    if (!partXml) continue;
+    const partDir = path.slice(0, path.lastIndexOf("/") + 1);
+    const partRels = await readRels(zip, `${partDir}_rels/${path.slice(partDir.length)}.rels`);
+    const partRoot = parseXml(partXml).documentElement;
+    const partPrefixes = declaredPrefixes(partRoot);
+    const partReader = new BodyReader(partPrefixes, partRels, themeFonts);
+    const content = children(partRoot).flatMap((el) => partReader.block(el));
+    if (!content.length) content.push(schema.nodes.paragraph.create());
+    const doc = schema.nodes.doc.create(null, content);
+    const type = (attr(ref, "type") ?? "default") as Story["type"];
+    stories.push({ kind, type, path, rid, rootStart: /<w:(?:hdr|ftr)[^>]*>/.exec(partXml)?.[0] ?? null, prefixes: partPrefixes, rels: partRels, doc, saved: doc });
+  }
+
   const context: DocContext = {
     zip,
     documentXml,
@@ -77,7 +100,9 @@ export async function readDocx(bytes: Uint8Array): Promise<OpenedDocument> {
     rels,
     addedRels: new Map(),
     sectPr,
-    page: readPage(child(body, "sectPr")),
+    page: readPage(finalSectPr),
+    stories,
+    titlePage: !!toggle(finalSectPr, "titlePg"),
   };
   return { doc: schema.nodes.doc.create(null, blocks), context };
 }
@@ -281,6 +306,8 @@ function readPage(sectPr: Element | null): PageSetup {
     marginRight: get(margin, "right", DEFAULT_PAGE.marginRight),
     marginBottom: Math.abs(get(margin, "bottom", DEFAULT_PAGE.marginBottom)),
     marginLeft: get(margin, "left", DEFAULT_PAGE.marginLeft),
+    headerDistance: get(margin, "header", DEFAULT_PAGE.headerDistance),
+    footerDistance: get(margin, "footer", DEFAULT_PAGE.footerDistance),
   };
 }
 
@@ -299,6 +326,15 @@ class BodyReader {
   ) {}
 
   private raw = (el: Element) => rawXml(el, this.prefixes);
+
+  /** A field being read, which may run across several runs. */
+  private capture: { depth: number; instr: string; result: string; separated: boolean; xml: string; marks: readonly Mark[] | null } | null = null;
+
+  /** Keeps a field that can't be held together as it was, unseen. */
+  private abandonField(out: Node[]) {
+    if (this.capture?.xml) out.push(schema.nodes.raw_inline.create({ xml: this.capture.xml, hidden: true }));
+    this.capture = null;
+  }
 
   block(el: Element): Node[] {
     if (isW(el, "p")) return [this.paragraph(el)];
@@ -334,13 +370,24 @@ class BodyReader {
       extra: extra + (markRPr ? this.raw(markRPr) : ""),
     };
     const content: Node[] = [];
+    this.capture = null;
     this.inlines(p, [], content);
+    // A field that goes on into the next paragraph (a table of contents) is kept as it is.
+    if (this.capture) this.abandonField(content);
     return schema.nodes.paragraph.create(attrs, mergeText(content));
   }
 
   /** Reads the runs (and things that hold runs) inside `parent`. */
   private inlines(parent: Element, marks: readonly Mark[], out: Node[]) {
     for (const el of children(parent)) {
+      if (this.capture) {
+        // Bookmarks may sit inside a field; anything else ends what we can keep together.
+        if (isW(el, "bookmarkStart") || isW(el, "bookmarkEnd") || isW(el, "proofErr")) {
+          this.capture.xml += this.raw(el);
+          continue;
+        }
+        if (!isW(el, "r")) this.abandonField(out);
+      }
       if (el.namespaceURI === MATH_NS && (el.localName === "oMath" || el.localName === "oMathPara")) {
         out.push(this.equation(el, marks));
         continue;
@@ -378,9 +425,13 @@ class BodyReader {
         case "moveFrom":
           // Text a tracked change deleted is no longer part of the document.
           break;
-        case "fldSimple":
-          out.push(this.rawInline(el, textOf(el) || "Field", marks));
+        case "fldSimple": {
+          const firstRun = childrenNamed(el, "r")[0];
+          const fieldMarks = this.runMarks(child(firstRun, "rPr"), marks);
+          const instr = attr(el, "instr") ?? "";
+          out.push(schema.nodes.field.create({ instr, result: textOf(el), xml: this.raw(el), original: `${instr}|${textOf(el)}` }, null, fieldMarks));
           break;
+        }
         default:
           // Bookmarks, comment anchors and the like: invisible, but kept.
           out.push(schema.nodes.raw_inline.create({ xml: this.raw(el), hidden: true }));
@@ -413,11 +464,31 @@ class BodyReader {
       text = "";
     };
     for (const el of children(r)) {
-      if (el.namespaceURI !== NS.w) continue;
+      if (el.namespaceURI !== NS.w || isW(el, "rPr") || isW(el, "lastRenderedPageBreak")) continue;
+      // A field (begin, instruction, separate, result, end) may span several runs, or sit in one.
+      const fieldChar = isW(el, "fldChar") ? attr(el, "fldCharType") : null;
+      if (this.capture || fieldChar === "begin") {
+        if (!this.capture) {
+          flush();
+          this.capture = { depth: 0, instr: "", result: "", separated: false, xml: "", marks: null };
+        }
+        const c = this.capture;
+        c.xml += `${startTag(r)}>${rPr ? this.raw(rPr) : ""}${this.raw(el)}</${r.tagName}>`;
+        if (fieldChar === "begin") c.depth++;
+        else if (fieldChar === "separate" && c.depth === 1) c.separated = true;
+        else if (fieldChar === "end") c.depth--;
+        else if (isW(el, "instrText") && c.depth === 1 && !c.separated) c.instr += el.textContent ?? "";
+        else if (c.separated && isW(el, "t")) {
+          c.result += el.textContent ?? "";
+          c.marks ??= marks;
+        } else if (c.separated && isW(el, "tab")) c.result += "\t";
+        if (c.depth === 0) {
+          out.push(schema.nodes.field.create({ instr: c.instr, result: c.result, xml: c.xml, original: `${c.instr}|${c.result}` }, null, c.marks ?? marks));
+          this.capture = null;
+        }
+        continue;
+      }
       switch (el.localName) {
-        case "rPr":
-        case "lastRenderedPageBreak":
-          break;
         case "t":
           text += el.textContent ?? "";
           break;

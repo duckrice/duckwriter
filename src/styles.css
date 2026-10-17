@@ -244,7 +244,8 @@ body {
   color: #000000;
 }
 
-.doc {
+.doc,
+.hf-doc {
   outline: none;
   min-height: 100%;
   tab-size: 36pt;
@@ -253,7 +254,8 @@ body {
   caret-color: #000000;
 }
 
-.doc p.para {
+.doc p.para,
+.hf-doc p.para {
   margin: 0;
 }
 
@@ -716,4 +718,101 @@ span.page-gap.inline {
 
 .page-break::after {
   content: none;
+}
+
+/* ---- headers and footers ----------------------------------------------------------- */
+
+.hf-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  pointer-events: none;
+}
+
+.hf {
+  position: absolute;
+  pointer-events: auto;
+  border: 1px dashed transparent;
+  border-radius: 3px;
+  cursor: default;
+}
+
+.hf.footer {
+  transform: translateY(-100%);
+}
+
+.hf:hover {
+  border-color: #c9d1d9;
+}
+
+.hf.empty:hover::before {
+  content: attr(title);
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #8a949e;
+  font: 9pt "Segoe UI", sans-serif;
+}
+
+.hf .hf-doc {
+  min-height: 1em;
+}
+
+.hf.editing {
+  border-color: var(--accent);
+  background: #ffffff;
+  cursor: text;
+}
+
+.sheet.editing-hf > .doc {
+  opacity: 0.45;
+}
+
+.sheet:not(.editing-hf) .hf .hf-doc {
+  opacity: 0.75;
+}
+
+.hf-bar {
+  position: sticky;
+  top: 0;
+  z-index: 25;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: fit-content;
+  margin: -16px auto 12px;
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel);
+  color: var(--text);
+  box-shadow: var(--shadow);
+}
+
+.hf-bar[hidden] {
+  display: none;
+}
+
+.hf-bar-label {
+  font-weight: 600;
+  margin-right: 6px;
+}
+
+.hf-check {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.field {
+  text-indent: 0;
+}
+
+.hf.editing .field,
+.doc .field[data-instr="SEQ"],
+.doc .field[data-instr="REF"] {
+  background: #e8ecf0;
+  border-radius: 2px;
 }

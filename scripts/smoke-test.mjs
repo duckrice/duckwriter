@@ -120,6 +120,11 @@ async function session(files, port, run, { profileDir = profile } = {}) {
       await app.mouse("mousePressed", x, y);
       await app.mouse("mouseReleased", x, y);
     },
+    async doubleClick(x, y) {
+      await app.click(x, y);
+      await app.mouse("mousePressed", x, y, { clickCount: 2 });
+      await app.mouse("mouseReleased", x, y, { clickCount: 2 });
+    },
     /** Presses at the first point and moves through the rest, like drawing with a pen. */
     async stroke(points) {
       await app.mouse("mouseMoved", points[0][0], points[0][1], { buttons: 0 });
@@ -202,6 +207,7 @@ async function session(files, port, run, { profileDir = profile } = {}) {
 
 const CTRL = 2;
 const SHIFT = 8;
+const ESC = ["Escape", 27];
 /** A size in points as the browser reports it, in pixels. */
 const pt = (points) => `${Math.round(((points * 4) / 3) * 10000) / 10000}px`;
 
@@ -435,6 +441,58 @@ await session(sample("long.docx"), 9437, async (app) => {
   report = await pageReport(app);
   check("after typing, no line sits in a margin or between pages", report.outside === 0, `${report.outside} lines outside`);
   check("no errors in the app", app.errors.length === 0, app.errors.join("; "));
+});
+
+// ---- headers, footers and page numbers -------------------------------------------------
+
+const withHeaders = join(tmpdir(), "duckwriter-smoke-headers.docx");
+rmSync(withHeaders, { force: true });
+
+await session(null, 9438, async (app) => {
+  await app.type("First page");
+  await app.key("Enter", 13, CTRL); // page break
+  await app.type("Second page");
+  await app.waitFor(`document.querySelectorAll(".page-sheet").length === 2`, 5000);
+  const area = (kind, page) => app.center(`.hf.${kind}[data-page="${page}"]`);
+  let at = await area("header", 0);
+  await app.doubleClick(at[0], at[1]);
+  check("double-clicking the top of a page edits its header", await app.waitFor(`!!document.querySelector(".hf.header.editing .ProseMirror") && !document.querySelector(".hf-bar").hidden`, 3000));
+  await app.type("Lab report");
+  await app.key(...ESC);
+  const headerText = (page) => app.evaluate(`document.querySelector('.hf.header[data-page="${page}"]').textContent`);
+  check("the header shows on every page", (await headerText(0)) === "Lab report" && (await headerText(1)) === "Lab report", `${await headerText(0)} / ${await headerText(1)}`);
+
+  at = await area("footer", 0);
+  await app.doubleClick(at[0], at[1]);
+  await app.waitFor(`!!document.querySelector(".hf.footer.editing .ProseMirror")`, 3000);
+  await app.type("Page ");
+  await app.clickOn(`.hf-bar .btn[title="Insert the page number"]`);
+  await app.type(" of ");
+  await app.clickOn(`.hf-bar .btn[title="Insert the number of pages"]`);
+  await app.shoot("editing-footer");
+  await app.key(...ESC);
+  const footerText = (page) => app.evaluate(`document.querySelector('.hf.footer[data-page="${page}"]').textContent`);
+  check("page numbers count up from page to page", (await footerText(0)) === "Page 1 of 2" && (await footerText(1)) === "Page 2 of 2", `${await footerText(0)} / ${await footerText(1)}`);
+
+  at = await area("header", 0);
+  await app.doubleClick(at[0], at[1]);
+  await app.waitFor(`!!document.querySelector(".hf.header.editing")`, 3000);
+  await app.evaluate(`(() => { const c = document.querySelector(".hf-check input"); c.checked = true; c.dispatchEvent(new Event("change")); })()`);
+  await app.waitFor(`document.activeElement?.closest(".hf.header.editing") && document.querySelector(".hf-bar-label").textContent.includes("first page")`, 3000);
+  await app.type("Cover page");
+  await app.key(...ESC);
+  check("the first page can have its own header", (await headerText(0)) === "Cover page" && (await headerText(1)) === "Lab report", `${await headerText(0)} / ${await headerText(1)}`);
+  check("the window title shows there are unsaved changes", (await app.evaluate("document.title")).startsWith("•"));
+  await app.shoot("headers-and-footers");
+
+  await app.debugHandle();
+  check("no errors in the app", app.errors.length === 0, app.errors.join("; "));
+});
+
+await session(sample("report.docx"), 9439, async (app) => {
+  const headerText = await app.evaluate(`document.querySelector('.hf.header[data-page="0"]').textContent`);
+  const footerText = await app.evaluate(`document.querySelector('.hf.footer[data-page="0"]').textContent`);
+  check("headers and footers of an opened document are shown, with page numbers", headerText === "Bergen trip 2026" && footerText === "Page 1 of 1", `${headerText} / ${footerText}`);
 });
 
 await session(sample("not-a-docx.docx"), 9435, async (app) => {

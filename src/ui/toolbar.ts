@@ -31,6 +31,7 @@ export interface ToolbarHost {
   newDocument(): void;
   open(): void;
   save(): void;
+  editHeader(): void;
 }
 
 const FONTS = [
@@ -134,6 +135,7 @@ export class Toolbar {
         this.button("equation", "Equation (Alt+=)", () => insertEquation(this.host.view)),
         this.splitButton("symbol", "Symbol", null, () => this.symbolMenu(), () => this.symbolMenu()),
         this.button("pageBreak", "Page break (Ctrl+Enter)", () => this.run(insertPageBreak())),
+        this.button("header", "Header and footer", () => this.host.editHeader()),
       ),
       fonts,
       sizes,
