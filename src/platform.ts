@@ -23,6 +23,13 @@ export function baseName(path: string): string {
   return path.split(/[\\/]/).pop() ?? path;
 }
 
+/** Windows' spell checker, in the languages of the user's Windows language list. */
+export const windowsSpelling = {
+  languages: () => invoke<string[]>("spell_languages"),
+  check: (words: string[]) => invoke<boolean[]>("spell_check", { words }),
+  suggest: (word: string) => invoke<string[]>("spell_suggest", { word }),
+};
+
 export async function readPath(path: string): Promise<OpenedFile> {
   const buffer = await invoke<ArrayBuffer>("read_file", { path });
   return { name: baseName(path), path, bytes: new Uint8Array(buffer) };

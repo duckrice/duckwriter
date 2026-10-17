@@ -43,6 +43,10 @@ export interface ShortcutHost {
   setLineGrid(on: boolean): void;
   toggleSnap(): void;
   toggleAutoSave(): void;
+  find(replace: boolean): void;
+  findNext(direction: 1 | -1): void;
+  nextSpellingMistake(): void;
+  toggleSpelling(): void;
   /** The toolbar's boxes and menus. */
   focusBox(box: "font" | "size" | "style"): void;
   openMenu(menu: "symbol" | "references" | "layout" | "textColor" | "highlight" | "table"): void;
@@ -90,6 +94,12 @@ export const SHORTCUTS: Shortcut[] = [
   { group: "Editing", label: "Redo", keys: ["Ctrl+Y", "Ctrl+Shift+Z"], run: plain(redo) },
   { group: "Editing", label: "Select everything", keys: ["Ctrl+A"], run: plain(selectAll) },
   { group: "Editing", label: "Cut, copy, paste", keys: ["Ctrl+X", "Ctrl+C", "Ctrl+V"] },
+  { group: "Editing", label: "Find", keys: ["Ctrl+F"], run: (x) => x.find(false), everywhere: true },
+  { group: "Editing", label: "Find and replace", keys: ["Ctrl+H"], run: (x) => x.find(true), everywhere: true },
+  { group: "Editing", label: "Next match", keys: ["F3"], run: (x) => x.findNext(1), everywhere: true },
+  { group: "Editing", label: "Previous match", keys: ["Shift+F3"], run: (x) => x.findNext(-1), everywhere: true },
+  { group: "Editing", label: "Next spelling mistake, with suggestions", keys: ["F7", "Alt+F7"], run: (x) => x.nextSpellingMistake() },
+  { group: "Editing", label: "Spell checking on or off", keys: ["Ctrl+F7"], run: (x) => x.toggleSpelling(), everywhere: true },
   { group: "Editing", label: "New line in the same paragraph", keys: ["Shift+Enter"] },
   { group: "Editing", label: "Page break", keys: ["Ctrl+Enter"], run: plain(insertPageBreak()) },
 

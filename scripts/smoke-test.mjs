@@ -45,6 +45,8 @@ const appEnv = (port, profileDir = profile) => ({
   WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS: `--remote-debugging-port=${port} --disable-features=CalculateNativeWinOcclusion --disable-backgrounding-occluded-windows --disable-renderer-backgrounding`,
   WEBVIEW2_USER_DATA_FOLDER: profileDir,
   DUCKWRITER_RECOVERY_DIR: recoveryDir,
+  // The same spelling languages on any computer the test runs on.
+  DUCKWRITER_SPELL_LANGUAGES: "en-GB,nb-NO",
 });
 
 /** Copies of DuckWriter currently running, by process id. */
@@ -957,6 +959,66 @@ await session(sample("table-long.docx"), 9511, async (app) => {
   check("a long table continues on the next page between rows", report.pages >= 2 && report.gaps >= 1 && report.rows === 71 && report.outside === 0, JSON.stringify(report));
   await app.evaluate(`document.querySelector(".page-gap-row").scrollIntoView({ block: "center" })`);
   await app.shoot("table-across-pages");
+});
+
+// ---- find and replace, spelling -----------------------------------------------------------------
+
+await session(null, 9540, async (app) => {
+  await app.debugHandle();
+  await app.type("The shade of the sky. Shade is light; the shade changes.");
+  await app.key("Enter", 13);
+  await app.type("Ths sentense has speling misstakes. Denne setningen har stavefeill.");
+  await app.key("Home", 36, CTRL);
+  await app.key("F", 70, CTRL);
+  check("Ctrl+F opens the find bar with the cursor in it", await app.waitFor(`!document.querySelector(".find-dock").hidden && document.activeElement?.classList.contains("find-input")`, 2000));
+  await app.type("shade");
+  const count = () => app.evaluate(`document.querySelector(".find-count").textContent`);
+  check("every match is highlighted and counted", (await app.count(".doc .find-match")) === 3 && (await count()) === "1 of 3", await count());
+  await app.key("Enter", 13);
+  await app.key("Enter", 13);
+  check("Enter goes to the next match and selects it", (await count()) === "2 of 3" && (await app.evaluate(`(() => { const s = window.__dw.body.state; return s.doc.textBetween(s.selection.from, s.selection.to); })()`)) === "Shade" && (await app.evaluate(`document.querySelector(".find-match.current").textContent`)) === "Shade", await count());
+  await app.key("Enter", 13, SHIFT);
+  check("Shift+Enter goes back", (await count()) === "1 of 3", await count());
+  await app.shoot("find");
+  await app.key("H", 72, CTRL);
+  check("Ctrl+H shows the replace box", await app.waitFor(`document.activeElement?.placeholder === "Replace with"`, 2000));
+  await app.type("tint");
+  await app.key("Enter", 13);
+  const text = () => app.evaluate(`document.querySelector(".doc p").textContent`);
+  check("Enter in the replace box replaces the match and goes to the next", (await text()) === "The tint of the sky. Shade is light; the shade changes." && (await count()) === "1 of 2", `${await text()} / ${await count()}`);
+  await app.clickText(".find-bar .btn", "Replace all");
+  check("Replace all replaces the rest", (await text()) === "The tint of the sky. tint is light; the tint changes." && (await count()) === "Not found", `${await text()} / ${await count()}`);
+  await app.key("Z", 90, CTRL);
+  await app.key("Escape", 27);
+  check("Esc closes the bar, back in the text, highlights gone", (await app.evaluate(`document.querySelector(".find-dock").hidden && !!document.activeElement?.closest(".doc")`)) && (await app.count(".doc .find-match")) === 0);
+  await app.key("F3", 114);
+  check("F3 opens it again", await app.evaluate(`!document.querySelector(".find-dock").hidden`));
+  await app.key("Escape", 27);
+  // Spelling, with Windows' own spell checker in English and Norwegian at once.
+  const marked = () => app.evaluate(`[...document.querySelectorAll(".doc .spell-error")].map((e) => e.textContent)`);
+  await app.waitFor(`document.querySelectorAll(".doc .spell-error").length >= 5`, 8000);
+  check("misspelt words get a red line, in English and in Norwegian, and right ones don't", JSON.stringify(await marked()) === JSON.stringify(["Ths", "sentense", "speling", "misstakes", "stavefeill"]), JSON.stringify(await marked()));
+  check("the status bar says which languages", /English.*Norwegian|Norwegian.*English|norsk/i.test(await app.evaluate(`document.querySelector(".spell-status").title`)), await app.evaluate(`document.querySelector(".spell-status").title`));
+  await app.key("Home", 36, CTRL);
+  await app.key("F7", 118);
+  check("F7 selects the first mistake and offers suggestions", await app.waitFor(`document.activeElement?.classList.contains("spell-suggestion")`, 5000));
+  const firstSuggestion = await app.evaluate(`document.activeElement.textContent`);
+  await app.shoot("spelling-suggestions");
+  await app.key("Enter", 13);
+  const second = () => app.evaluate(`document.querySelectorAll(".doc p")[1].textContent`);
+  check("Enter puts the suggestion in", (await second()).startsWith(firstSuggestion + " sentense") && (await marked()).length === 4, `${firstSuggestion}: ${await second()}`);
+  const at = await app.evaluate(`(() => { const r = [...document.querySelectorAll(".doc .spell-error")].find((e) => e.textContent === "stavefeill").getBoundingClientRect(); return [r.left + 10, r.top + r.height / 2]; })()`);
+  await app.mouse("mouseMoved", at[0], at[1], { buttons: 0, button: "none" });
+  await app.mouse("mousePressed", at[0], at[1], { button: "right", buttons: 2 });
+  await app.mouse("mouseReleased", at[0], at[1], { button: "right", buttons: 0 });
+  check("right-clicking a marked word opens its menu", await app.waitFor(`!!document.querySelector(".spell-menu .menu-item")`, 5000));
+  await app.clickText(".spell-menu .menu-item", "Add to dictionary");
+  check("Add to dictionary takes the line away", JSON.stringify(await marked()) === JSON.stringify(["sentense", "speling", "misstakes"]), JSON.stringify(await marked()));
+  await app.key("F7", 118, CTRL);
+  check("Ctrl+F7 switches spell checking off", (await marked()).length === 0 && (await app.evaluate(`document.querySelector(".spell-status").textContent`)) === "Spelling off");
+  await app.key("F7", 118, CTRL);
+  check("and on again", (await marked()).length === 3);
+  check("no errors in the app", app.errors.length === 0, app.errors.join("; "));
 });
 
 // ---- save as PDF -------------------------------------------------------------------------------

@@ -52,10 +52,15 @@ written back unchanged.
   columns, merge and split cells, lines and shading, Tab between cells,
   resize columns by dragging; long tables continue on the next page.
 - **Print** (Ctrl+P) and **Save as PDF**, page for page as on screen.
+- **Find and replace** (Ctrl+F, Ctrl+H, F3): every match highlighted, match
+  case, whole words, replace one or all.
+- **Spelling** with Windows' own spell checker, in every language in Windows'
+  language settings at once (Norwegian and English together): a red line
+  under unknown words, suggestions on right-click or F7, Ignore all, Add to
+  dictionary, Ctrl+F7 to switch it off.
 
 ## Next
 
-- Spell check (Windows' own dictionaries); find and replace.
 - Comments and tracked changes: show them, accept or reject changes.
 - Links: insert and edit (Ctrl+K).
 - Header rows repeated on each page of a long table.

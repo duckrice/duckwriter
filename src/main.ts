@@ -12,12 +12,15 @@ import { schema } from "./editor/schema";
 import { PAGE_GAP, relayout, setPageGap, type PageLayout } from "./editor/pagination";
 import { invoke } from "@tauri-apps/api/core";
 import { stylesheetFor } from "./editor/stylesheet";
-import { baseName, isDesktop, onCloseRequested, pickDocument, pickPdfPath, pickSavePath, readPath, setTitle, startupFiles, writePath } from "./platform";
+import { baseName, isDesktop, onCloseRequested, pickDocument, pickPdfPath, pickSavePath, readPath, setTitle, startupFiles, windowsSpelling, writePath } from "./platform";
 import { Footnotes } from "./ui/footnotes";
 import { updateTocs } from "./ui/references";
 import { insertPictureFiles, setSnap, snapOn } from "./ui/pictures";
 import { handleShortcuts, showShortcutHelp } from "./ui/shortcuts";
 import { AutoSave } from "./autosave";
+import { FindBar } from "./ui/findbar";
+import { mistakeAt, nextMistake, openMenuFor, setSpellChecker, setSpelling, spellingOn } from "./editor/spelling";
+import { closeSpellMenu, showSpellMenu } from "./ui/spellmenu";
 import { placeFloatingPictures } from "./editor/imageview";
 import { HeadersAndFooters } from "./ui/headers";
 import { icon } from "./ui/icons";
@@ -46,9 +49,12 @@ class App {
   private zoomLabel = h("button", { type: "button", class: "status-button", title: "Reset zoom to 100%" });
   private toasts = h("div", { class: "toasts", role: "status" });
   private saveStatus = h("button", { type: "button", class: "status-button save-status" });
+  private spellStatus = h("button", { type: "button", class: "status-button spell-status", hidden: true });
+  private spellLanguages: string[] = [];
   private autosave: AutoSave;
   private wordTimer = 0;
   private headers: HeadersAndFooters;
+  private findBar: FindBar;
   /** The page size for printing, as an @page rule. */
   private pageRule = h("style");
   /** Resolves when the next page layout is done. */
@@ -79,7 +85,17 @@ class App {
       },
     });
     this.saveStatus.addEventListener("click", () => this.autosave.toggle());
+    this.spellStatus.addEventListener("click", () => this.toggleSpelling());
+    if (isDesktop) {
+      setSpellChecker(windowsSpelling, showSpellMenu);
+      void windowsSpelling.languages().then((languages) => {
+        this.spellLanguages = languages;
+        this.showSpelling();
+      }, () => setSpellChecker(null));
+    }
     this.headers = new HeadersAndFooters(this, this.workspace);
+    this.findBar = new FindBar(this);
+    this.workspace.prepend(this.findBar.el);
     this.footnotes = new Footnotes(this);
     this.sheet.append(this.headers.layer, this.footnotes.layer);
     // Clicking a footnote's mark in the text opens the note; clicking a contents entry goes to the heading.
@@ -93,7 +109,7 @@ class App {
     const zoomOut = h("button", { type: "button", class: "status-button", title: "Zoom out", html: icon("zoomOut", 16), onclick: () => this.stepZoom(-1) });
     const zoomIn = h("button", { type: "button", class: "status-button", title: "Zoom in", html: icon("zoomIn", 16), onclick: () => this.stepZoom(1) });
     this.zoomLabel.addEventListener("click", () => this.setZoom(1));
-    const status = h("footer", { class: "statusbar" }, this.pageCount, this.words, h("span", { class: "status-spacer" }), this.saveStatus, zoomOut, this.zoomLabel, zoomIn);
+    const status = h("footer", { class: "statusbar" }, this.pageCount, this.words, h("span", { class: "status-spacer" }), this.spellStatus, this.saveStatus, zoomOut, this.zoomLabel, zoomIn);
     document.head.append(this.styleEl, this.pageRule);
     root.append(this.toolbar.el, this.workspace, status, this.toasts);
 
@@ -248,6 +264,7 @@ class App {
   /** @param contentChanged something that is saved changed (the text, a header, a note, the grid). */
   private changed(docChanged: boolean, contentChanged = docChanged) {
     if (contentChanged) this.autosave?.changed();
+    this.findBar?.update();
     this.refreshStyles();
     this.toolbar.update();
     setTitle(`${this.dirty ? "• " : ""}${this.name} – DuckWriter`);
@@ -450,6 +467,49 @@ class App {
   }
 
   // ---- for the keyboard shortcuts ----------------------------------------------
+
+  find(replace: boolean) {
+    this.headers.stop();
+    this.footnotes.stop();
+    this.findBar.open(replace);
+  }
+
+  findNext(direction: 1 | -1) {
+    this.findBar.go(direction);
+  }
+
+  /** Selects the next word with a red line and opens its suggestions (F7). */
+  nextSpellingMistake() {
+    const view = this.view;
+    if (!spellingOn()) {
+      this.toast("Spelling is off (Ctrl+F7 turns it on)");
+      return;
+    }
+    const here = mistakeAt(view.state, view.state.selection.from);
+    const mistake = here && !view.state.selection.empty ? nextMistake(view.state) : (here ?? nextMistake(view.state));
+    if (!mistake) {
+      this.toast("No spelling mistakes");
+      return;
+    }
+    view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, mistake.from, mistake.to)).scrollIntoView());
+    // After the page has scrolled to it.
+    requestAnimationFrame(() => openMenuFor(view, mistake));
+  }
+
+  toggleSpelling() {
+    closeSpellMenu();
+    setSpelling(!spellingOn());
+    this.showSpelling();
+    this.toast(spellingOn() ? "Spelling is checked" : "Spelling isn't checked");
+  }
+
+  private showSpelling() {
+    const names = new Intl.DisplayNames(undefined, { type: "language" });
+    const languages = this.spellLanguages.map((tag) => names.of(tag) ?? tag).join(", ");
+    this.spellStatus.hidden = !this.spellLanguages.length;
+    this.spellStatus.textContent = spellingOn() ? "Spelling on" : "Spelling off";
+    this.spellStatus.title = `${spellingOn() ? "Checking spelling" : "Not checking spelling"} in ${languages} (Ctrl+F7 to switch; F7 for the next mistake).\nThe languages are the ones in Windows' language settings.`;
+  }
 
   /** Zooms in (1), out (-1) or back to 100% (0). */
   zoomBy(direction: 1 | -1 | 0) {

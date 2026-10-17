@@ -41,6 +41,7 @@ export interface ToolbarHost {
   editHeader(): void;
   insertFootnote(): void;
   showShortcuts(): void;
+  find(replace: boolean): void;
 }
 
 const FONTS = [
@@ -146,7 +147,7 @@ export class Toolbar {
         this.button("pdf", "Save as PDF (Ctrl+Alt+Shift+P)", () => this.host.savePdf()),
         this.button("keyboard", "Keyboard shortcuts (F1)", () => this.host.showShortcuts()),
       ),
-      group(this.button("undo", "Undo (Ctrl+Z)", () => this.run(undo)), this.button("redo", "Redo (Ctrl+Y)", () => this.run(redo))),
+      group(this.button("undo", "Undo (Ctrl+Z)", () => this.run(undo)), this.button("redo", "Redo (Ctrl+Y)", () => this.run(redo)), this.button("find", "Find and replace (Ctrl+F, Ctrl+H)", () => this.host.find(false))),
       group(this.styleSelect),
       group(
         this.fontInput,

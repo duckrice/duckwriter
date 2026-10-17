@@ -1,3 +1,5 @@
+mod spelling;
+
 use std::{
     fs,
     path::{Path, PathBuf},
@@ -165,7 +167,7 @@ pub fn run() {
             }
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![startup_files, read_file, write_file, recovery_dir, recovery_files, delete_recovery, save_pdf])
+        .invoke_handler(tauri::generate_handler![startup_files, read_file, write_file, recovery_dir, recovery_files, delete_recovery, save_pdf, spelling::spell_languages, spelling::spell_check, spelling::spell_suggest])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

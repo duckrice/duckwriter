@@ -15,6 +15,8 @@ import { insertTab, leaveListAtStart, newParagraph } from "./commands";
 import { DuckTableView } from "./tableview";
 import { changeListLevel, listPlugin } from "./lists";
 import { fieldsPlugin } from "./fields";
+import { findPlugin } from "./find";
+import { spellingPlugin } from "./spelling";
 import { ImageView, type PictureHooks } from "./imageview";
 import { MathView } from "./mathview";
 import { paginationPlugin, type PaginationHooks } from "./pagination";
@@ -73,6 +75,8 @@ export function createState(doc: Node, ctx: () => DocContext, pages?: Omit<Pagin
       tableEditing(),
       listPlugin(ctx),
       fieldsPlugin(),
+      findPlugin(),
+      spellingPlugin(),
       ...(pages ? [paginationPlugin({ context: ctx, ...pages })] : []),
       dropCursor({ color: "#0f766e", width: 2 }),
       gapCursor(),
@@ -94,7 +98,7 @@ export function createState(doc: Node, ctx: () => DocContext, pages?: Omit<Pagin
 export function createView(host: HTMLElement, state: EditorState, hooks: EditorHooks, className = "doc"): EditorView {
   const view: EditorView = new EditorView(host, {
     state,
-    attributes: { spellcheck: "true", class: className },
+    attributes: { spellcheck: "false", class: className },
     nodeViews: {
       math: (node, v, getPos) => new MathView(node, v, getPos, (pos) => editEquation(v, pos)),
       ...(hooks.pictures ? { image: (node: Node, v: EditorView, getPos: () => number | undefined) => new ImageView(node, v, getPos, hooks.pictures!) } : {}),

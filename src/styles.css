@@ -1411,3 +1411,122 @@ kbd {
     background: transparent !important;
   }
 }
+
+/* ---- find and replace -------------------------------------------------------------------- */
+
+.find-dock {
+  position: sticky;
+  top: 20px;
+  z-index: 26;
+  height: 0;
+}
+
+.find-bar {
+  position: absolute;
+  top: -12px;
+  right: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-width: 100%;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel);
+  color: var(--text);
+  box-shadow: var(--shadow);
+}
+
+.find-dock[hidden],
+.find-row[hidden] {
+  display: none;
+}
+
+.find-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.find-input {
+  width: 220px;
+}
+
+.find-count {
+  min-width: 64px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.find-count.none {
+  color: #b42318;
+}
+
+.find-step {
+  min-width: 30px;
+}
+
+.find-option {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.find-close {
+  font-size: 16px;
+}
+
+.doc .find-match {
+  background: rgb(250 204 21 / 0.45);
+  border-radius: 2px;
+}
+
+.doc .find-match.current {
+  background: rgb(249 115 22 / 0.6);
+}
+
+@media print {
+  .find-dock {
+    display: none !important;
+  }
+
+  .doc .find-match {
+    background: none !important;
+  }
+}
+
+/* ---- spelling -------------------------------------------------------------------------------- */
+
+.doc .spell-error,
+.hf-doc .spell-error {
+  text-decoration: underline wavy #e11d48;
+  text-decoration-skip-ink: none;
+  text-underline-offset: 2px;
+}
+
+.spell-menu {
+  min-width: 200px;
+}
+
+.spell-suggestion {
+  font-weight: 600;
+}
+
+.spell-loading {
+  padding: 6px 10px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+@media print {
+  .doc .spell-error,
+  .hf-doc .spell-error {
+    text-decoration: none !important;
+  }
+
+  .spell-menu {
+    display: none !important;
+  }
+}
