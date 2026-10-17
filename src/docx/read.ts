@@ -65,15 +65,7 @@ export async function readDocx(bytes: Uint8Array): Promise<OpenedDocument> {
   const prefixes = declaredPrefixes(root);
 
   // The pictures, ready to show.
-  const imageSources = new Map<string, string>();
-  for (const [rid, rel] of rels) {
-    if (rel.external || !rel.type.endsWith("/image")) continue;
-    const path = resolvePath(dir, rel.target);
-    const bytes = await zip.file(path)?.async("uint8array");
-    if (!bytes) continue;
-    const type = imageType(path.split(".").pop() ?? "");
-    imageSources.set(rid, imageUrl(bytes, type));
-  }
+  const imageSources = await partImages(zip, rels, dir);
 
   const reader = new BodyReader(prefixes, rels, themeFonts, imageSources);
   const blocks: Node[] = [];
@@ -116,7 +108,8 @@ export async function readDocx(bytes: Uint8Array): Promise<OpenedDocument> {
     const partRels = await readRels(zip, `${partDir}_rels/${path.slice(partDir.length)}.rels`);
     const partRoot = parseXml(partXml).documentElement;
     const partPrefixes = declaredPrefixes(partRoot);
-    const partReader = new BodyReader(partPrefixes, partRels, themeFonts);
+    // A header's pictures (a logo) are its own, through its own relationships.
+    const partReader = new BodyReader(partPrefixes, partRels, themeFonts, await partImages(zip, partRels, partDir));
     const content = children(partRoot).flatMap((el) => partReader.block(el));
     if (!content.length) content.push(schema.nodes.paragraph.create());
     const doc = schema.nodes.doc.create(null, content);
@@ -236,6 +229,19 @@ function commentParagraphText(p: Element): string {
     }
   };
   walk(p);
+  return out;
+}
+
+/** The pictures a part (the document, a header…) refers to, by relationship id, ready to show. */
+async function partImages(zip: JSZip, rels: Map<string, Relationship>, dir: string): Promise<Map<string, string>> {
+  const out = new Map<string, string>();
+  for (const [rid, rel] of rels) {
+    if (rel.external || !rel.type.endsWith("/image")) continue;
+    const path = resolvePath(dir, rel.target);
+    const bytes = await zip.file(path)?.async("uint8array");
+    if (!bytes) continue;
+    out.set(rid, imageUrl(bytes, imageType(path.split(".").pop() ?? "")));
+  }
   return out;
 }
 

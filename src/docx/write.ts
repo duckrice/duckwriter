@@ -756,6 +756,25 @@ function updateSectPr(ctx: DocContext) {
   }
   parts = parts.filter((p) => localName(p) !== "titlePg");
   if (ctx.titlePage) parts.push("<w:titlePg/>");
+  if (ctx.pageChanged) {
+    const p = ctx.page;
+    const kept = (name: string) => {
+      const el = parts.find((e) => localName(e) === name) ?? "";
+      const attrs = new Map([...el.matchAll(/(w:\w+)="([^"]*)"/g)].map((m) => [m[1], m[2]]));
+      parts = parts.filter((e) => localName(e) !== name);
+      return attrs;
+    };
+    const size = kept("pgSz");
+    size.set("w:w", String(twips(p.width)));
+    size.set("w:h", String(twips(p.height)));
+    if (p.width > p.height) size.set("w:orient", "landscape");
+    else size.delete("w:orient");
+    const margin = kept("pgMar");
+    for (const [name, value] of [["w:top", p.marginTop], ["w:right", p.marginRight], ["w:bottom", p.marginBottom], ["w:left", p.marginLeft], ["w:header", p.headerDistance], ["w:footer", p.footerDistance]] as const) margin.set(name, String(twips(value)));
+    if (!margin.has("w:gutter")) margin.set("w:gutter", "0");
+    parts.push(tag("w:pgSz", Object.fromEntries(size)), tag("w:pgMar", Object.fromEntries(margin)));
+    ctx.pageChanged = false;
+  }
   if (ctx.lineGridChanged) {
     parts = parts.filter((p) => localName(p) !== "docGrid");
     parts.push(ctx.page.lineGrid ? `<w:docGrid w:type="lines" w:linePitch="${Math.round(ctx.page.lineGrid * TWIPS_PER_POINT)}"/>` : '<w:docGrid w:linePitch="360"/>');

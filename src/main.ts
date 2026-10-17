@@ -9,6 +9,10 @@ import { blankDocx } from "./docx/template";
 import { writeDocx } from "./docx/write";
 import { createState, createView, setLinkOpener } from "./editor/editor";
 import { bookmarkPosition } from "./ui/references";
+import { addRecent, removeRecent } from "./recent";
+import { pageSetup } from "./ui/pagesetup";
+import { NavigationPane } from "./ui/navigation";
+import { count, showCounts } from "./ui/wordcount";
 import { schema } from "./editor/schema";
 import { PAGE_GAP, relayout, setPageGap, type PageLayout } from "./editor/pagination";
 import { invoke } from "@tauri-apps/api/core";
@@ -48,7 +52,9 @@ class App {
   private sheet = h("div", { class: "sheet" }, this.pagesLayer);
   private workspace = h("main", { class: "workspace" }, this.sheet);
   private pageCount = h("span", { class: "status-item" });
-  private words = h("span", { class: "status-item" });
+  private words = h("button", { type: "button", class: "status-button words", title: "Word count (Ctrl+Shift+G)" });
+  private totalWords = 0;
+  private pages = 1;
   private zoomLabel = h("button", { type: "button", class: "status-button", title: "Reset zoom to 100%" });
   private toasts = h("div", { class: "toasts", role: "status" });
   private saveStatus = h("button", { type: "button", class: "status-button save-status" });
@@ -59,6 +65,8 @@ class App {
   private headers: HeadersAndFooters;
   private findBar: FindBar;
   private comments: CommentsPane;
+  private navigation: NavigationPane;
+  private navButton = h("button", { type: "button", class: "status-button nav-button", title: "Headings: the navigation pane (Alt+Shift+N)" }, "☰ Headings");
   private trackStatus = h("button", { type: "button", class: "status-button track-status", hidden: true, title: "Changes are tracked (Ctrl+Shift+E to stop)" }, "Tracking changes");
   /** The page size for printing, as an @page rule. */
   private pageRule = h("style");
@@ -114,6 +122,17 @@ class App {
       commentsChanged: () => this.changed(false, true),
     });
     this.sheet.append(this.comments.el);
+    this.navigation = new NavigationPane({
+      get body() {
+        return app.body;
+      },
+      get ctx() {
+        return app.ctx;
+      },
+      goTo: (pos) => this.goTo(pos),
+    });
+    this.navButton.addEventListener("click", () => this.toggleNavigation());
+    this.navButton.classList.toggle("active", this.navigation.open);
     this.trackStatus.addEventListener("click", () => this.toggleTracking());
     setLinkOpener((href, anchor) => {
       if (href) {
@@ -126,6 +145,22 @@ class App {
       this.goTo(this.body.state.doc.resolve(pos).before());
     });
     window.addEventListener("resize", () => this.placeSheet());
+    this.workspace.addEventListener("duckwriter-toast", (event) => this.toast((event as CustomEvent<string>).detail));
+    // A Word document dropped on the window opens; pictures dropped in the text are the editor's.
+    const wordFile = (event: DragEvent) => [...(event.dataTransfer?.items ?? [])].some((i) => i.kind === "file" && /wordprocessingml|msword/.test(i.type));
+    window.addEventListener("dragover", (event) => {
+      if (wordFile(event)) {
+        event.preventDefault();
+        event.dataTransfer!.dropEffect = "copy";
+      }
+    }, true);
+    window.addEventListener("drop", (event) => {
+      const file = [...(event.dataTransfer?.files ?? [])].find((f) => /\.docx?$/i.test(f.name));
+      if (!file) return;
+      event.preventDefault();
+      event.stopPropagation();
+      void this.openDropped(file);
+    }, true);
     this.workspace.prepend(this.findBar.el);
     this.footnotes = new Footnotes(this);
     this.sheet.append(this.headers.layer, this.footnotes.layer);
@@ -140,9 +175,10 @@ class App {
     const zoomOut = h("button", { type: "button", class: "status-button", title: "Zoom out", html: icon("zoomOut", 16), onclick: () => this.stepZoom(-1) });
     const zoomIn = h("button", { type: "button", class: "status-button", title: "Zoom in", html: icon("zoomIn", 16), onclick: () => this.stepZoom(1) });
     this.zoomLabel.addEventListener("click", () => this.setZoom(1));
-    const status = h("footer", { class: "statusbar" }, this.pageCount, this.words, h("span", { class: "status-spacer" }), this.trackStatus, this.spellStatus, this.saveStatus, zoomOut, this.zoomLabel, zoomIn);
+    this.words.addEventListener("click", () => this.wordCount());
+    const status = h("footer", { class: "statusbar" }, this.navButton, this.pageCount, this.words, h("span", { class: "status-spacer" }), this.trackStatus, this.spellStatus, this.saveStatus, zoomOut, this.zoomLabel, zoomIn);
     document.head.append(this.styleEl, this.pageRule);
-    root.append(this.toolbar.el, this.workspace, status, this.toasts);
+    root.append(this.toolbar.el, h("div", { class: "main-row" }, this.navigation.el, this.workspace), status, this.toasts);
 
     this.workspace.addEventListener("wheel", (event) => {
       if (!event.ctrlKey) return;
@@ -199,6 +235,37 @@ class App {
     view.focus();
   }
 
+  /** The page's size and margins, on screen. */
+  private applyPage() {
+    const p = this.ctx.page;
+    this.sheet.style.width = `${p.width}pt`;
+    const dom = this.body.dom as HTMLElement;
+    dom.style.margin = `${p.marginTop}pt ${p.marginRight}pt 0 ${p.marginLeft}pt`;
+    dom.style.minHeight = `${p.height - p.marginTop - p.marginBottom}pt`;
+    this.pageRule.textContent = "";
+    relayout(this.body);
+  }
+
+  /** Shows or hides the headings beside the page (Alt+Shift+N). */
+  toggleNavigation() {
+    this.navigation.toggle();
+    this.navButton.classList.toggle("active", this.navigation.open);
+    this.placeSheet();
+  }
+
+  /** Paper size, orientation and margins (Alt+P). */
+  pageSetup() {
+    pageSetup(this.ctx.page, (page) => {
+      this.ctx.page = page;
+      this.ctx.pageChanged = true;
+      this.lineGridSaved = false;
+      this.applyPage();
+      this.headers.stop();
+      this.changed(false, true);
+      this.view.focus();
+    });
+  }
+
   /** Lines of text snap to an evenly spaced grid (Word's document grid), or stop doing so. */
   setLineGrid(on: boolean) {
     const run = resolvedRun(this.ctx.styles, null);
@@ -239,8 +306,7 @@ class App {
     this.lineGridSaved = true;
     delete this.styleEl.dataset.key;
     this.refreshStyles();
-    const p = ctx.page;
-    this.sheet.style.width = `${p.width}pt`;
+    this.sheet.style.width = `${ctx.page.width}pt`;
     const state = createState(doc, () => this.ctx, { onLayout: (layout) => this.drawPages(layout), noteHeight: (id) => this.footnotes.height(id) });
     if (this.body) this.body.updateState(state);
     else {
@@ -250,10 +316,7 @@ class App {
         onImageFiles: (files, view, pos) => void insertPictureFiles(files, view, this.ctx, pos).catch((error) => this.toast(message(error), "error")),
       });
     }
-    const dom = this.body.dom as HTMLElement;
-    dom.style.margin = `${p.marginTop}pt ${p.marginRight}pt 0 ${p.marginLeft}pt`;
-    dom.style.minHeight = `${p.height - p.marginTop - p.marginBottom}pt`;
-    relayout(this.body);
+    this.applyPage();
     this.workspace.scrollTop = 0;
     this.changed(true);
     this.body.focus();
@@ -273,6 +336,7 @@ class App {
     // On paper the pages follow each other exactly; a hair less keeps a blank page from spilling over.
     this.sheet.style.height = PAGE_GAP ? `${layout.count * pitch - PAGE_GAP}px` : `calc(${layout.count * p.height}pt - 1px)`;
     this.pageCount.textContent = `${layout.count} ${layout.count === 1 ? "page" : "pages"}`;
+    this.pages = layout.count;
     this.headers.render(layout.count);
     this.footnotes.render(layout);
     this.comments.layout();
@@ -299,6 +363,7 @@ class App {
     if (contentChanged) this.autosave?.changed();
     this.findBar?.update();
     this.comments?.render();
+    this.navigation?.update(docChanged);
     this.placeSheet();
     this.trackStatus.hidden = !this.ctx?.trackChanges;
     this.refreshStyles();
@@ -307,14 +372,25 @@ class App {
     if (docChanged) {
       clearTimeout(this.wordTimer);
       this.wordTimer = window.setTimeout(() => this.countWords(), 300);
-    }
+    } else this.showWords();
+  }
+
+  /** The word count, with the selection's (Ctrl+Shift+G). */
+  wordCount() {
+    const { selection, doc } = this.body.state;
+    showCounts(doc, selection, this.pages);
+  }
+
+  /** "340 words", or "12 of 340 words" with text selected. */
+  private showWords() {
+    const { selection, doc } = this.body.state;
+    const total = `${this.totalWords.toLocaleString()} ${this.totalWords === 1 ? "word" : "words"}`;
+    this.words.textContent = selection.empty ? total : `${count(doc, selection.from, selection.to).words.toLocaleString()} of ${total}`;
   }
 
   private countWords() {
-    const doc = this.body.state.doc;
-    const text = doc.textBetween(0, doc.content.size, " ", " ");
-    const count = (text.match(/[\p{L}\p{N}][\p{L}\p{N}'’\-.]*/gu) ?? []).length;
-    this.words.textContent = `${count.toLocaleString()} ${count === 1 ? "word" : "words"}`;
+    this.totalWords = count(this.body.state.doc).words;
+    this.showWords();
   }
 
   // ---- files ----------------------------------------------------------------
@@ -345,6 +421,24 @@ class App {
     }
   }
 
+  /** Opens a document from the recent list; one that is gone is taken off it. */
+  async openRecent(path: string) {
+    if (!(await this.confirmDiscard())) return;
+    try {
+      const file = await readPath(path);
+      await this.load(file.bytes, file.name, file.path);
+    } catch {
+      removeRecent(path);
+      this.toast(`${baseName(path)} isn't there any more (moved, renamed or deleted)`, "error");
+    }
+  }
+
+  /** A document dropped on the window. The browser doesn't say where it is, so Save asks. */
+  private async openDropped(file: File) {
+    if (!(await this.confirmDiscard())) return;
+    await this.load(new Uint8Array(await file.arrayBuffer()), file.name, null);
+  }
+
   private async load(bytes: Uint8Array, name: string, path: string | null) {
     if (!/\.docx$/i.test(name)) {
       this.toast(/\.doc$/i.test(name) ? `${name} is an old Word file (.doc). Open it in Word and save it as .docx first.` : `${name} isn't a Word document (.docx).`, "error");
@@ -353,6 +447,7 @@ class App {
     try {
       const { doc, context } = await readDocx(bytes);
       this.show(doc, context, name, path);
+      if (path) addRecent(path);
     } catch (error) {
       this.toast(message(error), "error");
     }
@@ -391,6 +486,7 @@ class App {
     }
     if (isDesktop) this.path = path;
     this.name = baseName(path);
+    if (isDesktop && !quiet) addRecent(path);
     // What was written; changes made while saving still count as unsaved.
     this.savedDoc = doc;
     this.savedTitlePage = titlePage;
@@ -644,7 +740,7 @@ class App {
     this.toolbar.focusBox(box);
   }
 
-  openMenu(menu: "symbol" | "references" | "layout" | "textColor" | "highlight" | "table") {
+  openMenu(menu: "symbol" | "references" | "layout" | "textColor" | "highlight" | "table" | "open") {
     this.toolbar.openMenuByKeyboard(menu);
   }
 

@@ -23,6 +23,7 @@ const PATHS = {
   indentMore: '<path d="M4 5h16M11 10h9M11 14h9M4 19h16M4 9.500 7 12l-3 2.500"/>',
   indentLess: '<path d="M4 5h16M11 10h9M11 14h9M4 19h16M7 9.500 4 12l3 2.500"/>',
   lineSpacing: '<path d="M11 6h9M11 12h9M11 18h9M5 4v16M3 6l2-2 2 2M3 18l2 2 2-2"/>',
+  painter: '<rect x="4" y="3" width="14" height="6" rx="1"/><path d="M18 6h2v5h-8v3"/><rect x="10" y="14" width="4" height="7" rx="1"/>',
   clearFormat: '<path d="M6 5h12M12 5 9 19M4 20 20 4"/>',
   link: '<path d="M10 14a4 4 0 0 0 5.700.300l3-3a4 4 0 0 0-5.700-5.700l-1.500 1.500"/><path d="M14 10a4 4 0 0 0-5.700-.300l-3 3a4 4 0 0 0 5.700 5.700l1.500-1.500"/>',
   comment: '<path d="M4 5h16v11H9l-5 4z"/><path d="M8 9h8M8 12h5"/>',

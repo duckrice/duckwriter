@@ -240,6 +240,11 @@ export function clearFormatting(ctx: DocContext): Command {
  * (normally Normal); otherwise it keeps the paragraph's formatting, and the
  * text formatting carries on. Enter in an empty list item ends the list.
  */
+/** Formatting without a link, or Word's blue underlined style for links. */
+export function withoutLink(marks: readonly Mark[]): readonly Mark[] {
+  return marks.filter((m) => m.type !== schema.marks.link && !(m.type === schema.marks.charStyle && m.attrs.id === "Hyperlink"));
+}
+
 export function newParagraph(ctx: DocContext): Command {
   return (state, dispatch) => {
     const { $from, $to } = state.selection;
@@ -252,7 +257,8 @@ export function newParagraph(ctx: DocContext): Command {
       return true;
     }
     if (!dispatch) return true;
-    const marks = state.storedMarks ?? ($from.parentOffset > 0 ? $from.marks() : (para.firstChild?.marks ?? []));
+    // A new paragraph goes on in the same formatting, but not as a link.
+    const marks = withoutLink(state.storedMarks ?? ($from.parentOffset > 0 ? $from.marks() : (para.firstChild?.marks ?? [])));
     const atEnd = $to.parentOffset === para.content.size;
     const style = para.attrs.style ?? ctx.styles.defaultParagraph;
     const next = style ? ctx.styles.byId.get(style)?.next : undefined;

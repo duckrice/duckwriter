@@ -212,6 +212,8 @@ export interface DocContext {
   titlePage: boolean;
   /** The line grid was switched on or off, so the section properties need updating. */
   lineGridChanged?: boolean;
+  /** The paper size or margins were changed, so the section properties need updating. */
+  pageChanged?: boolean;
   footnotes: Footnotes;
   /** Style definitions (XML) to add to the document's styles when it is saved. */
   addedStyles: string[];

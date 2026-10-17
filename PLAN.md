@@ -69,6 +69,17 @@ written back unchanged.
   follows them, in the browser.
 - A long table's **header rows are repeated** at the top of each page.
 - Formatting changes are tracked too, and can be rejected back to what they were.
+- **Recent documents** (Alt+F) and opening a document by dropping it on the window.
+- **Page setup** (Alt+P): paper size, upright or sideways, margins in centimetres.
+- **Headings beside the page** (Alt+Shift+N), to go to with a click or the keyboard.
+- **Copy and paste** keeps all formatting inside DuckWriter; from Word and the
+  web, headings, lists, links, bold, italic and superscripts come through.
+  Ctrl+Alt+V pastes plain text.
+- **Format painter** (the brush, or Ctrl+Shift+C and Ctrl+Shift+V).
+- **AutoFormat as you type**: addresses become links; "1. " or "- " starts a list.
+- **Word count** of the selection in the status bar; Ctrl+Shift+G for characters
+  and paragraphs.
+- **Pictures in headers and footers** (a logo in a letterhead) are shown and kept.
 
 ## Next
 

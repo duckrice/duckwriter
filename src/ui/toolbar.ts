@@ -1,3 +1,7 @@
+import { autoFormatOn, setAutoFormat } from "../editor/autoformat";
+import { armPainter, painterArmed } from "./painter";
+import { recentFiles } from "../recent";
+import { baseName } from "../platform";
 import { editLink } from "./links";
 // The formatting toolbar. It shows the formatting at the cursor and applies
 // changes through the editor's commands.
@@ -44,6 +48,8 @@ export interface ToolbarHost {
   showShortcuts(): void;
   find(replace: boolean): void;
   newComment(): void;
+  openRecent(path: string): void;
+  pageSetup(): void;
   toggleTracking(): void;
   stepChange(direction: 1 | -1): void;
   decideChange(accept: boolean): void;
@@ -147,7 +153,7 @@ export class Toolbar {
       { class: "toolbar", role: "toolbar" },
       group(
         this.button("newDoc", "New document (Ctrl+N)", () => this.host.newDocument()),
-        this.button("open", "Open (Ctrl+O)", () => this.host.open()),
+        this.splitButton("open", "Open (Ctrl+O)", null, () => this.host.open(), () => this.recentMenu()),
         this.button("save", "Save (Ctrl+S)", () => this.host.save()),
         this.button("print", "Print (Ctrl+P)", () => this.host.print()),
         this.button("pdf", "Save as PDF (Ctrl+Alt+Shift+P)", () => this.host.savePdf()),
@@ -172,6 +178,12 @@ export class Toolbar {
       group(
         this.splitButton("textColor", "Text colour (Ctrl+Shift+O)", this.textColorBar, () => this.run(setMark(schema.marks.color, { color: this.lastTextColor })), () => this.colorMenu()),
         this.splitButton("highlight", "Highlight (Ctrl+Alt+H)", this.highlightBar, () => this.run(setMark(schema.marks.highlight, { color: this.lastHighlight })), () => this.highlightMenu()),
+        this.button("painter", "Format painter: copy this formatting, then select where it goes (Ctrl+Shift+C, Ctrl+Shift+V)", () => {
+          const brush = this.buttons.get("painter")!;
+          armPainter(this.host.view, () => brush.classList.remove("active"));
+          brush.classList.toggle("active", painterArmed());
+          this.host.view.focus();
+        }),
         this.button("clearFormat", "Clear formatting (Ctrl+Space)", () => this.run(clearFormatting(ctx()))),
       ),
       group(
@@ -420,14 +432,51 @@ export class Toolbar {
       this.host.setLineGrid(!gridOn);
       this.closeMenu();
     });
+    const setup = h("button", { type: "button", class: "menu-item" }, "Page setup… (Alt+P)");
+    setup.addEventListener("click", () => {
+      this.closeMenu();
+      this.host.pageSetup();
+    });
+    const auto = h("button", { type: "button", class: `menu-item${autoFormatOn() ? " checked" : ""}` }, `${autoFormatOn() ? "✓ " : ""}AutoFormat as you type`);
+    auto.addEventListener("click", () => {
+      setAutoFormat(!autoFormatOn());
+      this.closeMenu();
+    });
     return h(
       "div",
       { class: "menu layout-menu" },
+      setup,
+      h("div", { class: "menu-hint" }, "Paper size, upright or sideways, and margins."),
+      h("div", { class: "menu-separator" }),
+      auto,
+      h("div", { class: "menu-hint" }, "Web and e-mail addresses become links; \"1. \" or \"- \" at the start of a paragraph starts a list."),
+      h("div", { class: "menu-separator" }),
       snap,
       h("div", { class: "menu-hint" }, "Pictures line up on a half-centimetre grid and with the margins when moved or resized. Hold Alt to place freely."),
       h("div", { class: "menu-separator" }),
       lines,
       h("div", { class: "menu-hint" }, "Every line of text sits on the same evenly spaced lines, on every page, as in Word's document grid."),
+    );
+  }
+
+  /** The documents opened lately. */
+  private recentMenu(): HTMLElement {
+    const list = recentFiles();
+    const items = list.map((f) => {
+      const name = baseName(f.path);
+      const folder = f.path.slice(0, f.path.length - name.length).replace(/[\\/]$/, "");
+      const b = h("button", { type: "button", class: "menu-item recent-item", title: f.path }, h("span", { class: "recent-name" }, name), h("span", { class: "recent-folder" }, folder));
+      b.addEventListener("click", () => {
+        this.closeMenu();
+        this.host.openRecent(f.path);
+      });
+      return b;
+    });
+    return h(
+      "div",
+      { class: "menu recent-menu" },
+      h("div", { class: "menu-title" }, "Recent documents"),
+      ...(items.length ? items : [h("div", { class: "menu-hint" }, "Documents you open or save are listed here.")]),
     );
   }
 

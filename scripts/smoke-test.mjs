@@ -227,6 +227,7 @@ async function session(files, port, run, { profileDir = profile, keepAutoSave = 
 
 const CTRL = 2;
 const SHIFT = 8;
+const ALT = 1;
 const ESC = ["Escape", 27];
 /** A size in points as the browser reports it, in pixels. */
 const pt = (points) => `${Math.round(((points * 4) / 3) * 10000) / 10000}px`;
@@ -1031,6 +1032,90 @@ await session(null, 9540, async (app) => {
   check("no errors in the app", app.errors.length === 0, app.errors.join("; "));
 });
 
+// ---- everyday helpers: recent files, page setup, headings, paste, format painter, AutoFormat, counts --
+
+await session(sample("long.docx"), 9570, async (app) => {
+  await app.debugHandle();
+  // Opened at startup, so it is in the recent list.
+  await app.key("F", 70, ALT);
+  check("Alt+F lists the recent documents", await app.waitFor(`[...document.querySelectorAll(".recent-menu .recent-name")].some((n) => n.textContent === "long.docx")`, 3000));
+  await app.key("Escape", 27);
+
+  await app.key("N", 78, ALT | SHIFT);
+  const navItems = () => app.evaluate(`[...document.querySelectorAll(".nav-pane .nav-item")].map((i) => i.textContent)`);
+  check("Alt+Shift+N shows the headings beside the page", await app.waitFor(`!document.querySelector(".nav-pane").hidden && document.querySelectorAll(".nav-item").length >= 6`, 3000), JSON.stringify(await navItems()));
+  await app.key("ArrowDown", 40);
+  await app.key("ArrowDown", 40);
+  const target = await app.evaluate(`document.activeElement.textContent`);
+  await app.key("Enter", 13);
+  const heading = () => app.evaluate(`(() => { const s = window.__dw.body.state; return s.selection.$from.parent.textContent; })()`);
+  check("Enter on a heading goes there", (await heading()) === target && (await app.evaluate(`document.querySelector(".nav-item.current")?.textContent`)) === target, `${target} / ${await heading()}`);
+  await app.shoot("navigation");
+  await app.key("N", 78, ALT | SHIFT);
+
+  await app.key("P", 80, ALT);
+  check("Alt+P opens page setup", await app.waitFor(`document.querySelector("dialog[open] h2")?.textContent === "Page setup"`, 3000));
+  await app.evaluate(`(() => { const s = document.querySelectorAll("dialog[open] select")[1]; s.value = "landscape"; })()`);
+  await app.clickText("dialog[open] .btn", "OK");
+  check("landscape turns the pages sideways", await app.waitFor(`(() => { const r = document.querySelector(".page-sheet").getBoundingClientRect(); return r.width > r.height; })()`, 5000));
+  await app.key("Z", 90, CTRL); // nothing to undo in the text; the page stays sideways
+  check("the document counts as changed", await app.evaluate(`document.title.startsWith("•")`));
+});
+
+await session(null, 9571, async (app) => {
+  await app.debugHandle();
+  // AutoFormat: "1. " starts a list; an address becomes a link.
+  await app.type("1.");
+  await app.type(" ");
+  await app.type("First point");
+  const first = () => app.evaluate(`(() => { const p = window.__dw.body.state.doc.firstChild; return [p.textContent, p.attrs.numId !== null, document.querySelector(".doc .list-label")?.textContent ?? ""]; })()`);
+  check("typing 1. and a space starts a numbered list", JSON.stringify(await first()) === JSON.stringify(["First point", true, "1."]), JSON.stringify(await first()));
+  await app.key("Enter", 13);
+  await app.key("Enter", 13);
+  await app.type("Read www.duck.no");
+  await app.type(" ");
+  await app.type("today.");
+  check("a web address becomes a link when it's finished, and what follows isn't part of it", (await app.evaluate(`document.querySelector(".doc a")?.getAttribute("href")`)) === "https://www.duck.no" && (await app.evaluate(`[...document.querySelectorAll(".doc a")].map((a) => a.textContent).join("|")`)) === "www.duck.no" && (await app.evaluate(`document.querySelectorAll('.doc [data-cstyle="Hyperlink"]').length`)) === 1, await app.evaluate(`document.querySelectorAll(".doc p")[1].innerHTML`));
+
+  // Format painter: bold copied onto other text.
+  await app.key("Enter", 13);
+  await app.type("Bold and plain");
+  const select = (word) => app.evaluate(`(() => { const v = window.__dw.body; let at = -1; v.state.doc.descendants((n, pos) => { if (at < 0 && n.isText && n.text.includes(${JSON.stringify(word)})) at = pos + n.text.indexOf(${JSON.stringify(word)}); }); const TS = v.state.selection.constructor; v.dispatch(v.state.tr.setSelection(TS.create(v.state.doc, at, at + ${word.length}))); v.focus(); })()`);
+  await select("Bold");
+  await app.key("B", 66, CTRL);
+  await app.key("C", 67, CTRL | SHIFT);
+  await select("plain");
+  await app.key("V", 86, CTRL | SHIFT);
+  const boldWords = () => app.evaluate(`[...document.querySelectorAll('.doc [data-pm-mark="bold"]')].map((e) => e.textContent).join(",")`);
+  check("Ctrl+Shift+C, then Ctrl+Shift+V copies formatting", (await boldWords()) === "Bold,plain", await boldWords());
+
+  // Pasting a list from a web page.
+  await app.key("End", 35, CTRL);
+  await app.key("Enter", 13);
+  await app.evaluate(`(() => {
+    const data = new DataTransfer();
+    data.setData("text/html", "<ul><li>Apples</li><li>Pears<ul><li>Green</li></ul></li></ul>");
+    data.setData("text/plain", "Apples Pears Green");
+    window.__dw.body.dom.dispatchEvent(new ClipboardEvent("paste", { clipboardData: data, bubbles: true, cancelable: true }));
+  })()`);
+  const pasted = () => app.evaluate(`[...document.querySelectorAll(".doc p")].slice(-3).map((p) => (p.querySelector(".list-label") ? "•" : "") + p.textContent.replace(/^[•◦▪\\-–]\\s*/, "")).join("|")`);
+  check("a list pasted from the web becomes a list", (await app.count(".doc .list-label")) >= 4 && (await pasted()).includes("Green"), await pasted());
+
+  // Word count of a selection.
+  await select(" and ");
+  check("the status bar counts the selection", /^1 of \d+ words$/.test(await app.evaluate(`document.querySelector(".status-button.words").textContent`)), await app.evaluate(`document.querySelector(".status-button.words").textContent`));
+  await app.key("G", 71, CTRL | SHIFT);
+  check("Ctrl+Shift+G shows the word count", await app.waitFor(`document.querySelector("dialog[open] h2")?.textContent === "Word count" && document.querySelectorAll("dialog[open] .count-table thead th").length === 3`, 3000));
+  await app.shoot("word-count");
+  await app.key("Escape", 27);
+  check("no errors in the app", app.errors.length === 0, app.errors.join("; "));
+});
+
+await session(sample("letterhead.docx"), 9572, async (app) => {
+  check("a logo in the header is shown", await app.waitFor(`!!document.querySelector(".hf-layer img")`, 5000));
+  await app.shoot("header-logo");
+});
+
 // ---- links ----------------------------------------------------------------------------------------
 
 await session(null, 9560, async (app) => {
@@ -1057,7 +1142,7 @@ await session(null, 9560, async (app) => {
 
 const reviewed = join(tmpdir(), "duckwriter-smoke-review.docx");
 rmSync(reviewed, { force: true });
-const ALT = 1;
+
 
 await session(sample("review.docx"), 9550, async (app) => {
   await app.debugHandle();

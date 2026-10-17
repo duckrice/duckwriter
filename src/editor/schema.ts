@@ -3,7 +3,7 @@
 // saving a .docx keeps what was there. Anything DuckWriter can't edit yet is
 // kept as a "raw" node holding the original XML.
 
-import { Schema, type DOMOutputSpec, type Mark, type Node, type NodeSpec } from "prosemirror-model";
+import { Schema, type DOMOutputSpec, type Mark, type MarkSpec, type Node, type NodeSpec, type TagParseRule, type StyleParseRule } from "prosemirror-model";
 import { tableNodes } from "prosemirror-tables";
 import { HIGHLIGHTS } from "../docx/model";
 
@@ -49,12 +49,19 @@ const tables = tableNodes({
     },
     valign: {
       default: null,
+      getFromDOM: (dom) => (dom as HTMLElement).style.verticalAlign || null,
       setDOMAttr: (value, attrs) => {
         if (value) attrs.style = `${attrs.style ?? ""}vertical-align:${value};`;
       },
     },
     /** Other cell properties (borders, margins…), as XML. */
-    tcPr: { default: "" },
+    tcPr: {
+      default: "",
+      getFromDOM: (dom) => (dom as HTMLElement).getAttribute("data-tcpr") ?? "",
+      setDOMAttr: (value, attrs) => {
+        if (value) attrs["data-tcpr"] = value;
+      },
+    },
   },
 });
 const tableSpec: NodeSpec = {
@@ -71,7 +78,7 @@ const tableSpec: NodeSpec = {
 };
 const rowSpec: NodeSpec = { ...tables.table_row, attrs: { trPr: { default: "" } } };
 
-export const schema = new Schema({
+export const schema = new Schema(clipboardReady({
   nodes: {
     doc: { content: "block+" },
 
@@ -96,7 +103,10 @@ export const schema = new Schema({
         /** A tracked change to the paragraph mark: { kind: "ins" | "del", id, author, date }, or null. */
         change: { default: null },
       },
-      parseDOM: [{ tag: "p" }],
+      parseDOM: [
+        { tag: "p", getAttrs: (el) => pastedParagraph(el as HTMLElement) },
+        ...[1, 2, 3, 4, 5, 6].map((n) => ({ tag: `h${n}`, getAttrs: (el: HTMLElement | string) => ({ ...pastedParagraph(el as HTMLElement), style: `Heading${Math.min(n, 3)}` }) })),
+      ],
       toDOM(node): DOMOutputSpec {
         const attrs: Record<string, string> = { class: "para" };
         if (node.attrs.style) attrs["data-style"] = node.attrs.style;
@@ -267,22 +277,27 @@ export const schema = new Schema({
     bold: {
       attrs: { on: { default: true } },
       toDOM: (mark) => ["span", { style: `font-weight:${mark.attrs.on ? "bold" : "normal"}` }, 0],
-      parseDOM: [{ tag: "b" }, { tag: "strong" }],
+      parseDOM: [
+        // Google Docs wraps everything in <b style="font-weight:normal">.
+        { tag: "b", getAttrs: (el) => ((el as HTMLElement).style.fontWeight === "normal" ? false : null) },
+        { tag: "strong" },
+        { style: "font-weight", getAttrs: (v) => (/^(bold|bolder|[6-9]00)$/.test(v as string) ? null : false) },
+      ],
     },
     italic: {
       attrs: { on: { default: true } },
       toDOM: (mark) => ["span", { style: `font-style:${mark.attrs.on ? "italic" : "normal"}` }, 0],
-      parseDOM: [{ tag: "i" }, { tag: "em" }],
+      parseDOM: [{ tag: "i" }, { tag: "em" }, { style: "font-style=italic" }],
     },
     underline: {
       attrs: { on: { default: true }, kind: { default: "single" } },
       toDOM: (mark) => ["span", { class: mark.attrs.on ? `u u-${mark.attrs.kind}` : "no-u" }, 0],
-      parseDOM: [{ tag: "u" }],
+      parseDOM: [{ tag: "u" }, { style: "text-decoration-line", getAttrs: (v) => ((v as string).includes("underline") ? null : false) }],
     },
     strike: {
       attrs: { on: { default: true } },
       toDOM: (mark) => ["span", { class: mark.attrs.on ? "s" : "no-s" }, 0],
-      parseDOM: [{ tag: "s" }],
+      parseDOM: [{ tag: "s" }, { tag: "strike" }, { style: "text-decoration-line", getAttrs: (v) => ((v as string).includes("line-through") ? null : false) }],
     },
     font: {
       attrs: { family: {}, xml: { default: null } },
@@ -303,10 +318,16 @@ export const schema = new Schema({
     vertAlign: {
       attrs: { value: {} },
       toDOM: (mark) => [mark.attrs.value === "superscript" ? "sup" : "sub", 0],
+      parseDOM: [
+        { tag: "sup", attrs: { value: "superscript" } },
+        { tag: "sub", attrs: { value: "subscript" } },
+      ],
     },
     link: {
       attrs: { href: { default: "" }, anchor: { default: null }, rid: { default: null } },
       inclusive: false,
+      // Links from the web: only to web pages and e-mail addresses.
+      parseDOM: [{ tag: "a[href]", getAttrs: (el) => (/^(https?:|mailto:)/i.test((el as HTMLElement).getAttribute("href") ?? "") ? { href: (el as HTMLElement).getAttribute("href") } : false) }],
       toDOM: (mark) => ["a", { href: mark.attrs.href || `#${mark.attrs.anchor ?? ""}`, title: `${mark.attrs.href.replace(/^mailto:/, "") || "A place in this document"}\nCtrl+click to follow the link` }, 0],
     },
     /** A character style (Word's "rStyle"). */
@@ -338,7 +359,59 @@ export const schema = new Schema({
       toDOM: () => ["span", 0],
     },
   },
-});
+}));
+
+/** A pasted paragraph's alignment, Word's title styles, and list (marked by flattenPastedLists). */
+function pastedParagraph(el: HTMLElement): Record<string, unknown> {
+  const attrs: Record<string, unknown> = {};
+  const align = el.style.textAlign;
+  if (align === "center" || align === "right" || align === "justify") attrs.align = align;
+  const cls = el.className ?? "";
+  if (/\bMsoTitle\b/.test(cls)) attrs.style = "Title";
+  else if (/\bMsoSubtitle\b/.test(cls)) attrs.style = "Subtitle";
+  else if (/\bMso(Intense)?Quote\b/.test(cls)) attrs.style = "Quote";
+  const list = el.getAttribute("data-list");
+  if (list) {
+    // Made into a real list of the document when pasted (see the paste plugin).
+    attrs.numId = list === "number" ? "__number" : "__bullet";
+    attrs.ilvl = Math.max(0, Math.min(8, Number(el.getAttribute("data-level")) || 0));
+  }
+  return attrs;
+}
+
+/**
+ * Copying inside DuckWriter keeps everything: each node and mark is written
+ * with its attributes (data-pm) and read back from them, before any other rule.
+ * Comment anchors aren't copied, so a comment isn't doubled.
+ */
+function clipboardReady(spec: { nodes: Record<string, NodeSpec>; marks: Record<string, MarkSpec> }) {
+  const withData = (out: DOMOutputSpec, kind: string, name: string, attrs: object): DOMOutputSpec => {
+    if (!Array.isArray(out)) return out;
+    const [tag, second, ...rest] = out as [string, unknown, ...unknown[]];
+    const data = { [kind]: name, "data-pm": JSON.stringify(attrs) };
+    if (second && typeof second === "object" && !Array.isArray(second)) return [tag, { ...(second as object), ...data }, ...rest] as DOMOutputSpec;
+    return [tag, data, ...(out.length > 1 ? [second] : []), ...rest] as DOMOutputSpec;
+  };
+  const read = (el: HTMLElement | string) => JSON.parse((el as HTMLElement).getAttribute("data-pm") ?? "{}");
+  for (const [name, node] of Object.entries(spec.nodes)) {
+    if (!node.toDOM) continue;
+    const toDOM = node.toDOM;
+    node.toDOM = (n) => withData(toDOM(n), "data-pm-node", name, n.attrs);
+    // Comment anchors and footnote marks would be doubled; a bookmark would have its name twice.
+    const own: TagParseRule =
+      name === "comment" || name === "footnote"
+        ? { tag: `[data-pm-node="${name}"]`, ignore: true }
+        : { tag: `[data-pm-node="${name}"]`, getAttrs: (el) => (name === "raw_inline" && /^<w:bookmark/.test(read(el).xml ?? "") ? false : read(el)), priority: 100 };
+    node.parseDOM = [own, ...(node.parseDOM ?? [])];
+  }
+  for (const [name, mark] of Object.entries(spec.marks)) {
+    if (!mark.toDOM) continue;
+    const toDOM = mark.toDOM;
+    mark.toDOM = (m, inline) => withData(toDOM(m, inline), "data-pm-mark", name, m.attrs);
+    mark.parseDOM = [{ tag: `[data-pm-mark="${name}"]`, getAttrs: read, priority: 100 } as TagParseRule, ...((mark.parseDOM ?? []) as (TagParseRule | StyleParseRule)[])];
+  }
+  return spec;
+}
 
 /** Each reviewer gets a colour of their own, as in Word. */
 export function authorClass(author: string): string {

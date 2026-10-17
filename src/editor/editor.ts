@@ -19,6 +19,8 @@ import { findPlugin } from "./find";
 import { spellingPlugin } from "./spelling";
 import { reviewPlugin } from "./review";
 import { trackPlugin } from "./track";
+import { pastePlugin } from "./paste";
+import { autoFormatPlugin } from "./autoformat";
 import { authorName } from "../author";
 import { ImageView, type PictureHooks } from "./imageview";
 import { MathView } from "./mathview";
@@ -48,6 +50,7 @@ export function createState(doc: Node, ctx: () => DocContext, pages?: Omit<Pagin
   return EditorState.create({
     doc,
     plugins: [
+      autoFormatPlugin(ctx),
       history(),
       keymap({
         // Typing keys. Every other shortcut is in ui/shortcuts.ts, which also lists them (F1).
@@ -90,6 +93,7 @@ export function createState(doc: Node, ctx: () => DocContext, pages?: Omit<Pagin
       spellingPlugin(),
       reviewPlugin(ctx),
       trackPlugin({ on: () => !!ctx().trackChanges, author: authorName, context: ctx }),
+      pastePlugin(ctx),
       ...(pages ? [paginationPlugin({ context: ctx, ...pages })] : []),
       dropCursor({ color: "#0f766e", width: 2 }),
       gapCursor(),

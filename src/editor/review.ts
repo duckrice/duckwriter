@@ -194,7 +194,7 @@ export function commentAnchors(doc: Node): CommentAnchors[] {
 }
 
 /** The word around an empty cursor, which a new comment is about. */
-function wordAround(state: EditorState): { from: number; to: number } {
+export function wordAround(state: EditorState): { from: number; to: number } {
   const { from, to, empty, $from } = state.selection;
   if (!empty || !$from.parent.isTextblock) return { from, to };
   const text = $from.parent.textBetween(0, $from.parent.content.size, undefined, "￼");

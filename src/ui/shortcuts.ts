@@ -1,3 +1,4 @@
+import { copyFormatting, pasteFormatting, pastePlain } from "./painter";
 import { editLink } from "./links";
 // Every keyboard shortcut in one list: the keys handled, and the help window
 // (F1) that lists them, both come from here, so they always agree.
@@ -49,13 +50,16 @@ export interface ShortcutHost {
   nextSpellingMistake(): void;
   toggleSpelling(): void;
   newComment(): void;
+  pageSetup(): void;
+  wordCount(): void;
+  toggleNavigation(): void;
   toggleTracking(): void;
   stepChange(direction: 1 | -1): void;
   decideChange(accept: boolean): void;
   decideAllChanges(accept: boolean): void;
   /** The toolbar's boxes and menus. */
   focusBox(box: "font" | "size" | "style"): void;
-  openMenu(menu: "symbol" | "references" | "layout" | "textColor" | "highlight" | "table"): void;
+  openMenu(menu: "symbol" | "references" | "layout" | "textColor" | "highlight" | "table" | "open"): void;
   toggleTableLines(): void;
   applyTextColor(): void;
   applyHighlight(): void;
@@ -88,6 +92,11 @@ export const SHORTCUTS: Shortcut[] = [
   // ---- documents
   { group: "Documents", label: "New document", keys: ["Ctrl+N"], run: (x) => x.newDocument(), everywhere: true },
   { group: "Documents", label: "Open", keys: ["Ctrl+O"], run: (x) => x.open(), everywhere: true },
+  { group: "Documents", label: "Recent documents", keys: ["Alt+F"], run: (x) => x.openMenu("open"), everywhere: true },
+  { group: "Documents", label: "Page setup: paper size, orientation, margins", keys: ["Alt+P"], run: (x) => x.pageSetup() },
+  { group: "Documents", label: "Word count (of the selection too)", keys: ["Ctrl+Shift+G"], run: (x) => x.wordCount(), everywhere: true },
+  { group: "Documents", label: "Headings beside the page (the navigation pane); arrows and Enter go to one", keys: ["Alt+Shift+N"], run: (x) => x.toggleNavigation(), everywhere: true },
+  { group: "Documents", label: "Open a document by dropping it on the window", keys: ["Drag and drop"] },
   { group: "Documents", label: "Save", keys: ["Ctrl+S"], run: (x) => x.save(), everywhere: true },
   { group: "Documents", label: "Save as", keys: ["F12"], run: (x) => x.save(true), everywhere: true },
   { group: "Documents", label: "Print", keys: ["Ctrl+P"], run: (x) => x.print(), everywhere: true },
@@ -100,6 +109,17 @@ export const SHORTCUTS: Shortcut[] = [
   { group: "Editing", label: "Redo", keys: ["Ctrl+Y", "Ctrl+Shift+Z"], run: plain(redo) },
   { group: "Editing", label: "Select everything", keys: ["Ctrl+A"], run: plain(selectAll) },
   { group: "Editing", label: "Cut, copy, paste", keys: ["Ctrl+X", "Ctrl+C", "Ctrl+V"] },
+  {
+    group: "Editing",
+    label: "Paste as plain text (without formatting)",
+    keys: ["Ctrl+Alt+V"],
+    run: (x) =>
+      void pastePlain(x.view).then((ok) => {
+        if (!ok) x.view.dom.dispatchEvent(new CustomEvent("duckwriter-toast", { bubbles: true, detail: "Couldn't read the clipboard; use Ctrl+V" }));
+      }),
+  },
+  { group: "Text", label: "Copy the formatting (format painter)", keys: ["Ctrl+Shift+C"], run: (x) => copyFormatting(x.view) },
+  { group: "Text", label: "Put the copied formatting on the selection", keys: ["Ctrl+Shift+V"], run: (x) => pasteFormatting(x.view) },
   { group: "Editing", label: "Find", keys: ["Ctrl+F"], run: (x) => x.find(false), everywhere: true },
   { group: "Editing", label: "Find and replace", keys: ["Ctrl+H"], run: (x) => x.find(true), everywhere: true },
   { group: "Editing", label: "Next match", keys: ["F3"], run: (x) => x.findNext(1), everywhere: true },
