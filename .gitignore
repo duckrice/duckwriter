@@ -12,3 +12,4 @@ samples
 
 # written by npm run smoke:shots
 test-screenshots
+*.tmp.mjs
