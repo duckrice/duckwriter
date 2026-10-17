@@ -1319,3 +1319,95 @@ kbd {
   border-color: var(--accent);
   background: var(--accent-soft);
 }
+
+/* ---- paper: printing and PDF ------------------------------------------------------------ */
+
+@media print {
+  html,
+  body,
+  #app {
+    height: auto !important;
+    background: #ffffff !important;
+  }
+
+  #app {
+    display: block;
+  }
+
+  .toolbar,
+  .statusbar,
+  .toasts,
+  .hf-bar,
+  .menu,
+  .picture-bar,
+  .resize-handle,
+  .eq-editor,
+  .snap-grid,
+  dialog {
+    display: none !important;
+  }
+
+  .workspace {
+    overflow: visible !important;
+    padding: 0 !important;
+    background: #ffffff !important;
+  }
+
+  .sheet {
+    margin: 0 !important;
+    overflow: hidden;
+  }
+
+  .workspace > :not(.sheet),
+  .fn-measure {
+    display: none !important;
+  }
+
+  .doc,
+  .hf-doc {
+    caret-color: transparent !important;
+  }
+
+  .page-sheet {
+    box-shadow: none !important;
+  }
+
+  .hf,
+  .hf:hover {
+    border-color: transparent !important;
+  }
+
+  .hf.empty::before {
+    content: none !important;
+  }
+
+  .hf .hf-doc {
+    opacity: 1 !important;
+  }
+
+  /* Only what is in the document: no gridlines, field shading or selection. */
+  .doc td,
+  .doc th {
+    border-color: transparent;
+  }
+
+  .doc table.lines > tbody > tr > :is(td, th) {
+    border-color: #000000;
+  }
+
+  .doc .field,
+  .hf .field {
+    background: none !important;
+  }
+
+  .doc .math,
+  .picture-box.selected img {
+    outline: none !important;
+    background: none !important;
+  }
+
+  .doc .selectedCell::after,
+  .doc ::selection {
+    background: transparent !important;
+  }
+}

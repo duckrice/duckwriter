@@ -35,6 +35,8 @@ export interface ShortcutHost {
   newDocument(): void;
   open(): void;
   save(saveAs?: boolean): void;
+  print(): void;
+  savePdf(): void;
   insertFootnote(): void;
   editHeader(): void;
   zoomBy(direction: 1 | -1 | 0): void;
@@ -78,6 +80,8 @@ export const SHORTCUTS: Shortcut[] = [
   { group: "Documents", label: "Open", keys: ["Ctrl+O"], run: (x) => x.open(), everywhere: true },
   { group: "Documents", label: "Save", keys: ["Ctrl+S"], run: (x) => x.save(), everywhere: true },
   { group: "Documents", label: "Save as", keys: ["F12"], run: (x) => x.save(true), everywhere: true },
+  { group: "Documents", label: "Print", keys: ["Ctrl+P"], run: (x) => x.print(), everywhere: true },
+  { group: "Documents", label: "Save as PDF", keys: ["Ctrl+Alt+Shift+P"], run: (x) => void x.savePdf(), everywhere: true },
   { group: "Documents", label: "Auto-save, on or off", keys: ["Ctrl+Alt+Shift+S"], run: (x) => x.toggleAutoSave(), everywhere: true },
   { group: "Documents", label: "Keyboard shortcuts (this list)", keys: ["F1"], run: (x) => x.showShortcuts(), everywhere: true },
 

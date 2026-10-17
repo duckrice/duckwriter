@@ -12,8 +12,12 @@ import { TableMap } from "prosemirror-tables";
 import { resolvedPara, type DocContext } from "../docx/model";
 import { schema } from "./schema";
 
-/** Space between pages on screen, in pixels. */
-export const PAGE_GAP = 24;
+/** Space between pages on screen, in pixels; none when printing. */
+export let PAGE_GAP = 24;
+
+export function setPageGap(px: number) {
+  PAGE_GAP = px;
+}
 const PX = 4 / 3;
 
 export interface PageLayout {

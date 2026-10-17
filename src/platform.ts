@@ -68,6 +68,14 @@ export async function pickImage(): Promise<{ bytes: Uint8Array; ext: string } | 
   });
 }
 
+/** Asks where to save a PDF; returns null if cancelled. */
+export async function pickPdfPath(suggested: string): Promise<string | null> {
+  if (!isDesktop) return null;
+  const path = await save({ defaultPath: suggested, filters: [{ name: "PDF", extensions: ["pdf"] }] });
+  if (!path) return null;
+  return /\.pdf$/i.test(path) ? path : `${path}.pdf`;
+}
+
 /** Asks where to save; returns null if cancelled. In the browser there is nothing to ask. */
 export async function pickSavePath(suggested: string): Promise<string | null> {
   if (!isDesktop) return suggested;

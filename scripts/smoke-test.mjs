@@ -959,6 +959,32 @@ await session(sample("table-long.docx"), 9511, async (app) => {
   await app.shoot("table-across-pages");
 });
 
+// ---- save as PDF -------------------------------------------------------------------------------
+
+const pdfPath = join(tmpdir(), "duckwriter-smoke.pdf");
+rmSync(pdfPath, { force: true });
+
+await session(sample("report.docx"), 9532, async (app) => {
+  await app.debugHandle();
+  await app.evaluate(`window.__dw.savePdfTo(${JSON.stringify(pdfPath)})`);
+  await app.waitFor(`/Saved duckwriter-smoke.pdf/.test(document.querySelector(".toasts").textContent)`, 20000);
+  const pdf = readFileSync(pdfPath).toString("latin1");
+  check("a one-page document makes a one-page PDF, without a blank page after it", (pdf.match(/\/Type\s*\/Page(?![a-z])/g) ?? []).length === 1);
+});
+
+await session(sample("long.docx"), 9530, async (app) => {
+  await app.debugHandle();
+  const pages = await app.count(".page-sheet");
+  await app.evaluate(`window.__dw.savePdfTo(${JSON.stringify(pdfPath)})`);
+  check("Save as PDF writes a PDF", await app.waitFor(`/Saved duckwriter-smoke.pdf/.test(document.querySelector(".toasts").textContent)`, 20000));
+  const pdf = readFileSync(pdfPath).toString("latin1");
+  const pdfPages = (pdf.match(/\/Type\s*\/Page(?![a-z])/g) ?? []).length;
+  const box = /\/MediaBox\s*\[\s*0\s+0\s+([\d.]+)\s+([\d.]+)/.exec(pdf);
+  check("the PDF has the same pages as the screen, at the document's page size (A4)", pdf.startsWith("%PDF") && pdfPages === pages && !!box && Math.abs(Number(box[1]) - 595.3) < 2 && Math.abs(Number(box[2]) - 841.9) < 2, `${pdfPages} pages in the PDF, ${pages} on screen, ${box?.[1]} × ${box?.[2]}`);
+  check("the screen goes back to normal afterwards", (await app.evaluate(`!document.documentElement.classList.contains("printing") && document.querySelectorAll(".page-sheet").length`)) === pages);
+  check("no errors in the app", app.errors.length === 0, app.errors.join("; "));
+});
+
 await session(sample("not-a-docx.docx"), 9435, async (app) => {
   check("a file that isn't a Word document gets a plain message", await app.waitFor(`/isn't a Word document/.test(document.querySelector(".toast.error")?.textContent ?? "")`, 5000));
 });

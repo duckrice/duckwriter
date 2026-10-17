@@ -36,6 +36,8 @@ const PATHS = {
   keyboard: '<rect x="2" y="6" width="20" height="12" rx="2"/><path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M7 14h10"/>',
   table: '<rect x="3" y="4" width="18" height="16" rx="1.500"/><path d="M3 9.500h18M3 15h18M9 4v16M15 4v16"/>',
   shading: '<path d="m4 13 7-7 7 7-7 7z"/><path d="M8 9 4.500 5.500M19 15s2 2.300 2 3.500a2 2 0 0 1-4 0c0-1.200 2-3.500 2-3.500z"/>',
+  print: '<path d="M7 9V3h10v6M7 17H5a2 2 0 0 1-2-2v-4a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v4a2 2 0 0 1-2 2h-2"/><path d="M7 14h10v7H7z"/>',
+  pdf: '<path d="M7 3h7l5 5v11a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z"/><path d="M14 3v5h5"/><path d="M8.500 17v-4h1.300a1.200 1.200 0 0 1 0 2.400H8.500M13 13v4h1a2 2 0 0 0 0-4z" stroke-width="1.300"/>',
   zoomIn: '<circle cx="11" cy="11" r="7"/><path d="m20 20-4-4M8 11h6M11 8v6"/>',
   zoomOut: '<circle cx="11" cy="11" r="7"/><path d="m20 20-4-4M8 11h6"/>',
 } as const;

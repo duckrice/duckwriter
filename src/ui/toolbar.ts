@@ -36,6 +36,8 @@ export interface ToolbarHost {
   newDocument(): void;
   open(): void;
   save(): void;
+  print(): void;
+  savePdf(): void;
   editHeader(): void;
   insertFootnote(): void;
   showShortcuts(): void;
@@ -140,6 +142,8 @@ export class Toolbar {
         this.button("newDoc", "New document (Ctrl+N)", () => this.host.newDocument()),
         this.button("open", "Open (Ctrl+O)", () => this.host.open()),
         this.button("save", "Save (Ctrl+S)", () => this.host.save()),
+        this.button("print", "Print (Ctrl+P)", () => this.host.print()),
+        this.button("pdf", "Save as PDF (Ctrl+Alt+Shift+P)", () => this.host.savePdf()),
         this.button("keyboard", "Keyboard shortcuts (F1)", () => this.host.showShortcuts()),
       ),
       group(this.button("undo", "Undo (Ctrl+Z)", () => this.run(undo)), this.button("redo", "Redo (Ctrl+Y)", () => this.run(redo))),

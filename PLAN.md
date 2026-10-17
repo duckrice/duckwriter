@@ -6,8 +6,8 @@ using the built-in Edge engine), with the editing done in TypeScript.
 
 The rule that runs through every stage: **a document someone sends you must
 survive being opened and saved in DuckWriter.** Whatever DuckWriter can't edit
-yet (a table, a chart, a content control, a comment) is kept exactly as it was
-and written back unchanged.
+yet (a chart, a content control, a comment) is kept exactly as it was and
+written back unchanged.
 
 ## Done
 
@@ -42,12 +42,23 @@ and written back unchanged.
   when moved or resized (Alt to place freely); a **line grid** puts every line
   of text on the same evenly spaced lines on every page (Word's document grid).
 
+### Everyday work
+- **Keyboard shortcuts** for everything, Word's where possible, working on
+  Norwegian and other keyboards; F1 lists and searches them.
+- **Auto-save** to the document's file, and **recovery copies** of unsaved
+  work, all on this computer; work left by a crash is offered back.
+- **Tables**: Word tables open as real tables (merged cells, widths,
+  shading, header rows, table styles); insert, add and delete rows and
+  columns, merge and split cells, lines and shading, Tab between cells,
+  resize columns by dragging; long tables continue on the next page.
+- **Print** (Ctrl+P) and **Save as PDF**, page for page as on screen.
+
 ## Next
 
-- Tables: insert and edit rows, columns, merging, borders, widths.
+- Spell check (Windows' own dictionaries); find and replace.
+- Comments and tracked changes: show them, accept or reject changes.
 - Links: insert and edit (Ctrl+K).
+- Header rows repeated on each page of a long table.
 - Text wrapping on both sides of a picture in the middle of the page.
-- Find and replace; spell check (Windows' own dictionaries).
-- Print and save as PDF.
 - Several documents in tabs, recent files.
 - Auto-update and an installer, published on GitHub like Duckument.

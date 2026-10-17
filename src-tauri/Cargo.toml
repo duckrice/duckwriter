@@ -19,6 +19,11 @@ tauri = { version = "2", features = [] }
 tauri-plugin-dialog = "2"
 percent-encoding = "2"
 
+# Saving as PDF uses WebView2's own PDF printer; the same versions Tauri uses.
+[target.'cfg(windows)'.dependencies]
+webview2-com = "0.39"
+windows = "0.62"
+
 [profile.release]
 codegen-units = 1
 lto = true

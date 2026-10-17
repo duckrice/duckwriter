@@ -9,9 +9,10 @@ import { blankDocx } from "./docx/template";
 import { writeDocx } from "./docx/write";
 import { createState, createView } from "./editor/editor";
 import { schema } from "./editor/schema";
-import { PAGE_GAP, relayout, type PageLayout } from "./editor/pagination";
+import { PAGE_GAP, relayout, setPageGap, type PageLayout } from "./editor/pagination";
+import { invoke } from "@tauri-apps/api/core";
 import { stylesheetFor } from "./editor/stylesheet";
-import { baseName, isDesktop, onCloseRequested, pickDocument, pickSavePath, readPath, setTitle, startupFiles, writePath } from "./platform";
+import { baseName, isDesktop, onCloseRequested, pickDocument, pickPdfPath, pickSavePath, readPath, setTitle, startupFiles, writePath } from "./platform";
 import { Footnotes } from "./ui/footnotes";
 import { updateTocs } from "./ui/references";
 import { insertPictureFiles, setSnap, snapOn } from "./ui/pictures";
@@ -48,6 +49,10 @@ class App {
   private autosave: AutoSave;
   private wordTimer = 0;
   private headers: HeadersAndFooters;
+  /** The page size for printing, as an @page rule. */
+  private pageRule = h("style");
+  /** Resolves when the next page layout is done. */
+  private laidOut: (() => void) | null = null;
   private footnotes: Footnotes;
   /** Whether the first page had its own header when last opened or saved. */
   private savedTitlePage = false;
@@ -89,7 +94,7 @@ class App {
     const zoomIn = h("button", { type: "button", class: "status-button", title: "Zoom in", html: icon("zoomIn", 16), onclick: () => this.stepZoom(1) });
     this.zoomLabel.addEventListener("click", () => this.setZoom(1));
     const status = h("footer", { class: "statusbar" }, this.pageCount, this.words, h("span", { class: "status-spacer" }), this.saveStatus, zoomOut, this.zoomLabel, zoomIn);
-    document.head.append(this.styleEl);
+    document.head.append(this.styleEl, this.pageRule);
     root.append(this.toolbar.el, this.workspace, status, this.toasts);
 
     this.workspace.addEventListener("wheel", (event) => {
@@ -217,10 +222,13 @@ class App {
       sheet.style.top = `${i * pitch}px`;
       sheet.style.height = `${p.height}pt`;
     });
-    this.sheet.style.height = `${layout.count * pitch - PAGE_GAP}px`;
+    // On paper the pages follow each other exactly; a hair less keeps a blank page from spilling over.
+    this.sheet.style.height = PAGE_GAP ? `${layout.count * pitch - PAGE_GAP}px` : `calc(${layout.count * p.height}pt - 1px)`;
     this.pageCount.textContent = `${layout.count} ${layout.count === 1 ? "page" : "pages"}`;
     this.headers.render(layout.count);
     this.footnotes.render(layout);
+    this.laidOut?.();
+    this.laidOut = null;
     // After this layout, so the table of contents gets the page numbers just worked out.
     queueMicrotask(() => {
       updateTocs(this.body, this.ctx, layout);
@@ -388,6 +396,58 @@ class App {
   }
 
   // ---- view -----------------------------------------------------------------
+
+  // ---- printing and PDF ---------------------------------------------------------
+
+  /**
+   * Lays the pages out for paper (no gaps between them, nothing that only
+   * belongs on screen), runs `job`, and puts the screen back.
+   */
+  private async onPaper(job: () => Promise<void>) {
+    this.headers.stop();
+    this.footnotes.stop();
+    const zoom = this.zoom;
+    const p = this.ctx.page;
+    this.pageRule.textContent = `@page { size: ${p.width}pt ${p.height}pt; margin: 0 }`;
+    document.documentElement.classList.add("printing");
+    // No blinking cursor on paper.
+    (document.activeElement as HTMLElement | null)?.blur();
+    this.setZoom(1);
+    const done = new Promise<void>((resolve) => (this.laidOut = resolve));
+    setPageGap(0);
+    relayout(this.body);
+    await done;
+    // Pictures and contents place themselves after the layout.
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    try {
+      await job();
+    } finally {
+      document.documentElement.classList.remove("printing");
+      setPageGap(24);
+      this.setZoom(zoom);
+      relayout(this.body);
+    }
+  }
+
+  print() {
+    void this.onPaper(async () => window.print());
+  }
+
+  /** Asks where, then saves the document as a PDF. */
+  async savePdf() {
+    const path = await pickPdfPath(this.name.replace(/\.docx$/i, ".pdf"));
+    if (path) await this.savePdfTo(path);
+  }
+
+  async savePdfTo(path: string) {
+    const p = this.ctx.page;
+    try {
+      await this.onPaper(() => invoke("save_pdf", { path, width: p.width / 72, height: p.height / 72 }));
+      this.toast(`Saved ${baseName(path)}`);
+    } catch (error) {
+      this.toast(`Couldn't save the PDF: ${message(error)}`, "error");
+    }
+  }
 
   // ---- for the keyboard shortcuts ----------------------------------------------
 

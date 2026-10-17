@@ -60,6 +60,51 @@ fn delete_recovery(app: tauri::AppHandle, path: String) -> Result<(), String> {
     }
 }
 
+/// Saves what the window shows as a PDF, with WebView2's own PDF printer: no
+/// dialog, no margins (the pages lay themselves out), page size in inches.
+#[tauri::command]
+async fn save_pdf(window: tauri::WebviewWindow, path: String, width: f64, height: f64) -> Result<(), String> {
+    let (tx, rx) = std::sync::mpsc::channel::<Result<(), String>>();
+    window
+        .with_webview(move |webview| {
+            #[cfg(windows)]
+            unsafe {
+                use webview2_com::Microsoft::Web::WebView2::Win32::{ICoreWebView2Environment6, ICoreWebView2_7};
+                use windows::core::{Interface, HSTRING};
+                let done = tx.clone();
+                let started = (|| -> windows::core::Result<()> {
+                    let core = webview.controller().CoreWebView2()?;
+                    let core7: ICoreWebView2_7 = core.cast()?;
+                    let environment: ICoreWebView2Environment6 = webview.environment().cast()?;
+                    let settings = environment.CreatePrintSettings()?;
+                    settings.SetPageWidth(width)?;
+                    settings.SetPageHeight(height)?;
+                    settings.SetMarginTop(0.0)?;
+                    settings.SetMarginBottom(0.0)?;
+                    settings.SetMarginLeft(0.0)?;
+                    settings.SetMarginRight(0.0)?;
+                    settings.SetScaleFactor(1.0)?;
+                    settings.SetShouldPrintBackgrounds(true)?;
+                    settings.SetShouldPrintHeaderAndFooter(false)?;
+                    let handler = webview2_com::PrintToPdfCompletedHandler::create(Box::new(move |result, ok| {
+                        let _ = done.send(if result.is_ok() && ok { Ok(()) } else { Err("The PDF could not be written.".into()) });
+                        Ok(())
+                    }));
+                    core7.PrintToPdf(&HSTRING::from(path.as_str()), &settings, &handler)
+                })();
+                if let Err(err) = started {
+                    let _ = tx.send(Err(err.to_string()));
+                }
+            }
+            #[cfg(not(windows))]
+            let _ = tx.send(Err("Saving as PDF needs Windows.".into()));
+        })
+        .map_err(|err| err.to_string())?;
+    tauri::async_runtime::spawn_blocking(move || rx.recv().map_err(|err| err.to_string())?)
+        .await
+        .map_err(|err| err.to_string())?
+}
+
 #[tauri::command]
 fn read_file(path: String) -> Result<Response, String> {
     fs::read(&path)
@@ -120,7 +165,7 @@ pub fn run() {
             }
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![startup_files, read_file, write_file, recovery_dir, recovery_files, delete_recovery])
+        .invoke_handler(tauri::generate_handler![startup_files, read_file, write_file, recovery_dir, recovery_files, delete_recovery, save_pdf])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
