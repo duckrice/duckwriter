@@ -9,6 +9,27 @@ use percent_encoding::percent_decode_str;
 use tauri::ipc::{InvokeBody, Request, Response};
 use tauri::Manager;
 
+/// Opens a link in the default browser (or mail program). Only web and mail
+/// addresses: a document's link can't start a program.
+#[tauri::command]
+fn open_url(url: String) -> Result<(), String> {
+    let lower = url.to_ascii_lowercase();
+    if !(lower.starts_with("http://") || lower.starts_with("https://") || lower.starts_with("mailto:")) {
+        return Err("Only web and e-mail addresses can be opened.".into());
+    }
+    #[cfg(windows)]
+    unsafe {
+        use windows::core::{w, HSTRING};
+        use windows::Win32::UI::Shell::ShellExecuteW;
+        use windows::Win32::UI::WindowsAndMessaging::SW_SHOWNORMAL;
+        let result = ShellExecuteW(None, w!("open"), &HSTRING::from(url.as_str()), None, None, SW_SHOWNORMAL);
+        if result.0 as isize <= 32 {
+            return Err("The link couldn't be opened.".into());
+        }
+    }
+    Ok(())
+}
+
 /// The documents DuckWriter was started with ("Open with" or a double-click), as absolute paths.
 #[tauri::command]
 fn startup_files() -> Vec<String> {
@@ -167,7 +188,7 @@ pub fn run() {
             }
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![startup_files, read_file, write_file, recovery_dir, recovery_files, delete_recovery, save_pdf, spelling::spell_languages, spelling::spell_check, spelling::spell_suggest])
+        .invoke_handler(tauri::generate_handler![startup_files, read_file, write_file, recovery_dir, recovery_files, delete_recovery, save_pdf, spelling::spell_languages, spelling::spell_check, spelling::spell_suggest, open_url])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

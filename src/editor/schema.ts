@@ -307,7 +307,7 @@ export const schema = new Schema({
     link: {
       attrs: { href: { default: "" }, anchor: { default: null }, rid: { default: null } },
       inclusive: false,
-      toDOM: (mark) => ["a", { href: mark.attrs.href || `#${mark.attrs.anchor ?? ""}`, title: mark.attrs.href || mark.attrs.anchor || "" }, 0],
+      toDOM: (mark) => ["a", { href: mark.attrs.href || `#${mark.attrs.anchor ?? ""}`, title: `${mark.attrs.href.replace(/^mailto:/, "") || "A place in this document"}\nCtrl+click to follow the link` }, 0],
     },
     /** A character style (Word's "rStyle"). */
     charStyle: {
@@ -325,6 +325,12 @@ export const schema = new Schema({
       attrs: { id: {}, author: { default: "" }, date: { default: null }, move: { default: false } },
       inclusive: false,
       toDOM: (mark) => ["del", { class: `tc-del ${authorClass(mark.attrs.author)}`, title: changeTitle(mark, "Deleted") }, 0],
+    },
+    /** Formatting changed while changes were tracked (w:rPrChange): `before` is the old formatting, as XML. */
+    formatChange: {
+      attrs: { id: {}, author: { default: "" }, date: { default: null }, before: { default: "" } },
+      inclusive: false,
+      toDOM: (mark) => ["span", { class: `tc-fmt ${authorClass(mark.attrs.author)}`, title: changeTitle(mark, "Formatted") }, 0],
     },
     /** Character properties DuckWriter doesn't handle, as XML, written back unchanged. */
     runExtra: {

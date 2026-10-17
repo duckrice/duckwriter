@@ -24,6 +24,7 @@ const PATHS = {
   indentLess: '<path d="M4 5h16M11 10h9M11 14h9M4 19h16M7 9.500 4 12l3 2.500"/>',
   lineSpacing: '<path d="M11 6h9M11 12h9M11 18h9M5 4v16M3 6l2-2 2 2M3 18l2 2 2-2"/>',
   clearFormat: '<path d="M6 5h12M12 5 9 19M4 20 20 4"/>',
+  link: '<path d="M10 14a4 4 0 0 0 5.700.300l3-3a4 4 0 0 0-5.700-5.700l-1.500 1.500"/><path d="M14 10a4 4 0 0 0-5.700-.300l-3 3a4 4 0 0 0 5.700 5.700l1.500-1.500"/>',
   comment: '<path d="M4 5h16v11H9l-5 4z"/><path d="M8 9h8M8 12h5"/>',
   track: '<path d="M4 20h4L19 9l-4-4L4 16z"/><path d="M13 7l4 4"/><path d="M14 20h6" opacity=".55"/>',
   prevChange: '<path d="m6 15 6-6 6 6"/>',

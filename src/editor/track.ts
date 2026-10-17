@@ -4,7 +4,8 @@
 
 import { Fragment, Slice, type Mark, type Node } from "prosemirror-model";
 import { Plugin, PluginKey, TextSelection, type Transaction } from "prosemirror-state";
-import { Mapping, ReplaceStep, type Step } from "prosemirror-transform";
+import { AddMarkStep, Mapping, RemoveMarkStep, ReplaceStep, type Step } from "prosemirror-transform";
+import { runPropsXml } from "../docx/write";
 import { newAnnotationId, type DocContext } from "../docx/model";
 import { schema } from "./schema";
 
@@ -14,6 +15,9 @@ export const trackKey = new PluginKey("track");
 export const untracked = (tr: Transaction) => tr.setMeta("noTrack", true);
 
 const nowIso = () => new Date().toISOString().replace(/\.\d+Z$/, "Z");
+
+/** The marks that are formatting, whose changes are tracked as formatting changes. */
+export const FORMATTING = new Set(["bold", "italic", "underline", "strike", "font", "size", "color", "highlight", "vertAlign", "charStyle"]);
 
 export interface TrackOptions {
   on(): boolean;
@@ -86,6 +90,23 @@ export function trackPlugin(opts: TrackOptions) {
       const author = opts.author();
       let selection: number | null = null;
       for (const { step, before, rest } of steps) {
+        if (step instanceof AddMarkStep || step instanceof RemoveMarkStep) {
+          // Formatting: what it was before is kept, so the change can be rejected.
+          const { from, to, mark } = step as unknown as { from: number; to: number; mark: Mark };
+          if (!FORMATTING.has(mark.type.name)) continue;
+          let change: Mark | null = null;
+          before.nodesBetween(from, to, (node, pos) => {
+            if (!node.isInline) return true;
+            if (schema.marks.formatChange.isInSet(node.marks) || isOwnInsertion(node, author)) return false;
+            const a = out.mapping.map(rest.map(Math.max(pos, from)));
+            const b = out.mapping.map(rest.map(Math.min(pos + node.nodeSize, to)));
+            if (b <= a) return false;
+            change ??= schema.marks.formatChange.create({ id: newAnnotationId(opts.context()), author, date: nowIso(), before: "" });
+            out.addMark(a, b, schema.marks.formatChange.create({ ...change.attrs, before: runPropsXml(node.marks, opts.context()) }));
+            return false;
+          });
+          continue;
+        }
         if (!(step instanceof ReplaceStep)) continue;
         const { from, to } = step as unknown as { from: number; to: number };
         const slice = (step as unknown as { slice: Slice }).slice;

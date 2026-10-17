@@ -160,6 +160,23 @@ describe("tracking changes while typing", () => {
     expect(accepted.doc.textContent).toBe("One two");
   });
 
+  it("tracks formatting, which can be rejected back to how it was", async () => {
+    const t = await tracked("The rate was high.");
+    t.state = t.state.apply(t.state.tr.addMark(5, 9, schema.marks.bold.create()));
+    expect(changes(t.state.doc).map((c) => c.kind + ":" + t.state.doc.textBetween(c.from, c.to))).toEqual(["fmt:rate"]);
+    const saved = await writeDocx(t.state.doc, t.ctx);
+    expect(await body(saved)).toContain('<w:rPr><w:b/><w:bCs/><w:rPrChange w:id="');
+    expect(await body(saved)).toMatch(/w:author="Kari" w:date="[^"]+"><w:rPr><\/w:rPr><\/w:rPrChange><\/w:rPr><w:t xml:space="preserve">rate</);
+    const again = await open(saved);
+    expect(changes(again.state.doc).map((c) => c.kind)).toEqual(["fmt"]);
+    const rejected = t.state.apply(decideAll(t.state, false, t.ctx)!);
+    expect(rejected.doc.rangeHasMark(5, 9, schema.marks.bold)).toBe(false);
+    expect(changes(rejected.doc)).toEqual([]);
+    const accepted = t.state.apply(decideAll(t.state, true, t.ctx)!);
+    expect(accepted.doc.rangeHasMark(5, 9, schema.marks.bold)).toBe(true);
+    expect(changes(accepted.doc)).toEqual([]);
+  });
+
   it("changes aren't tracked when it is off", async () => {
     const t = await tracked("Text");
     t.ctx.trackChanges = false;

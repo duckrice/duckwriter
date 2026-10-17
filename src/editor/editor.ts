@@ -23,6 +23,7 @@ import { authorName } from "../author";
 import { ImageView, type PictureHooks } from "./imageview";
 import { MathView } from "./mathview";
 import { paginationPlugin, type PaginationHooks } from "./pagination";
+import { schema } from "./schema";
 import { editEquation } from "../ui/equation";
 
 export interface EditorHooks {
@@ -32,6 +33,13 @@ export interface EditorHooks {
   pictures?: PictureHooks;
   /** Picture files pasted or dropped into the text. */
   onImageFiles?(files: File[], view: EditorView, pos: number | null): void;
+}
+
+let linkOpener: ((href: string, anchor: string | null) => void) | null = null;
+
+/** What following a link (Ctrl+click) does. */
+export function setLinkOpener(open: typeof linkOpener) {
+  linkOpener = open;
 }
 
 /** @param pages given for the main text, which is laid out on pages; headers, footers and notes aren't. */
@@ -87,11 +95,18 @@ export function createState(doc: Node, ctx: () => DocContext, pages?: Omit<Pagin
       gapCursor(),
       new Plugin({
         props: {
-          // Links open in the browser only with Ctrl held, as in Word.
-          handleClick(_view, _pos, event) {
-            const link = (event.target as HTMLElement).closest("a");
-            if (link && !(event.ctrlKey || event.metaKey)) event.preventDefault();
-            return false;
+          handleDOMEvents: {
+            // Links are followed only with Ctrl held, as in Word, and never inside the app's own window.
+            click(view, event) {
+              const a = (event.target as HTMLElement).closest("a");
+              if (!a) return false;
+              event.preventDefault();
+              if (!(event.ctrlKey || event.metaKey)) return false;
+              const pos = view.posAtDOM(a, 0);
+              const mark = schema.marks.link.isInSet(view.state.doc.resolve(Math.min(pos + 1, view.state.doc.content.size)).marks());
+              if (mark) linkOpener?.(mark.attrs.href, mark.attrs.anchor);
+              return true;
+            },
           },
         },
       }),

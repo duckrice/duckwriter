@@ -47,6 +47,8 @@ interface Gap {
   inline: boolean;
   /** Between two rows of a table with this many columns. */
   columns?: number;
+  /** The table's header rows, repeated at the top of the next page (copies, not editable). */
+  header?: HTMLElement[];
 }
 
 export const paginationKey = new PluginKey<DecorationSet>("pagination");
@@ -95,25 +97,44 @@ export function relayout(view: EditorView) {
   schedulers.get(view)?.();
 }
 
-function gapWidget(gap: Gap): Decoration {
+function gapWidget(gap: Gap): Decoration[] {
   if (gap.columns) {
-    // In a table the gap is an empty row, without lines.
-    return Decoration.widget(
-      gap.pos,
-      () => {
-        const row = document.createElement("tr");
-        row.className = "page-gap-row";
-        row.contentEditable = "false";
-        const cell = document.createElement("td");
-        cell.colSpan = gap.columns!;
-        cell.style.height = `${gap.height}px`;
-        row.append(cell);
-        return row;
-      },
-      { side: -1, key: `gap:r:${Math.round(gap.height * 10)}`, ignoreSelection: true },
-    );
+    // In a table the gap is an empty row, without lines, then the header rows again.
+    const header = gap.header ?? [];
+    const sign = header.map((r) => r.textContent).join("|");
+    return [
+      Decoration.widget(
+        gap.pos,
+        () => {
+          const row = document.createElement("tr");
+          row.className = "page-gap-row";
+          row.contentEditable = "false";
+          const cell = document.createElement("td");
+          cell.colSpan = gap.columns!;
+          cell.style.height = `${gap.height}px`;
+          row.append(cell);
+          return row;
+        },
+        { side: -(header.length + 1), key: `gap:r:${Math.round(gap.height * 10)}`, ignoreSelection: true },
+      ),
+      ...header.map((source, i) =>
+        Decoration.widget(
+          gap.pos,
+          () => {
+            const row = source.cloneNode(true) as HTMLElement;
+            row.classList.add("repeated-header");
+            row.contentEditable = "false";
+            row.setAttribute("aria-hidden", "true");
+            for (const el of row.querySelectorAll(".selectedCell, .column-resize-handle")) el.classList.remove("selectedCell");
+            for (const el of row.querySelectorAll(".column-resize-handle")) el.remove();
+            return row;
+          },
+          { side: -(header.length - i), key: `hdr:${i}:${sign}`, ignoreSelection: true },
+        ),
+      ),
+    ];
   }
-  return Decoration.widget(
+  return [Decoration.widget(
     gap.pos,
     () => {
       const el = document.createElement(gap.inline ? "span" : "div");
@@ -123,7 +144,7 @@ function gapWidget(gap: Gap): Decoration {
       return el;
     },
     { side: -1, key: `gap:${gap.inline ? "i" : "b"}:${Math.round(gap.height * 10)}`, ignoreSelection: true, marks: [] },
-  );
+  )];
 }
 
 interface Line {
@@ -251,8 +272,17 @@ function layout(view: EditorView, hooks: PaginationHooks) {
       return true;
     };
     if (b.node.type === schema.nodes.table) {
-      // A table continues on the next page between two rows.
+      // A table continues on the next page between two rows, with its header rows again on top.
       const columns = TableMap.get(b.node).width;
+      const header: HTMLElement[] = [];
+      let headerHeight = 0;
+      b.node.forEach((row, offset, r) => {
+        if (header.length !== r || row.firstChild?.type !== schema.nodes.table_header) return;
+        const el = view.nodeDOM(b.pos + 1 + offset);
+        if (!(el instanceof HTMLElement)) return;
+        header.push(el.cloneNode(true) as HTMLElement);
+        headerHeight += el.getBoundingClientRect().height / scale;
+      });
       b.node.forEach((row, offset, r) => {
         const rowPos = b.pos + 1 + offset;
         const el = view.nodeDOM(rowPos);
@@ -262,13 +292,15 @@ function layout(view: EditorView, hooks: PaginationHooks) {
         const rowBottom = y(rect.bottom) + shift;
         const k = pageOf(rowTop);
         if (fits(rowBottom, k, []) || rowTop <= contentTop(k) + 1) return;
-        if (r === 0) {
-          moveWhole();
+        if (r === 0 || r < header.length) {
+          if (r === 0) moveWhole();
           return;
         }
         const height = contentTop(k + 1) - rowTop;
-        gaps.push({ pos: rowPos, height, inline: false, columns });
-        shift += height;
+        // Repeating the header makes no sense if it would fill the page.
+        const repeat = header.length && headerHeight < contentHeight / 2 ? header : undefined;
+        gaps.push({ pos: rowPos, height, inline: false, columns, header: repeat });
+        shift += height + (repeat ? headerHeight : 0);
         void row;
       });
       continue;
@@ -341,7 +373,7 @@ function layout(view: EditorView, hooks: PaginationHooks) {
   const end = last ? last.bottom + shift : 0;
   const count = Math.max(1, pageOf(Math.max(0, end - 0.5)) + 1);
   gaps.sort((a, b) => a.pos - b.pos || Number(a.inline) - Number(b.inline));
-  view.dispatch(view.state.tr.setMeta(paginationKey, DecorationSet.create(view.state.doc, gaps.map(gapWidget))).setMeta("addToHistory", false));
+  view.dispatch(view.state.tr.setMeta(paginationKey, DecorationSet.create(view.state.doc, gaps.flatMap(gapWidget))).setMeta("addToHistory", false));
   sheet.style.minHeight = "";
   // Every gap before a block moved it down; its final top is its first line's page.
   let moved = 0;

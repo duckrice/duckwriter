@@ -25,7 +25,7 @@ const RPR_ORDER = [
   "rStyle", "rFonts", "b", "bCs", "i", "iCs", "caps", "smallCaps", "strike", "dstrike", "outline", "shadow", "emboss",
   "imprint", "noProof", "snapToGrid", "vanish", "webHidden", "color", "spacing", "w", "kern", "position", "sz", "szCs",
   "highlight", "u", "effect", "bdr", "shd", "fitText", "vertAlign", "rtl", "cs", "em", "lang", "eastAsianLayout",
-  "specVanish", "oMath",
+  "specVanish", "oMath", "rPrChange",
 ];
 
 const TBLPR_ORDER = [
@@ -424,10 +424,20 @@ class BodyWriter {
         case "runExtra":
           props.push(...splitElements(a.xml));
           break;
+        case "formatChange":
+          props.push(`<w:rPrChange w:id="${escapeAttr(a.id)}" w:author="${escapeAttr(a.author)}"${a.date ? ` w:date="${escapeAttr(a.date)}"` : ""}><w:rPr>${a.before}</w:rPr></w:rPrChange>`);
+          break;
       }
     }
     return props.length ? `<w:rPr>${ordered(props, RPR_ORDER)}</w:rPr>` : "";
   }
+}
+
+/** Formatting (editor marks) as the inside of a w:rPr. */
+export function runPropsXml(marks: readonly Mark[], ctx: DocContext): string {
+  return new BodyWriter(ctx)
+    .runProps(marks.filter((m) => m.type !== schema.marks.formatChange))
+    .replace(/^<w:rPr>|<\/w:rPr>$/g, "");
 }
 
 /** Text as run content: tabs and special hyphens become their own elements. Deleted text is w:delText. */

@@ -7,7 +7,8 @@ import { resolvedPara, resolvedRun, type DocContext } from "./docx/model";
 import { readDocx } from "./docx/read";
 import { blankDocx } from "./docx/template";
 import { writeDocx } from "./docx/write";
-import { createState, createView } from "./editor/editor";
+import { createState, createView, setLinkOpener } from "./editor/editor";
+import { bookmarkPosition } from "./ui/references";
 import { schema } from "./editor/schema";
 import { PAGE_GAP, relayout, setPageGap, type PageLayout } from "./editor/pagination";
 import { invoke } from "@tauri-apps/api/core";
@@ -114,6 +115,16 @@ class App {
     });
     this.sheet.append(this.comments.el);
     this.trackStatus.addEventListener("click", () => this.toggleTracking());
+    setLinkOpener((href, anchor) => {
+      if (href) {
+        if (isDesktop) invoke("open_url", { url: href }).catch((error) => this.toast(message(error), "error"));
+        else window.open(href, "_blank", "noopener");
+        return;
+      }
+      const pos = anchor ? bookmarkPosition(this.body.state.doc, anchor) : null;
+      if (pos === null) return this.toast("The place this link goes to isn't in the document");
+      this.goTo(this.body.state.doc.resolve(pos).before());
+    });
     window.addEventListener("resize", () => this.placeSheet());
     this.workspace.prepend(this.findBar.el);
     this.footnotes = new Footnotes(this);
@@ -566,7 +577,7 @@ class App {
       if (!next) return this.toast("No tracked changes");
       return this.stepChange(1);
     }
-    const tr = decide(view.state, here, accept);
+    const tr = decide(view.state, here, accept, this.ctx);
     if (!tr) return;
     view.dispatch(tr);
     const next = nextChange(view.state, 1);
@@ -578,7 +589,7 @@ class App {
   decideAllChanges(accept: boolean) {
     const view = this.body;
     const count = changes(view.state.doc).length;
-    const tr = decideAll(view.state, accept);
+    const tr = decideAll(view.state, accept, this.ctx);
     if (!tr) return this.toast("No tracked changes");
     view.dispatch(tr);
     this.toast(`${accept ? "Accepted" : "Rejected"} ${count} ${count === 1 ? "change" : "changes"}`);

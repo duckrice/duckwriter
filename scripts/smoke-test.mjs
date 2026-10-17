@@ -953,10 +953,20 @@ await session(sample("table-long.docx"), 9511, async (app) => {
     const sheets = [...document.querySelectorAll(".page-sheet")].map((s) => s.getBoundingClientRect());
     const margin = parseFloat(getComputedStyle(document.querySelector(".doc")).marginTop);
     const inside = (r) => sheets.some((s) => r.top >= s.top + margin - 3 && r.bottom <= s.bottom - margin + 3);
-    const rows = [...document.querySelectorAll(".doc table tr:not(.page-gap-row)")];
-    return { pages: sheets.length, rows: rows.length, outside: rows.filter((r) => !inside(r.getBoundingClientRect())).length, gaps: document.querySelectorAll(".page-gap-row").length };
+    const rows = [...document.querySelectorAll(".doc table tr:not(.page-gap-row):not(.repeated-header)")];
+    const repeated = document.querySelector(".doc tr.repeated-header");
+    const second = sheets[1];
+    return {
+      pages: sheets.length,
+      rows: rows.length,
+      outside: [...rows, ...document.querySelectorAll(".repeated-header")].filter((r) => !inside(r.getBoundingClientRect())).length,
+      gaps: document.querySelectorAll(".page-gap-row").length,
+      header: repeated?.textContent ?? "",
+      headerOnTop: !!repeated && Math.abs(repeated.getBoundingClientRect().top - (second.top + margin)) < 3 && repeated.previousElementSibling?.classList.contains("page-gap-row"),
+    };
   })()`);
   check("a long table continues on the next page between rows", report.pages >= 2 && report.gaps >= 1 && report.rows === 71 && report.outside === 0, JSON.stringify(report));
+  check("its header row is repeated at the top of the next page", report.header === "RunTemperature (°C)Rate (mol/s)" && report.headerOnTop, JSON.stringify(report));
   await app.evaluate(`document.querySelector(".page-gap-row").scrollIntoView({ block: "center" })`);
   await app.shoot("table-across-pages");
 });
@@ -1018,6 +1028,28 @@ await session(null, 9540, async (app) => {
   check("Ctrl+F7 switches spell checking off", (await marked()).length === 0 && (await app.evaluate(`document.querySelector(".spell-status").textContent`)) === "Spelling off");
   await app.key("F7", 118, CTRL);
   check("and on again", (await marked()).length === 3);
+  check("no errors in the app", app.errors.length === 0, app.errors.join("; "));
+});
+
+// ---- links ----------------------------------------------------------------------------------------
+
+await session(null, 9560, async (app) => {
+  await app.debugHandle();
+  await app.type("Read the report");
+  await app.key("ArrowLeft", 37, CTRL | SHIFT);
+  await app.key("K", 75, CTRL);
+  check("Ctrl+K asks for the address of the selected text", await app.waitFor(`document.querySelector("dialog[open] h2")?.textContent === "Insert link" && document.activeElement?.placeholder?.startsWith("https")`, 3000));
+  await app.type("duck.no/report");
+  await app.key("Enter", 13);
+  const link = () => app.evaluate(`(() => { const a = document.querySelector(".doc a"); return a ? a.textContent + " → " + a.getAttribute("href") : ""; })()`);
+  check("the text becomes a link, blue and underlined", (await link()) === "report → https://duck.no/report" && (await app.evaluate(`getComputedStyle(document.querySelector('.doc a [data-cstyle="Hyperlink"]') ?? document.body).color`)) === "rgb(5, 99, 193)", `${await link()} ${await app.evaluate(`getComputedStyle(document.querySelector('.doc a [data-cstyle="Hyperlink"]') ?? document.body).color`)}`);
+  await app.clickText(".doc a", "report");
+  check("a plain click puts the cursor in the link, without following it", (await app.evaluate(`location.href.startsWith("http://tauri.localhost") || location.protocol === "tauri:"`)) && !(await app.evaluate(`!!document.querySelector("dialog[open]")`)));
+  await app.key("K", 75, CTRL);
+  check("Ctrl+K on a link edits it", await app.waitFor(`document.querySelector("dialog[open] h2")?.textContent === "Edit link"`, 3000));
+  await app.shoot("link");
+  await app.clickText("dialog[open] .btn", "Remove link");
+  check("Remove link leaves the text", (await app.count(".doc a")) === 0 && (await app.evaluate(`document.querySelector(".doc p").textContent`)) === "Read the report");
   check("no errors in the app", app.errors.length === 0, app.errors.join("; "));
 });
 

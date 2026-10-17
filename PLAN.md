@@ -65,12 +65,14 @@ written back unchanged.
 - **Comments** beside the page, level with their text: add (Ctrl+Alt+M),
   edit, reply, resolve, delete; Word's replies and resolved comments are
   read and written.
+- **Links** (Ctrl+K) to web pages, e-mail addresses and headings; Ctrl+click
+  follows them, in the browser.
+- A long table's **header rows are repeated** at the top of each page.
+- Formatting changes are tracked too, and can be rejected back to what they were.
 
 ## Next
 
-- Tracking formatting changes and table rows (now: text and paragraphs).
-- Links: insert and edit (Ctrl+K).
-- Header rows repeated on each page of a long table.
+- Tracking table rows and paragraph formatting (now: text, paragraphs, character formatting).
 - Text wrapping on both sides of a picture in the middle of the page.
 - Several documents in tabs, recent files.
 - Auto-update and an installer, published on GitHub like Duckument.

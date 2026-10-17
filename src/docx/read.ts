@@ -492,7 +492,7 @@ function lineGridOf(grid: Element | null): number | null {
 /** The paragraph properties DuckWriter understands; the rest are kept as XML. */
 const KNOWN_PPR = new Set(["pStyle", "jc", "spacing", "ind", "numPr", "rPr"]);
 /** The character properties DuckWriter understands; the rest are kept as XML. */
-const KNOWN_RPR = new Set(["rStyle", "rFonts", "b", "bCs", "i", "iCs", "strike", "u", "color", "sz", "szCs", "highlight", "vertAlign"]);
+const KNOWN_RPR = new Set(["rStyle", "rFonts", "b", "bCs", "i", "iCs", "strike", "u", "color", "sz", "szCs", "highlight", "vertAlign", "rPrChange"]);
 
 class BodyReader {
   constructor(
@@ -864,8 +864,20 @@ class BodyReader {
     if (props.vertAlign) add(schema.marks.vertAlign.create({ value: props.vertAlign }));
     const extra = children(rPr).filter((c) => !(c.namespaceURI === NS.w && KNOWN_RPR.has(c.localName)));
     if (extra.length) add(schema.marks.runExtra.create({ xml: extra.map(this.raw).join("") }));
+    // Formatting changed while changes were tracked, with what it was before.
+    const change = child(rPr, "rPrChange");
+    if (change) {
+      const old = child(change, "rPr");
+      add(schema.marks.formatChange.create({ id: attr(change, "id") ?? "", author: attr(change, "author") ?? "", date: attr(change, "date"), before: old ? children(old).map(this.raw).join("") : "" }));
+    }
     return marks;
   }
+}
+
+/** Formatting written as run properties (the inside of a w:rPr) as editor marks. */
+export function marksFromRunProps(xml: string, ctx: DocContext): readonly Mark[] {
+  const root = parseXml(`<w:rPr xmlns:w="${NS.w}">${xml}</w:rPr>`).documentElement;
+  return new BodyReader(new Set(["w"]), ctx.rels, ctx.themeFonts).runMarks(root, []);
 }
 
 interface TocFound {

@@ -1,3 +1,4 @@
+import { editLink } from "./links";
 // Every keyboard shortcut in one list: the keys handled, and the help window
 // (F1) that lists them, both come from here, so they always agree.
 
@@ -167,6 +168,8 @@ export const SHORTCUTS: Shortcut[] = [
 
   // ---- inserting
   { group: "Insert", label: "Equation", keys: ["Alt+="], run: (x) => insertEquation(x.view) },
+  { group: "Insert", label: "Link, or change the link at the cursor", keys: ["Ctrl+K"], run: (x) => editLink(x.view, x.ctx) },
+  { group: "Insert", label: "Follow a link", keys: ["Ctrl+click"] },
   { group: "Review", label: "New comment", keys: ["Ctrl+Alt+M"], run: (x) => x.newComment() },
   { group: "Review", label: "Track changes, on or off", keys: ["Ctrl+Shift+E"], run: (x) => x.toggleTracking(), everywhere: true },
   { group: "Review", label: "Next change or comment", keys: ["Alt+PageDown"], run: (x) => x.stepChange(1) },

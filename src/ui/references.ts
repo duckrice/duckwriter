@@ -3,7 +3,7 @@
 // 1.1.1) and a table of contents that keeps itself up to date.
 
 import type { Node } from "prosemirror-model";
-import { TextSelection } from "prosemirror-state";
+import { TextSelection, type Transaction } from "prosemirror-state";
 import type { EditorView } from "prosemirror-view";
 import { h } from "../dom";
 import { ensureStyles } from "../docx/builtins";
@@ -155,25 +155,40 @@ function captionText(para: Node): string {
  * The target gets a bookmark if it doesn't have one yet.
  */
 export function insertReference(view: EditorView, target: ReferenceTarget) {
-  let tr = view.state.tr;
-  const para = tr.doc.nodeAt(target.pos)!;
-  let name = bookmarkAtStart(para);
-  if (!name) {
-    const [start, end] = bookmarkNodes(tr.doc);
-    name = bookmarkOf(start)!.name!;
-    // A caption's bookmark covers its label and number; a heading's covers all of it.
-    let endAt = target.pos + para.nodeSize - 1;
-    if (target.kind === "caption") {
-      para.forEach((child, offset) => {
-        if (child.type === schema.nodes.field && fieldKind(child.attrs.instr) === "SEQ" && endAt === target.pos + para.nodeSize - 1) endAt = target.pos + 1 + offset + child.nodeSize;
-      });
-    }
-    tr = tr.insert(endAt, end).insert(target.pos + 1, start);
-  }
+  const tr = view.state.tr;
+  const name = bookmarkFor(tr, target);
   const ref = schema.nodes.field.create({ instr: ` REF ${name} \\h `, result: "" });
   tr.replaceSelectionWith(ref, true);
   view.dispatch(tr.scrollIntoView());
   view.focus();
+}
+
+/** The name of the target's bookmark, adding one (to `tr`) if it has none yet. */
+export function bookmarkFor(tr: Transaction, target: ReferenceTarget): string {
+  const para = tr.doc.nodeAt(target.pos)!;
+  const known = bookmarkAtStart(para);
+  if (known) return known;
+  const [start, end] = bookmarkNodes(tr.doc);
+  // A caption's bookmark covers its label and number; a heading's covers all of it.
+  let endAt = target.pos + para.nodeSize - 1;
+  if (target.kind === "caption") {
+    para.forEach((child, offset) => {
+      if (child.type === schema.nodes.field && fieldKind(child.attrs.instr) === "SEQ" && endAt === target.pos + para.nodeSize - 1) endAt = target.pos + 1 + offset + child.nodeSize;
+    });
+  }
+  tr.insert(endAt, end).insert(target.pos + 1, start);
+  return bookmarkOf(start)!.name!;
+}
+
+/** Where a bookmark starts, or null. */
+export function bookmarkPosition(doc: Node, name: string): number | null {
+  let found: number | null = null;
+  doc.descendants((node, pos) => {
+    if (found !== null) return false;
+    if (bookmarkOf(node)?.name === name) found = pos;
+    return true;
+  });
+  return found;
 }
 
 // ---- numbered headings --------------------------------------------------------------

@@ -1,3 +1,4 @@
+import { editLink } from "./links";
 // The formatting toolbar. It shows the formatting at the cursor and applies
 // changes through the editor's commands.
 
@@ -194,6 +195,7 @@ export class Toolbar {
         this.button("pageBreak", "Page break (Ctrl+Enter)", () => this.run(insertPageBreak())),
         this.button("header", "Header and footer (Ctrl+Alt+O)", () => this.host.editHeader()),
         this.button("footnote", "Footnote (Ctrl+Alt+F)", () => this.host.insertFootnote()),
+        this.button("link", "Link (Ctrl+K)", () => editLink(this.host.view, this.host.ctx)),
         this.splitButton("references", "References (Ctrl+Alt+R)", null, () => this.referencesMenu(), () => this.referencesMenu()),
         this.splitButton("layout", "Layout", null, () => this.layoutMenu(), () => this.layoutMenu()),
       ),

@@ -8,11 +8,13 @@ import { Plugin, PluginKey, TextSelection, type EditorState, type Transaction } 
 import { Decoration, DecorationSet } from "prosemirror-view";
 import { ensureStyles } from "../docx/builtins";
 import { newAnnotationId, type CommentData, type DocContext } from "../docx/model";
+import { marksFromRunProps } from "../docx/read";
 import { authorClass, schema } from "./schema";
 
 /** One change as a reader sees it: neighbouring text with the same kind of change by the same person. */
 export interface Change {
-  kind: "ins" | "del";
+  /** Inserted, deleted, or formatted. */
+  kind: "ins" | "del" | "fmt";
   from: number;
   to: number;
   author: string;
@@ -26,12 +28,13 @@ export function changes(doc: Node): Change[] {
   const out: Change[] = [];
   doc.descendants((block, blockPos) => {
     if (!block.isTextblock) return true;
-    const open: Partial<Record<"ins" | "del", Change>> = {};
+    const open: Partial<Record<"ins" | "del" | "fmt", Change>> = {};
+    const types = { ins: schema.marks.insertion, del: schema.marks.deletion, fmt: schema.marks.formatChange };
     block.forEach((child, offset) => {
       const from = blockPos + 1 + offset;
       const to = from + child.nodeSize;
-      for (const kind of ["ins", "del"] as const) {
-        const mark = (kind === "ins" ? schema.marks.insertion : schema.marks.deletion).isInSet(child.marks);
+      for (const kind of ["ins", "del", "fmt"] as const) {
+        const mark = types[kind].isInSet(child.marks);
         const current = open[kind];
         if (!mark) {
           delete open[kind];
@@ -66,14 +69,31 @@ export function changesAt(state: EditorState): Change[] {
   return all.filter((c) => !c.paragraph && (c.from === from || c.to === from)).slice(0, 1);
 }
 
-/** Accepts (true) or rejects (false) the given changes. */
-export function decide(state: EditorState, list: Change[], accept: boolean): Transaction | null {
+/** Accepts (true) or rejects (false) the given changes. Rejecting formatting needs the document, for its styles. */
+export function decide(state: EditorState, list: Change[], accept: boolean, ctx?: DocContext): Transaction | null {
   if (!list.length) return null;
   const tr = state.tr;
   // From the end, so that what is still to do keeps its place.
   for (const c of [...list].sort((a, b) => b.from - a.from || b.to - a.to)) {
     const from = tr.mapping.map(c.from);
     const to = tr.mapping.map(c.to);
+    if (c.kind === "fmt") {
+      if (!accept && ctx) {
+        // Back to the formatting before, piece by piece.
+        const pieces: { a: number; b: number; before: string }[] = [];
+        tr.doc.nodesBetween(from, to, (node, pos) => {
+          const change = schema.marks.formatChange.isInSet(node.marks);
+          if (node.isInline && change) pieces.push({ a: Math.max(pos, from), b: Math.min(pos + node.nodeSize, to), before: change.attrs.before });
+          return !node.isInline;
+        });
+        for (const p of pieces) {
+          for (const name of FORMATTING_MARKS) tr.removeMark(p.a, p.b, schema.marks[name]);
+          for (const mark of marksFromRunProps(p.before, ctx)) if ((FORMATTING_MARKS as readonly string[]).includes(mark.type.name)) tr.addMark(p.a, p.b, mark);
+        }
+      }
+      tr.removeMark(from, to, schema.marks.formatChange);
+      continue;
+    }
     const keep = (c.kind === "ins") === accept;
     if (c.paragraph) {
       const $end = tr.doc.resolve(from);
@@ -93,9 +113,11 @@ export function decide(state: EditorState, list: Change[], accept: boolean): Tra
   return tr.setMeta("noTrack", true);
 }
 
-/** Accepts or rejects every change, and drops Word's records of formatting changes too. */
-export function decideAll(state: EditorState, accept: boolean): Transaction | null {
-  const tr = decide(state, changes(state.doc), accept) ?? state.tr;
+const FORMATTING_MARKS = ["bold", "italic", "underline", "strike", "font", "size", "color", "highlight", "vertAlign", "charStyle", "runExtra"] as const;
+
+/** Accepts or rejects every change, and drops Word's records of paragraph formatting changes too. */
+export function decideAll(state: EditorState, accept: boolean, ctx?: DocContext): Transaction | null {
+  const tr = decide(state, changes(state.doc), accept, ctx) ?? state.tr;
   // Formatting changes are accepted as they are (DuckWriter can't undo them).
   tr.doc.descendants((node, pos) => {
     if (node.isTextblock && /<w:pPrChange\b/.test(node.attrs.extra)) {
