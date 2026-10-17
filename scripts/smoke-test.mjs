@@ -1122,6 +1122,35 @@ await session(sample("report.docx"), 9573, async (app) => {
   check("Ctrl+N opens a new document in a window of its own, leaving this one", found && (await app.evaluate(`document.title.startsWith("report.docx")`)));
 });
 
+await session(null, 9574, async (app) => {
+  await app.debugHandle();
+  await app.type("Ducks swim faster in warm water");
+  await app.key("S", 83, ALT | SHIFT);
+  check("Alt+Shift+S opens the sources", await app.waitFor(`document.querySelector("dialog[open] h2")?.textContent === "Sources"`, 3000));
+  await app.evaluate(`(() => {
+    const box = document.querySelector('dialog[open] textarea[placeholder^="Paste BibTeX"]');
+    box.value = "@article{s, author={Smith, Anna and Jones, Bob}, title={Rates of things}, journal={Journal of Ducks}, year=2020, volume={3}, pages={1--10}}";
+  })()`);
+  await app.clickText("dialog[open] .btn", "Import BibTeX");
+  check("BibTeX is imported", (await app.count("dialog[open] .source-item")) === 1);
+  await app.clickText("dialog[open] .btn", "Done");
+  await app.key("S", 83, ALT | SHIFT);
+  await app.evaluate(`(() => { const s = document.querySelector('dialog[open] select'); s.value = "APA"; })()`);
+  await app.clickText("dialog[open] .btn", "Done");
+  await app.key("C", 67, ALT | SHIFT);
+  check("Alt+Shift+C asks which source to cite", await app.waitFor(`document.querySelector("dialog[open] h2")?.textContent === "Cite"`, 3000));
+  await app.type("smith");
+  await app.key("Enter", 13);
+  const cite = () => app.evaluate(`document.querySelector('.doc .field[data-instr="CITATION"]')?.textContent ?? ""`);
+  check("the citation shows in the text, after a space", (await app.waitFor(`document.querySelector('.doc .field[data-instr="CITATION"]')?.textContent === "(Smith & Jones, 2020)"`, 3000)) && (await app.evaluate(`window.__dw.body.state.doc.firstChild.textContent`)) === "Ducks swim faster in warm water ", await cite());
+  await app.key("End", 35, CTRL);
+  await app.key("B", 66, ALT | SHIFT);
+  const entry = () => app.evaluate(`document.querySelector(".doc .bibliography-entry")?.textContent ?? ""`);
+  check("Alt+Shift+B adds the reference list", (await entry()) === "Smith, A., & Jones, B. (2020). Rates of things. Journal of Ducks, 3, 1–10.", await entry());
+  await app.shoot("citations");
+  check("no errors in the app", app.errors.length === 0, app.errors.join("; "));
+});
+
 await session(sample("letterhead.docx"), 9572, async (app) => {
   check("a logo in the header is shown", await app.waitFor(`!!document.querySelector(".hf-layer img")`, 5000));
   await app.shoot("header-logo");

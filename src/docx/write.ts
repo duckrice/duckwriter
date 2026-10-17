@@ -10,6 +10,7 @@ import { toOmml } from "../math/omml";
 import { TableMap } from "prosemirror-tables";
 import { TWIPS_PER_POINT, originalXml, type CommentData, type DocContext, type Relationship } from "./model";
 import { escapeAttr, escapeText, tag } from "./xml";
+import { writeBibliography } from "./bibliography";
 
 /** The order Word requires for the elements of a paragraph's properties. */
 const PPR_ORDER = [
@@ -76,6 +77,12 @@ export async function writeDocx(doc: Node, ctx: DocContext): Promise<Uint8Array>
   await writeFootnotes(doc, ctx);
   await writeComments(doc, ctx);
   await writeTrackSetting(ctx);
+  await writeBibliography(
+    ctx.zip,
+    ctx.bibliography,
+    (target) => ctx.addedRels.set(newRelId(ctx), { type: "http://schemas.openxmlformats.org/officeDocument/2006/relationships/customXml", target, external: false }),
+    (part, type) => addContentType(ctx, part, type),
+  );
   await writeAddedStyles(ctx);
   await writeStyleNumbering(ctx);
   updateSectPr(ctx);
@@ -128,6 +135,7 @@ class BodyWriter {
       if (node.type === schema.nodes.paragraph) out += this.paragraph(node, index === 0 ? lead : "");
       else if (node.type === schema.nodes.raw_block) out += node.attrs.xml;
       else if (node.type === schema.nodes.toc) out += this.toc(node);
+      else if (node.type === schema.nodes.bibliography) out += this.bibliography(node);
       else if (node.type === schema.nodes.table) out += this.table(node);
     });
     return out;
@@ -225,6 +233,21 @@ class BodyWriter {
       out += `<w:p>${pPr}${i === 0 ? begin : ""}<w:r><w:t xml:space="preserve">${escapeText(e.text)}</w:t></w:r><w:r><w:tab/></w:r><w:r><w:t>${e.page}</w:t></w:r>${i === entries.length - 1 ? end : ""}</w:p>`;
     });
     return out;
+  }
+
+  /** A reference list as Word writes one: a Bibliographies content control around a BIBLIOGRAPHY field. */
+  private bibliography(node: Node): string {
+    const entries = node.attrs.entries as { text: string; italic?: boolean }[][];
+    const heading = this.ctx.styles.byId.has("Heading1") ? '<w:pPr><w:pStyle w:val="Heading1"/></w:pPr>' : "";
+    const title = `<w:p>${heading}<w:r><w:t xml:space="preserve">${escapeText(node.attrs.title)}</w:t></w:r></w:p>`;
+    const begin = '<w:r><w:fldChar w:fldCharType="begin"/></w:r><w:r><w:instrText xml:space="preserve"> BIBLIOGRAPHY </w:instrText></w:r><w:r><w:fldChar w:fldCharType="separate"/></w:r>';
+    const end = '<w:r><w:fldChar w:fldCharType="end"/></w:r>';
+    const pPr = '<w:pPr><w:pStyle w:val="Bibliography"/></w:pPr>';
+    const runs = (pieces: { text: string; italic?: boolean }[]) => pieces.map((p) => `<w:r>${p.italic ? "<w:rPr><w:i/><w:iCs/></w:rPr>" : ""}${textXml(p.text)}</w:r>`).join("");
+    const paras = entries.length
+      ? entries.map((e, i) => `<w:p>${pPr}${i === 0 ? begin : ""}${runs(e)}${i === entries.length - 1 ? end : ""}</w:p>`).join("")
+      : `<w:p>${pPr}${begin}<w:r><w:t>No sources cited yet.</w:t></w:r>${end}</w:p>`;
+    return `<w:sdt><w:sdtPr><w:docPartObj><w:docPartGallery w:val="Bibliographies"/><w:docPartUnique/></w:docPartObj></w:sdtPr><w:sdtContent>${title}<w:sdt><w:sdtPr><w:bibliography/></w:sdtPr><w:sdtContent>${paras}</w:sdtContent></w:sdt></w:sdtContent></w:sdt>`;
   }
 
   paragraph(node: Node, lead = ""): string {

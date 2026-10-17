@@ -224,6 +224,8 @@ export interface DocContext {
   /** Styles whose list numbering changed (numbered headings), by style id: null switches it off. */
   styleNumbering: Map<string, { numId: string; ilvl: number } | null>;
   comments: Comments;
+  /** The sources citations refer to (Word's bibliography sources). */
+  bibliography: import("./bibliography").Bibliography;
   /** The last id handed out by newAnnotationId. */
   lastAnnotationId?: number;
   /** Changes are tracked (Word's w:trackRevisions in the settings). */

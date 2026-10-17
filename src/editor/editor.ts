@@ -21,6 +21,7 @@ import { reviewPlugin } from "./review";
 import { trackPlugin } from "./track";
 import { pastePlugin } from "./paste";
 import { autoFormatPlugin } from "./autoformat";
+import { citationsPlugin } from "./citations";
 import { authorName } from "../author";
 import { ImageView, type PictureHooks } from "./imageview";
 import { MathView } from "./mathview";
@@ -94,6 +95,7 @@ export function createState(doc: Node, ctx: () => DocContext, pages?: Omit<Pagin
       reviewPlugin(ctx),
       trackPlugin({ on: () => !!ctx().trackChanges, author: authorName, context: ctx }),
       pastePlugin(ctx),
+      citationsPlugin(ctx),
       ...(pages ? [paginationPlugin({ context: ctx, ...pages })] : []),
       dropCursor({ color: "#0f766e", width: 2 }),
       gapCursor(),

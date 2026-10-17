@@ -219,6 +219,7 @@ class App {
     if (!this.body.state.doc.eq(this.savedDoc) || this.ctx.titlePage !== this.savedTitlePage || !this.lineGridSaved) return true;
     if (this.ctx.stories.some((s) => !s.saved || !s.doc.eq(s.saved))) return true;
     if (this.ctx.comments.version !== this.ctx.comments.savedVersion || this.ctx.trackChanges !== this.ctx.trackChangesSaved) return true;
+    if (this.ctx.bibliography.version !== this.ctx.bibliography.savedVersion) return true;
     const fn = this.ctx.footnotes;
     return [...fn.notes].some(([id, doc]) => {
       const saved = fn.saved.get(id);

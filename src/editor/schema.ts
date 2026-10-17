@@ -161,6 +161,27 @@ export const schema = new Schema(clipboardReady({
       },
     },
 
+    /**
+     * The reference list (Word's bibliography): the cited sources, in the
+     * document's citation style, kept up to date as citations are added.
+     */
+    bibliography: {
+      group: "block",
+      atom: true,
+      selectable: true,
+      attrs: { title: { default: "References" }, entries: { default: [] } },
+      toDOM(node): DOMOutputSpec {
+        const entries = node.attrs.entries as { text: string; italic?: boolean }[][];
+        return [
+          "div",
+          { class: "bibliography", title: "Reference list — it follows the citations by itself" },
+          ["div", { class: "bibliography-title" }, node.attrs.title],
+          ...entries.map((pieces): DOMOutputSpec => ["p", { class: "bibliography-entry" }, ...pieces.map((p): DOMOutputSpec => (p.italic ? ["i", p.text] : ["span", p.text]))]),
+          ...(entries.length ? [] : [["div", { class: "toc-empty" }, "Sources you cite are listed here (Alt+Shift+C cites one)."] as DOMOutputSpec]),
+        ];
+      },
+    },
+
     text: { group: "inline" },
 
     hard_break: {

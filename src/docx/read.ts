@@ -7,6 +7,7 @@ import { schema } from "../editor/schema";
 import { toLatex } from "../math/ast";
 import { MATH_NS, fromOmml } from "../math/omml";
 import { imageType, readPicture } from "./drawing";
+import { readBibliography } from "./bibliography";
 import {
   DEFAULT_PAGE,
   originalXml,
@@ -75,6 +76,13 @@ export async function readDocx(bytes: Uint8Array): Promise<OpenedDocument> {
     const el = bodyChildren[i];
     if (isW(el, "sectPr")) {
       sectPr = rawXml(el, prefixes);
+      continue;
+    }
+    // A reference list (Word's bibliography) becomes one that follows the citations.
+    const bibliography = bibliographyAt(bodyChildren, i);
+    if (bibliography) {
+      blocks.push(schema.nodes.bibliography.create({ title: bibliography.title }));
+      i = bibliography.end;
       continue;
     }
     // A table of contents becomes one that keeps itself up to date.
@@ -167,6 +175,7 @@ export async function readDocx(bytes: Uint8Array): Promise<OpenedDocument> {
     media: new Map(),
     imageSources,
     comments,
+    bibliography: await readBibliography(zip),
     trackChanges,
     trackChangesSaved: trackChanges,
   };
@@ -921,6 +930,28 @@ function tableOfContents(siblings: Element[], i: number): TocFound | null {
     if (!isW(siblings[j], "p")) return null;
     const ends = Array.from(siblings[j].getElementsByTagNameNS(NS.w, "fldChar")).some((f) => attr(f, "fldCharType") === "end");
     if (ends) return { end: j, title: "", entries: entriesOf(siblings.slice(i, j + 1)) };
+  }
+  return null;
+}
+
+/** A reference list at body child `i`: Word's Bibliographies content control, or a BIBLIOGRAPHY field. */
+function bibliographyAt(siblings: Element[], i: number): { end: number; title: string } | null {
+  const el = siblings[i];
+  if (isW(el, "sdt")) {
+    const gallery = el.getElementsByTagNameNS(NS.w, "docPartGallery")[0];
+    const isBib = attr(gallery, "val") === "Bibliographies" || !!el.getElementsByTagNameNS(NS.w, "bibliography")[0];
+    if (!isBib) return null;
+    const first = el.getElementsByTagNameNS(NS.w, "p")[0];
+    const heading = first && !Array.from(first.getElementsByTagNameNS(NS.w, "instrText")).length ? tocText(first).trim() : "";
+    return { end: i, title: heading || "References" };
+  }
+  if (!isW(el, "p")) return null;
+  const instr = Array.from(el.getElementsByTagNameNS(NS.w, "instrText")).map((t) => t.textContent ?? "").join("") + (Array.from(el.getElementsByTagNameNS(NS.w, "fldSimple")).map((f) => attr(f, "instr") ?? "").join(""));
+  if (!/^\s*BIBLIOGRAPHY\b/.test(instr)) return null;
+  for (let j = i; j < siblings.length; j++) {
+    if (!isW(siblings[j], "p")) return null;
+    const ends = Array.from(siblings[j].getElementsByTagNameNS(NS.w, "fldChar")).some((f) => attr(f, "fldCharType") === "end") || !!siblings[j].getElementsByTagNameNS(NS.w, "fldSimple")[0];
+    if (ends) return { end: j, title: "References" };
   }
   return null;
 }

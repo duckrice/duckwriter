@@ -1,3 +1,4 @@
+import { insertBibliography, insertCitation, manageSources } from "./sources";
 import { autoFormatOn, setAutoFormat } from "../editor/autoformat";
 import { armPainter, painterArmed } from "./painter";
 import { recentFiles } from "../recent";
@@ -518,6 +519,10 @@ export class Toolbar {
       item("Table of contents", () => insertToc(body, ctx)),
       item(headingsNumbered(ctx) ? "✓ Numbered headings" : "Numbered headings (1, 1.1, 1.1.1)", () => toggleHeadingNumbers(body, ctx)),
       item("Footnote (Ctrl+Alt+F)", () => this.host.insertFootnote()),
+      h("div", { class: "menu-separator" }),
+      item("Cite a source… (Alt+Shift+C)", () => insertCitation(body, ctx)),
+      item("Reference list (Alt+Shift+B)", () => insertBibliography(body, ctx)),
+      item("Sources and citation style… (Alt+Shift+S)", () => manageSources(body, ctx)),
       h("div", { class: "menu-separator" }),
       h("div", { class: "menu-heading" }, targets.length ? "Refer to…" : "Refer to… (add a caption or heading first)"),
       ...targets.map((t) => item(t.label.length > 60 ? `${t.label.slice(0, 57)}…` : t.label, () => insertReference(body, t))),

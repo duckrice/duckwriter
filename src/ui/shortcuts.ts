@@ -1,3 +1,4 @@
+import { insertBibliography, insertCitation, manageSources } from "./sources";
 import { copyFormatting, pasteFormatting, pastePlain } from "./painter";
 import { editLink } from "./links";
 // Every keyboard shortcut in one list: the keys handled, and the help window
@@ -189,6 +190,9 @@ export const SHORTCUTS: Shortcut[] = [
   // ---- inserting
   { group: "Insert", label: "Equation", keys: ["Alt+="], run: (x) => insertEquation(x.view) },
   { group: "Insert", label: "Link, or change the link at the cursor", keys: ["Ctrl+K"], run: (x) => editLink(x.view, x.ctx) },
+  { group: "Insert", label: "Cite a source", keys: ["Alt+Shift+C"], run: (x) => insertCitation(x.body, x.ctx) },
+  { group: "Insert", label: "Reference list (bibliography)", keys: ["Alt+Shift+B"], run: (x) => insertBibliography(x.body, x.ctx) },
+  { group: "Insert", label: "Sources and citation style (BibTeX, DOI)", keys: ["Alt+Shift+S"], run: (x) => manageSources(x.body, x.ctx) },
   { group: "Insert", label: "Follow a link", keys: ["Ctrl+click"] },
   { group: "Review", label: "New comment", keys: ["Ctrl+Alt+M"], run: (x) => x.newComment() },
   { group: "Review", label: "Track changes, on or off", keys: ["Ctrl+Shift+E"], run: (x) => x.toggleTracking(), everywhere: true },
