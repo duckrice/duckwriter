@@ -311,3 +311,47 @@ export function insertTab(): Command {
 }
 
 export type { Transaction };
+
+/** lower case → UPPER CASE → Title Case → lower case, for the selection or the word at the cursor (Alt+Shift+K). */
+export function changeCase(): Command {
+  return (state, dispatch) => {
+    let { from, to } = state.selection;
+    if (from === to) {
+      const { $from } = state.selection;
+      const text = $from.parent.textBetween(0, $from.parent.content.size, undefined, "\uFFFC");
+      let s = $from.parentOffset;
+      let e = s;
+      while (s > 0 && /[\p{L}\p{N}'’-]/u.test(text[s - 1])) s--;
+      while (e < text.length && /[\p{L}\p{N}'’-]/u.test(text[e])) e++;
+      from = $from.start() + s;
+      to = $from.start() + e;
+    }
+    // The selected text pieces, in order, so words running across formatting are one word.
+    const pieces: { a: number; b: number; text: string; marks: readonly import("prosemirror-model").Mark[] }[] = [];
+    state.doc.nodesBetween(from, to, (node, pos) => {
+      if (!node.isText) return true;
+      const a = Math.max(from, pos);
+      const b = Math.min(to, pos + node.nodeSize);
+      pieces.push({ a, b, text: node.text!.slice(a - pos, b - pos), marks: node.marks });
+      return false;
+    });
+    const text = pieces.map((p) => p.text).join("");
+    if (!text.trim()) return false;
+    const changed =
+      text === text.toLowerCase() ? text.toUpperCase() : text === text.toUpperCase() ? text.toLowerCase().replace(/(^|[^\p{L}\p{N}'’])(\p{L})/gu, (_m, a: string, b: string) => a + b.toUpperCase()) : text.toLowerCase();
+    // Letters that change length (ß → SS) can't be matched up piece by piece: then the whole is left alone.
+    if (changed.length !== text.length) return false;
+    if (dispatch) {
+      const tr = state.tr;
+      let at = 0;
+      for (const p of pieces) {
+        const next = changed.slice(at, at + p.text.length);
+        at += p.text.length;
+        if (next !== p.text) tr.replaceWith(p.a, p.b, state.schema.text(next, p.marks));
+      }
+      tr.setSelection(TextSelection.create(tr.doc, from, to));
+      dispatch(tr.scrollIntoView());
+    }
+    return true;
+  };
+}

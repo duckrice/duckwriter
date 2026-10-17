@@ -5,6 +5,7 @@ import type { EditorView } from "prosemirror-view";
 import { h } from "./dom";
 import { resolvedPara, resolvedRun, type DocContext } from "./docx/model";
 import { readDocx } from "./docx/read";
+import { ensureStyles } from "./docx/builtins";
 import { blankDocx } from "./docx/template";
 import { writeDocx } from "./docx/write";
 import { createState, createView, setLinkOpener } from "./editor/editor";
@@ -59,6 +60,7 @@ class App {
   private pageCount = h("span", { class: "status-item" });
   private words = h("button", { type: "button", class: "status-button words", title: "Word count (Ctrl+Shift+G)" });
   private totalWords = 0;
+  private lastLayout: PageLayout | null = null;
   private pages = 1;
   private zoomLabel = h("button", { type: "button", class: "status-button", title: "Reset zoom to 100%" });
   private toasts = h("div", { class: "toasts", role: "status" });
@@ -263,6 +265,149 @@ class App {
     relayout(this.body);
   }
 
+  // ---- markup, pages ------------------------------------------------------------------
+
+  /** Tracked changes shown with all markup, as they would be once accepted (final), or as they were (original). */
+  markup: "all" | "final" | "original" = "all";
+
+  setMarkup(mode: "all" | "final" | "original") {
+    this.markup = mode;
+    this.sheet.dataset.markup = mode;
+    relayout(this.body);
+    this.toast(mode === "all" ? "Showing all changes" : mode === "final" ? "Showing the text as it would be with all changes accepted" : "Showing the text as it was before the changes");
+    this.toolbar.update();
+  }
+
+  /** All markup → final → original (Alt+Shift+M). */
+  cycleMarkup() {
+    this.setMarkup(this.markup === "all" ? "final" : this.markup === "final" ? "original" : "all");
+  }
+
+  /** Asks which page, and goes there (Ctrl+G). */
+  goToPage() {
+    const count = this.pages;
+    const input = h("input", { class: "tb-input dialog-input number", type: "number", min: "1", max: String(count), value: "", "aria-label": "Page" }) as HTMLInputElement;
+    const go = () => {
+      const n = Math.max(1, Math.min(count, Math.round(Number(input.value) || 1)));
+      dialog.close();
+      const layout = this.lastLayout;
+      let target: number | null = null;
+      for (const [pos, page] of layout?.pageOfBlock ?? []) if (page >= n - 1 && (target === null || pos < target)) target = pos;
+      if (target !== null) this.goTo(target);
+    };
+    const dialog = h(
+      "dialog",
+      { class: "dialog" },
+      h("h2", {}, "Go to page"),
+      h("div", { class: "dialog-form" }, h("label", {}, `Page (1–${count})`, input)),
+      h("div", { class: "dialog-footer" }, h("button", { type: "button", class: "btn", onclick: () => dialog.close() }, "Cancel"), h("button", { type: "button", class: "btn primary", onclick: go }, "Go")),
+    ) as HTMLDialogElement;
+    input.addEventListener("keydown", (event) => {
+      if (event.key === "Enter") {
+        event.preventDefault();
+        go();
+      }
+    });
+    dialog.addEventListener("close", () => {
+      dialog.remove();
+      this.view.focus();
+    });
+    document.body.append(dialog);
+    dialog.showModal();
+    input.focus();
+  }
+
+  /** Page numbers in the footer ("Page 2 of 9", centred) or at the top or bottom right. */
+  pageNumbers(where: "bottom-center" | "bottom-right" | "top-right") {
+    const kind = where.startsWith("top") ? "header" : "footer";
+    const style = kind === "header" ? "Header" : "Footer";
+    ensureStyles(this.ctx, style);
+    const field = (instr: string, result: string) => schema.nodes.field.create({ instr, result });
+    const content = where === "bottom-center" ? [schema.text("Page "), field(" PAGE ", "1"), schema.text(" of "), field(" NUMPAGES ", String(this.pages))] : [field(" PAGE ", "1")];
+    const para = schema.nodes.paragraph.create({ style: this.ctx.styles.byId.has(style) ? style : null, align: where === "bottom-center" ? "center" : "right" }, content);
+    let story = this.ctx.stories.find((s) => s.kind === kind && s.type === "default");
+    if (!story) {
+      story = { kind, type: "default", path: null, rid: null, rootStart: null, prefixes: new Set(), rels: new Map(), doc: schema.nodes.doc.create(null, para), saved: null };
+      this.ctx.stories.push(story);
+    } else {
+      // Page numbers already there are replaced; anything else written there stays.
+      const kept: Node[] = [];
+      story.doc.forEach((p) => {
+        let hasPage = false;
+        p.descendants((n) => {
+          if (n.type === schema.nodes.field && /^\s*(PAGE|NUMPAGES)\b/.test(n.attrs.instr)) hasPage = true;
+        });
+        if (!hasPage && (p.textContent.trim() || p.childCount)) kept.push(p);
+      });
+      story.doc = schema.nodes.doc.create(null, [...kept, para]);
+    }
+    relayout(this.body);
+    this.changed(false, true);
+    this.toast("Page numbers added");
+  }
+
+  private lineNumberLayer = h("div", { class: "line-numbers", "aria-hidden": "true" });
+
+  /** Numbers the lines in the left margin, every one (or every n-th), from 1 or from 1 on each page. */
+  private drawLineNumbers() {
+    const numbering = this.ctx.page.lineNumbers;
+    if (!this.lineNumberLayer.isConnected) this.sheet.append(this.lineNumberLayer);
+    if (!numbering) return void this.lineNumberLayer.replaceChildren();
+    const zoom = this.zoom || 1;
+    const origin = this.sheet.getBoundingClientRect();
+    const pitch = this.ctx.page.height * (4 / 3) + PAGE_GAP;
+    const lines: number[] = [];
+    for (const p of this.body.dom.querySelectorAll<HTMLElement>(":scope > p.para")) {
+      const range = document.createRange();
+      range.selectNodeContents(p);
+      const rects = [...range.getClientRects()].filter((r) => r.height >= 2 && r.width > 0).sort((a, b) => a.top - b.top);
+      // An empty paragraph is one line.
+      if (!rects.length) {
+        const r = p.getBoundingClientRect();
+        lines.push((r.top - origin.top) / zoom + (r.height / zoom - parseFloat(getComputedStyle(p).paddingBottom || "0")) / 2);
+        continue;
+      }
+      let last = -Infinity;
+      for (const r of rects) {
+        const mid = (r.top + r.bottom) / 2;
+        // Pieces of the same line (formatting, a page gap) overlap.
+        if (mid - last < 4) continue;
+        last = r.bottom;
+        lines.push((mid - origin.top) / zoom);
+      }
+    }
+    const items: HTMLElement[] = [];
+    let n = 0;
+    let page = -1;
+    for (const y of lines) {
+      const k = Math.floor(y / pitch);
+      if (numbering.restart === "newPage" && k !== page) n = 0;
+      page = k;
+      n++;
+      if (n % numbering.countBy) continue;
+      const label = h("span", { class: "line-number" }, String(n));
+      label.style.top = `${y}px`;
+      items.push(label);
+    }
+    this.lineNumberLayer.style.width = `${this.ctx.page.marginLeft - 14}pt`;
+    this.lineNumberLayer.replaceChildren(...items);
+  }
+
+  /** Line numbers off → every line, continuous → from 1 on each page → off (Alt+Shift+L). */
+  cycleLineNumbers() {
+    const now = this.ctx.page.lineNumbers;
+    this.setLineNumbers(!now ? "continuous" : now.restart === "continuous" ? "newPage" : null);
+  }
+
+  setLineNumbers(restart: "continuous" | "newPage" | null) {
+    this.ctx.page = { ...this.ctx.page, lineNumbers: restart ? { countBy: this.ctx.page.lineNumbers?.countBy ?? 1, restart } : null };
+    this.ctx.pageChanged = true;
+    this.lineGridSaved = false;
+    this.drawLineNumbers();
+    this.changed(false, true);
+    this.toast(restart === "continuous" ? "Lines are numbered through the document" : restart === "newPage" ? "Lines are numbered from 1 on each page" : "No line numbers");
+  }
+
   /** Shows or hides the headings beside the page (Alt+Shift+N). */
   toggleNavigation() {
     this.navigation.toggle();
@@ -354,9 +499,11 @@ class App {
     this.sheet.style.height = PAGE_GAP ? `${layout.count * pitch - PAGE_GAP}px` : `calc(${layout.count * p.height}pt - 1px)`;
     this.pageCount.textContent = `${layout.count} ${layout.count === 1 ? "page" : "pages"}`;
     this.pages = layout.count;
+    this.lastLayout = layout;
     this.headers.render(layout.count);
     this.footnotes.render(layout);
     this.comments.layout();
+    this.drawLineNumbers();
     this.laidOut?.();
     this.laidOut = null;
     // After this layout, so the table of contents gets the page numbers just worked out.

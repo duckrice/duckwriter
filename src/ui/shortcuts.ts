@@ -23,10 +23,11 @@ import {
   toggleFormat,
   toggleVertAlign,
   formattingAt,
+  changeCase,
 } from "../editor/commands";
 import { changeListLevel, toggleList } from "../editor/lists";
 import { matches } from "../keys";
-import { insertEquation } from "./equation";
+import { insertEquation, insertNumberedEquation } from "./equation";
 import { choosePicture } from "./pictures";
 import { captionDialog, insertToc, toggleHeadingNumbers } from "./references";
 import { TABLE_COMMANDS } from "./tables";
@@ -51,6 +52,9 @@ export interface ShortcutHost {
   nextSpellingMistake(): void;
   toggleSpelling(): void;
   newComment(): void;
+  cycleMarkup(): void;
+  cycleLineNumbers(): void;
+  goToPage(): void;
   share(): void;
   pageSetup(): void;
   wordCount(): void;
@@ -97,6 +101,8 @@ export const SHORTCUTS: Shortcut[] = [
   { group: "Documents", label: "Recent documents", keys: ["Alt+F"], run: (x) => x.openMenu("open"), everywhere: true },
   { group: "Documents", label: "Page setup: paper size, orientation, margins", keys: ["Alt+P"], run: (x) => x.pageSetup() },
   { group: "Documents", label: "Word count (of the selection too)", keys: ["Ctrl+Shift+G"], run: (x) => x.wordCount(), everywhere: true },
+  { group: "Documents", label: "Go to page", keys: ["Ctrl+G"], run: (x) => x.goToPage() },
+  { group: "Documents", label: "Line numbers: through the document, from 1 on each page, or none", keys: ["Alt+Shift+L"], run: (x) => x.cycleLineNumbers() },
   { group: "Documents", label: "Headings beside the page (the navigation pane); arrows and Enter go to one", keys: ["Alt+Shift+N"], run: (x) => x.toggleNavigation(), everywhere: true },
   { group: "Documents", label: "Open a document by dropping it on the window", keys: ["Drag and drop"] },
   { group: "Documents", label: "Save", keys: ["Ctrl+S"], run: (x) => x.save(), everywhere: true },
@@ -121,6 +127,7 @@ export const SHORTCUTS: Shortcut[] = [
       }),
   },
   { group: "Text", label: "Copy the formatting (format painter)", keys: ["Ctrl+Shift+C"], run: (x) => copyFormatting(x.view) },
+  { group: "Text", label: "Change case: lower, UPPER, Title", keys: ["Alt+Shift+K"], run: plain(changeCase()) },
   { group: "Text", label: "Put the copied formatting on the selection", keys: ["Ctrl+Shift+V"], run: (x) => pasteFormatting(x.view) },
   { group: "Editing", label: "Find", keys: ["Ctrl+F"], run: (x) => x.find(false), everywhere: true },
   { group: "Editing", label: "Find and replace", keys: ["Ctrl+H"], run: (x) => x.find(true), everywhere: true },
@@ -190,6 +197,7 @@ export const SHORTCUTS: Shortcut[] = [
 
   // ---- inserting
   { group: "Insert", label: "Equation", keys: ["Alt+="], run: (x) => insertEquation(x.view) },
+  { group: "Insert", label: "Numbered equation, (1) on the right", keys: ["Alt+Shift+E"], run: (x) => insertNumberedEquation(x.body, x.ctx) },
   { group: "Insert", label: "Link, or change the link at the cursor", keys: ["Ctrl+K"], run: (x) => editLink(x.view, x.ctx) },
   { group: "Insert", label: "Cite a source", keys: ["Alt+Shift+C"], run: (x) => insertCitation(x.body, x.ctx) },
   { group: "Insert", label: "Reference list (bibliography)", keys: ["Alt+Shift+B"], run: (x) => insertBibliography(x.body, x.ctx) },
@@ -197,6 +205,7 @@ export const SHORTCUTS: Shortcut[] = [
   { group: "Insert", label: "Follow a link", keys: ["Ctrl+click"] },
   { group: "Review", label: "Write together: share this document, or join one", keys: ["Alt+Shift+W"], run: (x) => x.share(), everywhere: true },
   { group: "Review", label: "New comment", keys: ["Ctrl+Alt+M"], run: (x) => x.newComment() },
+  { group: "Review", label: "Show all markup, the final text, or the original", keys: ["Alt+Shift+M"], run: (x) => x.cycleMarkup() },
   { group: "Review", label: "Track changes, on or off", keys: ["Ctrl+Shift+E"], run: (x) => x.toggleTracking(), everywhere: true },
   { group: "Review", label: "Next change or comment", keys: ["Alt+PageDown"], run: (x) => x.stepChange(1) },
   { group: "Review", label: "Previous change or comment", keys: ["Alt+PageUp"], run: (x) => x.stepChange(-1) },

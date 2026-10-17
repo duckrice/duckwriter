@@ -7,6 +7,8 @@ import { h } from "../dom";
 import { MathSyntaxError, parseMath } from "../math/ast";
 import { toMathML } from "../math/mathml";
 import { schema } from "../editor/schema";
+import type { Node as PMNode } from "prosemirror-model";
+import type { DocContext } from "../docx/model";
 
 /** Shapes the buttons insert; | marks where the cursor goes. */
 const TEMPLATES: { label: string; title: string; text: string }[] = [
@@ -172,4 +174,35 @@ export function insertEquation(view: EditorView) {
   const tr = state.tr.replaceSelectionWith(node, false);
   view.dispatch(tr);
   editEquation(view, tr.mapping.map(from, -1), true);
+}
+
+/**
+ * A numbered equation, as Word users make them: a row without lines, the
+ * equation in the middle and its number, (1), on the right (a SEQ Equation
+ * field, so it counts and can be referred to). Alt+Shift+E.
+ */
+export function insertNumberedEquation(view: EditorView, ctx: DocContext) {
+  const p = ctx.page;
+  const width = (p.width - p.marginLeft - p.marginRight) * (4 / 3);
+  const side = Math.round(width * 0.12);
+  const cell = (colwidth: number, para: PMNode) => schema.nodes.table_cell.create({ colwidth: [colwidth], valign: "middle" }, para);
+  const math = schema.nodes.math.create({ latex: "", display: false });
+  const number = [schema.text("("), schema.nodes.field.create({ instr: " SEQ Equation \\* ARABIC ", result: "1" }), schema.text(")")];
+  const row = schema.nodes.table_row.create(null, [
+    cell(side, schema.nodes.paragraph.create()),
+    cell(Math.round(width - 2 * side), schema.nodes.paragraph.create({ align: "center" }, math)),
+    cell(side, schema.nodes.paragraph.create({ align: "right" }, number)),
+  ]);
+  const table = schema.nodes.table.create({ borders: false }, row);
+  const tr = view.state.tr.replaceSelectionWith(table);
+  if (tr.doc.lastChild?.type !== schema.nodes.paragraph) tr.insert(tr.doc.content.size, schema.nodes.paragraph.create());
+  // Then straight into writing the equation.
+  let at = -1;
+  const start = tr.mapping.map(view.state.selection.from, -1);
+  tr.doc.nodesBetween(Math.max(0, start - 2), Math.min(tr.doc.content.size, start + table.nodeSize + 2), (node, pos) => {
+    if (at < 0 && node.type === schema.nodes.math && node.attrs.latex === "") at = pos;
+    return at < 0;
+  });
+  view.dispatch(tr.scrollIntoView());
+  if (at >= 0) editEquation(view, at, true);
 }

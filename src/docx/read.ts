@@ -94,7 +94,7 @@ export async function readDocx(bytes: Uint8Array): Promise<OpenedDocument> {
         title = last.textContent;
         blocks.pop();
       }
-      blocks.push(schema.nodes.toc.create({ title: title || "Contents", entries: toc.entries }));
+      blocks.push(schema.nodes.toc.create({ title: title || (toc.label ? `List of ${toc.label.toLowerCase()}s` : "Contents"), entries: toc.entries, label: toc.label }));
       i = toc.end;
       continue;
     }
@@ -492,7 +492,14 @@ function readPage(sectPr: Element | null): PageSetup {
     headerDistance: get(margin, "header", DEFAULT_PAGE.headerDistance),
     footerDistance: get(margin, "footer", DEFAULT_PAGE.footerDistance),
     lineGrid: lineGridOf(child(sectPr, "docGrid")),
+    lineNumbers: lineNumbersOf(child(sectPr, "lnNumType")),
   };
+}
+
+function lineNumbersOf(el: Element | null): PageSetup["lineNumbers"] {
+  if (!el) return null;
+  const restart = attr(el, "restart");
+  return { countBy: Math.max(1, numAttr(el, "countBy") ?? 1), restart: restart === "continuous" ? "continuous" : "newPage" };
 }
 
 /** The line pitch of a document grid that lines snap to ("lines" or "linesAndChars"). */
@@ -899,6 +906,8 @@ interface TocFound {
   /** Index of its last element among the body's children. */
   end: number;
   title: string;
+  /** For a table of figures: the caption label it lists. */
+  label: string | null;
   entries: { level: number; text: string; page: number; pos: number }[];
 }
 
@@ -920,7 +929,7 @@ function tableOfContents(siblings: Element[], i: number): TocFound | null {
     if (attr(gallery, "val") !== "Table of Contents") return null;
     const paras = childrenNamed(child(el, "sdtContent"), "p");
     const heading = paras.find((p) => /^TOCHeading$/i.test(attr(child(child(p, "pPr"), "pStyle"), "val") ?? ""));
-    return { end: i, title: heading ? tocText(heading).trim() : "Contents", entries: entriesOf(paras) };
+    return { end: i, title: heading ? tocText(heading).trim() : "Contents", entries: entriesOf(paras), label: null };
   }
   if (!isW(el, "p")) return null;
   const instr = Array.from(el.getElementsByTagNameNS(NS.w, "instrText")).map((t) => t.textContent ?? "").join("");
@@ -929,7 +938,7 @@ function tableOfContents(siblings: Element[], i: number): TocFound | null {
   for (let j = i; j < siblings.length; j++) {
     if (!isW(siblings[j], "p")) return null;
     const ends = Array.from(siblings[j].getElementsByTagNameNS(NS.w, "fldChar")).some((f) => attr(f, "fldCharType") === "end");
-    if (ends) return { end: j, title: "", entries: entriesOf(siblings.slice(i, j + 1)) };
+    if (ends) return { end: j, title: "", entries: entriesOf(siblings.slice(i, j + 1)), label: /\\c\s+"([^"]+)"/.exec(instr)?.[1] ?? null };
   }
   return null;
 }

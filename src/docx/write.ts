@@ -224,12 +224,15 @@ class BodyWriter {
     const p = this.ctx.page;
     const tab = twips(p.width - p.marginLeft - p.marginRight);
     const entries = node.attrs.entries as { level: number; text: string; page: number }[];
-    let out = `<w:p><w:pPr><w:pStyle w:val="TOCHeading"/></w:pPr><w:r><w:t xml:space="preserve">${escapeText(node.attrs.title)}</w:t></w:r></w:p>`;
-    const begin = '<w:r><w:fldChar w:fldCharType="begin"/></w:r><w:r><w:instrText xml:space="preserve"> TOC \\o "1-3" \\h \\z \\u </w:instrText></w:r><w:r><w:fldChar w:fldCharType="separate"/></w:r>';
+    const label = node.attrs.label as string | null;
+    let out = node.attrs.title ? `<w:p><w:pPr><w:pStyle w:val="TOCHeading"/></w:pPr><w:r><w:t xml:space="preserve">${escapeText(node.attrs.title)}</w:t></w:r></w:p>` : "";
+    // A list of figures is Word's table of figures: a TOC field over the captions with that label.
+    const instr = label ? ` TOC \\h \\z \\c "${escapeText(label)}" ` : ' TOC \\o "1-3" \\h \\z \\u ';
+    const begin = `<w:r><w:fldChar w:fldCharType="begin"/></w:r><w:r><w:instrText xml:space="preserve">${instr}</w:instrText></w:r><w:r><w:fldChar w:fldCharType="separate"/></w:r>`;
     const end = '<w:r><w:fldChar w:fldCharType="end"/></w:r>';
-    if (!entries.length) return `${out}<w:p>${begin}<w:r><w:t>No headings yet.</w:t></w:r>${end}</w:p>`;
+    if (!entries.length) return `${out}<w:p>${begin}<w:r><w:t>${label ? "No captions yet." : "No headings yet."}</w:t></w:r>${end}</w:p>`;
     entries.forEach((e, i) => {
-      const pPr = `<w:pPr><w:pStyle w:val="TOC${Math.min(e.level, 3)}"/><w:tabs><w:tab w:val="right" w:leader="dot" w:pos="${tab}"/></w:tabs></w:pPr>`;
+      const pPr = `<w:pPr><w:pStyle w:val="${label ? "TableofFigures" : `TOC${Math.min(e.level, 3)}`}"/><w:tabs><w:tab w:val="right" w:leader="dot" w:pos="${tab}"/></w:tabs></w:pPr>`;
       out += `<w:p>${pPr}${i === 0 ? begin : ""}<w:r><w:t xml:space="preserve">${escapeText(e.text)}</w:t></w:r><w:r><w:tab/></w:r><w:r><w:t>${e.page}</w:t></w:r>${i === entries.length - 1 ? end : ""}</w:p>`;
     });
     return out;
@@ -822,6 +825,8 @@ function updateSectPr(ctx: DocContext) {
     for (const [name, value] of [["w:top", p.marginTop], ["w:right", p.marginRight], ["w:bottom", p.marginBottom], ["w:left", p.marginLeft], ["w:header", p.headerDistance], ["w:footer", p.footerDistance]] as const) margin.set(name, String(twips(value)));
     if (!margin.has("w:gutter")) margin.set("w:gutter", "0");
     parts.push(tag("w:pgSz", Object.fromEntries(size)), tag("w:pgMar", Object.fromEntries(margin)));
+    parts = parts.filter((e) => localName(e) !== "lnNumType");
+    if (p.lineNumbers) parts.push(tag("w:lnNumType", { "w:countBy": p.lineNumbers.countBy, "w:restart": p.lineNumbers.restart }));
     ctx.pageChanged = false;
   }
   if (ctx.lineGridChanged) {

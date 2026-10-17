@@ -2185,3 +2185,40 @@ kbd {
     background: none !important;
   }
 }
+
+/* Markup views: the text as if the changes were accepted (final), or as before them (original). */
+.sheet[data-markup="final"] .doc del.tc-del,
+.sheet[data-markup="final"] .doc .tc-para,
+.sheet[data-markup="original"] .doc ins.tc-ins,
+.sheet[data-markup="original"] .doc .tc-para {
+  display: none;
+}
+
+.sheet[data-markup="final"] .doc ins.tc-ins,
+.sheet[data-markup="original"] .doc del.tc-del {
+  color: inherit;
+  text-decoration: inherit;
+}
+
+.sheet[data-markup="final"] .doc .tc-fmt,
+.sheet[data-markup="original"] .doc .tc-fmt {
+  background: none;
+}
+
+/* Line numbers in the left margin. */
+.line-numbers {
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 2;
+  pointer-events: none;
+}
+
+.line-number {
+  position: absolute;
+  right: 0;
+  transform: translateY(-50%);
+  color: #444444;
+  font: 9pt/1 Calibri, "Segoe UI", sans-serif;
+  font-variant-numeric: tabular-nums;
+}

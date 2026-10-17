@@ -28,7 +28,7 @@ import {
 } from "../editor/commands";
 import { changeListLevel, kindOf, listOf, toggleList } from "../editor/lists";
 import { schema } from "../editor/schema";
-import { insertEquation } from "./equation";
+import { insertEquation, insertNumberedEquation } from "./equation";
 import { choosePicture, setSnap, snapOn } from "./pictures";
 import { TABLE_COMMANDS, insertTable, isInTable, setTableLines, tableGrid } from "./tables";
 import { captionDialog, headingsNumbered, insertReference, insertToc, referenceTargets, toggleHeadingNumbers } from "./references";
@@ -49,6 +49,10 @@ export interface ToolbarHost {
   showShortcuts(): void;
   find(replace: boolean): void;
   newComment(): void;
+  markup: "all" | "final" | "original";
+  setMarkup(mode: "all" | "final" | "original"): void;
+  pageNumbers(where: "bottom-center" | "bottom-right" | "top-right"): void;
+  setLineNumbers(restart: "continuous" | "newPage" | null): void;
   share(): void;
   openRecent(path: string): void;
   pageSetup(): void;
@@ -204,10 +208,10 @@ export class Toolbar {
       group(
         this.button("picture", "Picture (Ctrl+Alt+P)", () => void choosePicture(this.host.view, this.host.ctx)),
         this.splitButton("table", "Table (Ctrl+Alt+Shift+T)", null, () => this.tableMenu(), () => this.tableMenu()),
-        this.button("equation", "Equation (Alt+=)", () => insertEquation(this.host.view)),
+        this.splitButton("equation", "Equation (Alt+=)", null, () => insertEquation(this.host.view), () => this.equationMenu()),
         this.splitButton("symbol", "Symbol (Ctrl+Shift+Y)", null, () => this.symbolMenu(), () => this.symbolMenu()),
         this.button("pageBreak", "Page break (Ctrl+Enter)", () => this.run(insertPageBreak())),
-        this.button("header", "Header and footer (Ctrl+Alt+O)", () => this.host.editHeader()),
+        this.splitButton("header", "Header and footer (Ctrl+Alt+O)", null, () => this.host.editHeader(), () => this.headerMenu()),
         this.button("footnote", "Footnote (Ctrl+Alt+F)", () => this.host.insertFootnote()),
         this.button("link", "Link (Ctrl+K)", () => editLink(this.host.view, this.host.ctx)),
         this.splitButton("references", "References (Ctrl+Alt+R)", null, () => this.referencesMenu(), () => this.referencesMenu()),
@@ -216,7 +220,7 @@ export class Toolbar {
       group(
         this.button("share", "Write together: share this document or join one (Alt+Shift+W)", () => this.host.share()),
         this.button("comment", "New comment (Ctrl+Alt+M)", () => this.host.newComment()),
-        this.button("track", "Track changes (Ctrl+Shift+E)", () => this.host.toggleTracking()),
+        this.splitButton("track", "Track changes (Ctrl+Shift+E)", null, () => this.host.toggleTracking(), () => this.trackMenu()),
         this.button("prevChange", "Previous change or comment (Alt+PageUp)", () => this.host.stepChange(-1)),
         this.button("nextChange", "Next change or comment (Alt+PageDown)", () => this.host.stepChange(1)),
         this.splitButton("accept", "Accept the change (Ctrl+Alt+Shift+A)", null, () => this.host.decideChange(true), () => this.reviewMenu(true)),
@@ -454,6 +458,11 @@ export class Toolbar {
       auto,
       h("div", { class: "menu-hint" }, "Web and e-mail addresses become links; \"1. \" or \"- \" at the start of a paragraph starts a list."),
       h("div", { class: "menu-separator" }),
+      h("div", { class: "menu-title" }, "Line numbers (Alt+Shift+L)"),
+      this.simpleItem("None", () => this.host.setLineNumbers(null), !this.host.ctx.page.lineNumbers),
+      this.simpleItem("Through the document", () => this.host.setLineNumbers("continuous"), this.host.ctx.page.lineNumbers?.restart === "continuous"),
+      this.simpleItem("From 1 on each page", () => this.host.setLineNumbers("newPage"), this.host.ctx.page.lineNumbers?.restart === "newPage"),
+      h("div", { class: "menu-separator" }),
       snap,
       h("div", { class: "menu-hint" }, "Pictures line up on a half-centimetre grid and with the margins when moved or resized. Hold Alt to place freely."),
       h("div", { class: "menu-separator" }),
@@ -480,6 +489,51 @@ export class Toolbar {
       { class: "menu recent-menu" },
       h("div", { class: "menu-title" }, "Recent documents"),
       ...(items.length ? items : [h("div", { class: "menu-hint" }, "Documents you open or save are listed here.")]),
+    );
+  }
+
+  private simpleItem(label: string, onClick: () => void, checked = false) {
+    const b = h("button", { type: "button", class: `menu-item${checked ? " checked" : ""}` }, `${checked ? "✓ " : ""}${label}`);
+    b.addEventListener("click", () => {
+      this.closeMenu();
+      onClick();
+    });
+    return b;
+  }
+
+  private equationMenu(): HTMLElement {
+    return h(
+      "div",
+      { class: "menu" },
+      this.simpleItem("Equation in the text (Alt+=)", () => insertEquation(this.host.view)),
+      this.simpleItem("Numbered equation, (1) on the right (Alt+Shift+E)", () => insertNumberedEquation(this.host.view, this.host.ctx)),
+    );
+  }
+
+  private trackMenu(): HTMLElement {
+    const m = this.host.markup;
+    return h(
+      "div",
+      { class: "menu" },
+      this.simpleItem("Track changes (Ctrl+Shift+E)", () => this.host.toggleTracking(), !!this.host.ctx.trackChanges),
+      h("div", { class: "menu-separator" }),
+      h("div", { class: "menu-title" }, "Show (Alt+Shift+M)"),
+      this.simpleItem("All markup", () => this.host.setMarkup("all"), m === "all"),
+      this.simpleItem("Final: as if all changes were accepted", () => this.host.setMarkup("final"), m === "final"),
+      this.simpleItem("Original: as before the changes", () => this.host.setMarkup("original"), m === "original"),
+    );
+  }
+
+  private headerMenu(): HTMLElement {
+    return h(
+      "div",
+      { class: "menu" },
+      this.simpleItem("Edit header and footer (Ctrl+Alt+O)", () => this.host.editHeader()),
+      h("div", { class: "menu-separator" }),
+      h("div", { class: "menu-title" }, "Page numbers"),
+      this.simpleItem("At the bottom, centred: Page 2 of 9", () => this.host.pageNumbers("bottom-center")),
+      this.simpleItem("At the bottom, right: 2", () => this.host.pageNumbers("bottom-right")),
+      this.simpleItem("At the top, right: 2", () => this.host.pageNumbers("top-right")),
     );
   }
 
@@ -519,6 +573,8 @@ export class Toolbar {
       { class: "menu references-menu" },
       item("Insert caption…", () => captionDialog(body, ctx)),
       item("Table of contents", () => insertToc(body, ctx)),
+      item("List of figures", () => insertToc(body, ctx, "Figure")),
+      item("List of tables", () => insertToc(body, ctx, "Table")),
       item(headingsNumbered(ctx) ? "✓ Numbered headings" : "Numbered headings (1, 1.1, 1.1.1)", () => toggleHeadingNumbers(body, ctx)),
       item("Footnote (Ctrl+Alt+F)", () => this.host.insertFootnote()),
       h("div", { class: "menu-separator" }),

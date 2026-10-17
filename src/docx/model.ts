@@ -108,6 +108,8 @@ export interface PageSetup {
   footerDistance: number;
   /** Word's document grid for lines: every line takes a whole number of these (points), or null. */
   lineGrid: number | null;
+  /** Line numbers in the margin (Word's lnNumType), as journals ask for in manuscripts; or null. */
+  lineNumbers?: { countBy: number; restart: "continuous" | "newPage" } | null;
 }
 
 /** A header or footer: its own little document, in its own part of the file. */

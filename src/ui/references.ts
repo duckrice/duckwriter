@@ -128,15 +128,16 @@ export interface ReferenceTarget {
 export function referenceTargets(ctx: DocContext, doc: Node): ReferenceTarget[] {
   const out: ReferenceTarget[] = [];
   const labels = listLabels(ctx, doc);
-  doc.forEach((para, pos) => {
-    if (para.type !== schema.nodes.paragraph) return;
-    let hasSeq = false;
+  doc.descendants((para, pos, parent) => {
+    if (para.type !== schema.nodes.paragraph) return true;
+    let seq: string | null = null;
     para.descendants((n) => {
-      if (n.type === schema.nodes.field && fieldKind(n.attrs.instr) === "SEQ") hasSeq = true;
+      if (n.type === schema.nodes.field && fieldKind(n.attrs.instr) === "SEQ") seq ??= seqLabel(n.attrs.instr) ?? "";
     });
     const text = captionText(para);
-    if (hasSeq) out.push({ kind: "caption", label: text, pos });
-    else if (headingLevel(ctx, para) && text.trim()) out.push({ kind: "heading", label: `${labels.get(pos)?.label ?? ""} ${text}`.trim(), pos });
+    if (seq !== null) out.push({ kind: "caption", label: /^\(\d+\)$/.test(text.trim()) ? `${seq} ${text.trim()}` : text, pos });
+    else if (parent === doc && headingLevel(ctx, para) && text.trim()) out.push({ kind: "heading", label: `${labels.get(pos)?.label ?? ""} ${text}`.trim(), pos });
+    return false;
   });
   return out;
 }
@@ -158,7 +159,12 @@ export function insertReference(view: EditorView, target: ReferenceTarget) {
   const tr = view.state.tr;
   const name = bookmarkFor(tr, target);
   const ref = schema.nodes.field.create({ instr: ` REF ${name} \\h `, result: "" });
-  tr.replaceSelectionWith(ref, true);
+  // An equation is referred to as (1).
+  if (target.kind === "caption" && /\(\d+\)$/.test(target.label)) {
+    const { from, to, $from } = tr.selection;
+    const marks = $from.marks();
+    tr.replaceWith(from, to, [schema.text("(", marks), ref.mark(marks), schema.text(")", marks)]);
+  } else tr.replaceSelectionWith(ref, true);
   view.dispatch(tr.scrollIntoView());
   view.focus();
 }
@@ -169,14 +175,19 @@ export function bookmarkFor(tr: Transaction, target: ReferenceTarget): string {
   const known = bookmarkAtStart(para);
   if (known) return known;
   const [start, end] = bookmarkNodes(tr.doc);
-  // A caption's bookmark covers its label and number; a heading's covers all of it.
+  // A caption's bookmark covers its label and number; a heading's covers all of it;
+  // an equation's number, (1), just the number.
   let endAt = target.pos + para.nodeSize - 1;
+  let startAt = target.pos + 1;
   if (target.kind === "caption") {
     para.forEach((child, offset) => {
-      if (child.type === schema.nodes.field && fieldKind(child.attrs.instr) === "SEQ" && endAt === target.pos + para.nodeSize - 1) endAt = target.pos + 1 + offset + child.nodeSize;
+      if (child.type === schema.nodes.field && fieldKind(child.attrs.instr) === "SEQ" && endAt === target.pos + para.nodeSize - 1) {
+        endAt = target.pos + 1 + offset + child.nodeSize;
+        if (/^\(\d+\)$/.test(captionText(para).trim())) startAt = target.pos + 1 + offset;
+      }
     });
   }
-  tr.insert(endAt, end).insert(target.pos + 1, start);
+  tr.insert(endAt, end).insert(startAt, start);
   return bookmarkOf(start)!.name!;
 }
 
@@ -255,11 +266,13 @@ function createHeadingList(ctx: DocContext, styles: string[]): string {
 
 // ---- table of contents ----------------------------------------------------------------
 
-export function insertToc(view: EditorView, ctx: DocContext) {
-  ensureStyles(ctx, "TOCHeading", "TOC1", "TOC2", "TOC3");
+/** A table of contents, or (with a caption label) a list of figures or tables. */
+export function insertToc(view: EditorView, ctx: DocContext, label: string | null = null) {
+  ensureStyles(ctx, "TOCHeading", "TOC1", "TOC2", "TOC3", "TableofFigures");
   const { $from } = view.state.selection;
   const at = $from.depth > 0 ? $from.before(1) : $from.pos;
-  const tr = view.state.tr.insert(at, schema.nodes.toc.create());
+  const title = label ? `List of ${label.toLowerCase()}s` : "Contents";
+  const tr = view.state.tr.insert(at, schema.nodes.toc.create({ label, title }));
   view.dispatch(tr.scrollIntoView());
   view.focus();
 }
@@ -279,11 +292,24 @@ export function updateTocs(view: EditorView, ctx: DocContext, layout: PageLayout
     if (!level || level > 3 || !para.textContent.trim()) return;
     entries.push({ level, text: `${labels.get(pos)?.label ?? ""} ${para.textContent}`.trim(), page: (layout.pageOfBlock.get(pos) ?? 0) + 1, pos });
   });
+  // Lists of figures and tables: the captions with that label.
+  const captions = new Map<string, typeof entries>();
+  doc.forEach((para, pos) => {
+    if (para.type !== schema.nodes.paragraph) return;
+    let label: string | null = null;
+    para.forEach((n) => {
+      if (!label && n.type === schema.nodes.field && fieldKind(n.attrs.instr) === "SEQ") label = seqLabel(n.attrs.instr) ?? null;
+    });
+    if (!label) return;
+    const list = captions.get(label) ?? [];
+    list.push({ level: 1, text: captionText(para).trim(), page: (layout.pageOfBlock.get(pos) ?? 0) + 1, pos });
+    captions.set(label, list);
+  });
   const tr = view.state.tr;
   doc.forEach((node, pos) => {
-    if (node.type === schema.nodes.toc && JSON.stringify(node.attrs.entries) !== JSON.stringify(entries)) {
-      tr.setNodeMarkup(pos, undefined, { ...node.attrs, entries });
-    }
+    if (node.type !== schema.nodes.toc) return;
+    const want = node.attrs.label ? (captions.get(node.attrs.label) ?? []) : entries;
+    if (JSON.stringify(node.attrs.entries) !== JSON.stringify(want)) tr.setNodeMarkup(pos, undefined, { ...node.attrs, entries: want });
   });
   if (tr.docChanged) view.dispatch(tr.setMeta("addToHistory", false));
 }

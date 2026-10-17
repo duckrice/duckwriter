@@ -142,12 +142,13 @@ export const schema = new Schema(clipboardReady({
       group: "block",
       atom: true,
       selectable: true,
-      attrs: { title: { default: "Contents" }, entries: { default: [] } },
+      /** label: null for the headings, or a caption label ("Figure", "Table") for a list of those. */
+      attrs: { title: { default: "Contents" }, entries: { default: [] }, label: { default: null } },
       toDOM(node): DOMOutputSpec {
         const entries = node.attrs.entries as { level: number; text: string; page: number; pos: number }[];
         return [
           "div",
-          { class: "toc", title: "Table of contents — it updates by itself" },
+          { class: "toc", title: node.attrs.label ? `List of ${String(node.attrs.label).toLowerCase()}s — it updates by itself` : "Table of contents — it updates by itself" },
           ["div", { class: "toc-title" }, node.attrs.title],
           ...entries.map((e): DOMOutputSpec => [
             "div",
@@ -156,7 +157,7 @@ export const schema = new Schema(clipboardReady({
             ["span", { class: "toc-dots" }],
             ["span", { class: "toc-page" }, String(e.page)],
           ]),
-          ...(entries.length ? [] : [["div", { class: "toc-empty" }, "Headings will be listed here."] as DOMOutputSpec]),
+          ...(entries.length ? [] : [["div", { class: "toc-empty" }, node.attrs.label ? `Captions (${node.attrs.label} 1, ${node.attrs.label} 2…) will be listed here.` : "Headings will be listed here."] as DOMOutputSpec]),
         ];
       },
     },
