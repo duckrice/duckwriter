@@ -454,6 +454,10 @@ class App {
     this.toast(`Style "${name}" changed`);
   }
 
+  selectTab(n: number) {
+    this.toolbar.selectTab(n);
+  }
+
   /** Shows or hides the headings beside the page (Alt+Shift+N). */
   toggleNavigation() {
     this.navigation.toggle();

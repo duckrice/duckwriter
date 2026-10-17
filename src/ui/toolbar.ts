@@ -38,6 +38,8 @@ import { icon, type IconName } from "./icons";
 
 export interface ToolbarHost {
   readonly view: EditorView;
+  readonly body: EditorView;
+  cycleLineNumbers(): void;
   readonly ctx: DocContext;
   /** Switches the line grid on or off. */
   setLineGrid(on: boolean): void;
@@ -159,82 +161,151 @@ export class Toolbar {
       this.splitButton("shading", "Cell shading", null, () => this.shadingMenu(), () => this.shadingMenu()),
       textButton("Delete table", "Delete the whole table", () => this.run(t.deleteTable)),
     );
-    this.el = h(
-      "div",
-      { class: "toolbar", role: "toolbar" },
-      group(
-        this.splitButton("newDoc", "New document (Ctrl+N)", null, () => this.host.newDocument(), () => this.newMenu()),
-        this.splitButton("open", "Open (Ctrl+O)", null, () => this.host.open(), () => this.recentMenu()),
-        this.button("save", "Save (Ctrl+S)", () => this.host.save()),
-        this.button("print", "Print (Ctrl+P)", () => this.host.print()),
-        this.button("pdf", "Save as PDF (Ctrl+Alt+Shift+P)", () => this.host.savePdf()),
-        this.button("keyboard", "Keyboard shortcuts (F1)", () => this.host.showShortcuts()),
-      ),
-      group(this.button("undo", "Undo (Ctrl+Z)", () => this.run(undo)), this.button("redo", "Redo (Ctrl+Y)", () => this.run(redo)), this.button("find", "Find and replace (Ctrl+F, Ctrl+H)", () => this.host.find(false))),
-      group(this.styleSelect, this.styleMenuButton()),
-      group(
-        this.fontInput,
-        this.sizeInput,
-        this.button("zoomIn", "Bigger text (Ctrl+> or Ctrl+])", () => this.run(stepSize(ctx(), 1)), "sizeUp"),
-        this.button("zoomOut", "Smaller text (Ctrl+< or Ctrl+[)", () => this.run(stepSize(ctx(), -1)), "sizeDown"),
-      ),
-      group(
-        this.button("bold", "Bold (Ctrl+B)", () => this.run(toggleFormat(ctx(), "bold"))),
-        this.button("italic", "Italic (Ctrl+I)", () => this.run(toggleFormat(ctx(), "italic"))),
-        this.button("underline", "Underline (Ctrl+U)", () => this.run(toggleFormat(ctx(), "underline"))),
-        this.button("strike", "Strikethrough (Ctrl+Shift+X)", () => this.run(toggleFormat(ctx(), "strike"))),
-        this.button("superscript", "Superscript (Ctrl++)", () => this.run(toggleVertAlign("superscript"))),
-        this.button("subscript", "Subscript (Ctrl+=)", () => this.run(toggleVertAlign("subscript"))),
-      ),
-      group(
-        this.splitButton("textColor", "Text colour (Ctrl+Shift+O)", this.textColorBar, () => this.run(setMark(schema.marks.color, { color: this.lastTextColor })), () => this.colorMenu()),
-        this.splitButton("highlight", "Highlight (Ctrl+Alt+H)", this.highlightBar, () => this.run(setMark(schema.marks.highlight, { color: this.lastHighlight })), () => this.highlightMenu()),
-        this.button("painter", "Format painter: copy this formatting, then select where it goes (Ctrl+Shift+C, Ctrl+Shift+V)", () => {
-          const brush = this.buttons.get("painter")!;
-          armPainter(this.host.view, () => brush.classList.remove("active"));
-          brush.classList.toggle("active", painterArmed());
-          this.host.view.focus();
-        }),
-        this.button("clearFormat", "Clear formatting (Ctrl+Space)", () => this.run(clearFormatting(ctx()))),
-      ),
-      group(
-        this.button("alignLeft", "Align left (Ctrl+L)", () => this.run(setAlign("left"))),
-        this.button("alignCenter", "Centre (Ctrl+E)", () => this.run(setAlign("center"))),
-        this.button("alignRight", "Align right (Ctrl+R)", () => this.run(setAlign("right"))),
-        this.button("alignJustify", "Justify (Ctrl+J)", () => this.run(setAlign("justify"))),
-      ),
-      group(
-        this.button("bullets", "Bullets (Ctrl+Shift+L)", () => this.run(toggleList(ctx(), "bullet"))),
-        this.button("numbers", "Numbering (Ctrl+Shift+7)", () => this.run(toggleList(ctx(), "number"))),
-        this.button("indentLess", "Decrease indent (Ctrl+Shift+M)", () => this.indent(-1)),
-        this.button("indentMore", "Increase indent (Ctrl+M)", () => this.indent(1)),
-        this.splitButton("lineSpacing", "Line spacing (Ctrl+1, Ctrl+5, Ctrl+2)", null, () => this.spacingMenu(), () => this.spacingMenu()),
-      ),
-      group(
-        this.button("picture", "Picture (Ctrl+Alt+P)", () => void choosePicture(this.host.view, this.host.ctx)),
-        this.splitButton("table", "Table (Ctrl+Alt+Shift+T)", null, () => this.tableMenu(), () => this.tableMenu()),
-        this.splitButton("equation", "Equation (Alt+=)", null, () => insertEquation(this.host.view), () => this.equationMenu()),
-        this.splitButton("symbol", "Symbol (Ctrl+Shift+Y)", null, () => this.symbolMenu(), () => this.symbolMenu()),
-        this.button("pageBreak", "Page break (Ctrl+Enter)", () => this.run(insertPageBreak())),
-        this.splitButton("header", "Header and footer (Ctrl+Alt+O)", null, () => this.host.editHeader(), () => this.headerMenu()),
-        this.button("footnote", "Footnote (Ctrl+Alt+F)", () => this.host.insertFootnote()),
-        this.button("link", "Link (Ctrl+K)", () => editLink(this.host.view, this.host.ctx)),
-        this.splitButton("references", "References (Ctrl+Alt+R)", null, () => this.referencesMenu(), () => this.referencesMenu()),
-        this.splitButton("layout", "Layout", null, () => this.layoutMenu(), () => this.layoutMenu()),
-      ),
-      group(
-        this.button("share", "Write together: share this document or join one (Alt+Shift+W)", () => this.host.share()),
-        this.button("comment", "New comment (Ctrl+Alt+M)", () => this.host.newComment()),
-        this.splitButton("track", "Track changes (Ctrl+Shift+E)", null, () => this.host.toggleTracking(), () => this.trackMenu()),
-        this.button("prevChange", "Previous change or comment (Alt+PageUp)", () => this.host.stepChange(-1)),
-        this.button("nextChange", "Next change or comment (Alt+PageDown)", () => this.host.stepChange(1)),
-        this.splitButton("accept", "Accept the change (Ctrl+Alt+Shift+A)", null, () => this.host.decideChange(true), () => this.reviewMenu(true)),
-        this.splitButton("reject", "Reject the change (Ctrl+Alt+Shift+D)", null, () => this.host.decideChange(false), () => this.reviewMenu(false)),
-      ),
-      this.tableGroup,
-      fonts,
-      sizes,
+    // Always there: documents, undo and redo, find.
+    const quick = group(
+      this.splitButton("newDoc", "New document (Ctrl+N)", null, () => this.host.newDocument(), () => this.newMenu()),
+      this.splitButton("open", "Open (Ctrl+O)", null, () => this.host.open(), () => this.recentMenu()),
+      this.button("save", "Save (Ctrl+S)", () => this.host.save()),
+      this.button("undo", "Undo (Ctrl+Z)", () => this.run(undo)),
+      this.button("redo", "Redo (Ctrl+Y)", () => this.run(redo)),
+      this.button("find", "Find and replace (Ctrl+F, Ctrl+H)", () => this.host.find(false)),
+      this.button("print", "Print (Ctrl+P)", () => this.host.print()),
+      this.button("pdf", "Save as PDF (Ctrl+Alt+Shift+P)", () => this.host.savePdf()),
+      this.button("keyboard", "Keyboard shortcuts (F1)", () => this.host.showShortcuts()),
     );
+    quick.classList.add("ribbon-quick");
+    const tabs: { name: string; label: string; groups: HTMLElement[] }[] = [
+      {
+        name: "home",
+        label: "Home",
+        groups: [
+          group(this.styleSelect, this.styleMenuButton()),
+          group(
+            this.fontInput,
+            this.sizeInput,
+            this.button("zoomIn", "Bigger text (Ctrl+> or Ctrl+])", () => this.run(stepSize(ctx(), 1)), "sizeUp"),
+            this.button("zoomOut", "Smaller text (Ctrl+< or Ctrl+[)", () => this.run(stepSize(ctx(), -1)), "sizeDown"),
+          ),
+          group(
+            this.button("bold", "Bold (Ctrl+B)", () => this.run(toggleFormat(ctx(), "bold"))),
+            this.button("italic", "Italic (Ctrl+I)", () => this.run(toggleFormat(ctx(), "italic"))),
+            this.button("underline", "Underline (Ctrl+U)", () => this.run(toggleFormat(ctx(), "underline"))),
+            this.button("strike", "Strikethrough (Ctrl+Shift+X)", () => this.run(toggleFormat(ctx(), "strike"))),
+            this.button("superscript", "Superscript (Ctrl++)", () => this.run(toggleVertAlign("superscript"))),
+            this.button("subscript", "Subscript (Ctrl+=)", () => this.run(toggleVertAlign("subscript"))),
+          ),
+          group(
+            this.splitButton("textColor", "Text colour (Ctrl+Shift+O)", this.textColorBar, () => this.run(setMark(schema.marks.color, { color: this.lastTextColor })), () => this.colorMenu()),
+            this.splitButton("highlight", "Highlight (Ctrl+Alt+H)", this.highlightBar, () => this.run(setMark(schema.marks.highlight, { color: this.lastHighlight })), () => this.highlightMenu()),
+            this.button("painter", "Format painter: copy this formatting, then select where it goes (Ctrl+Shift+C, Ctrl+Shift+V)", () => {
+              const brush = this.buttons.get("painter")!;
+              armPainter(this.host.view, () => brush.classList.remove("active"));
+              brush.classList.toggle("active", painterArmed());
+              this.host.view.focus();
+            }),
+            this.button("clearFormat", "Clear formatting (Ctrl+Space)", () => this.run(clearFormatting(ctx()))),
+          ),
+          group(
+            this.button("alignLeft", "Align left (Ctrl+L)", () => this.run(setAlign("left"))),
+            this.button("alignCenter", "Centre (Ctrl+E)", () => this.run(setAlign("center"))),
+            this.button("alignRight", "Align right (Ctrl+R)", () => this.run(setAlign("right"))),
+            this.button("alignJustify", "Justify (Ctrl+J)", () => this.run(setAlign("justify"))),
+          ),
+          group(
+            this.button("bullets", "Bullets (Ctrl+Shift+L)", () => this.run(toggleList(ctx(), "bullet"))),
+            this.button("numbers", "Numbering (Ctrl+Shift+7)", () => this.run(toggleList(ctx(), "number"))),
+            this.button("indentLess", "Decrease indent (Ctrl+Shift+M)", () => this.indent(-1)),
+            this.button("indentMore", "Increase indent (Ctrl+M)", () => this.indent(1)),
+            this.splitButton("lineSpacing", "Line spacing (Ctrl+1, Ctrl+5, Ctrl+2)", null, () => this.spacingMenu(), () => this.spacingMenu()),
+          ),
+        ],
+      },
+      {
+        name: "insert",
+        label: "Insert",
+        groups: [
+          group(
+            this.button("picture", "Picture (Ctrl+Alt+P)", () => void choosePicture(this.host.view, this.host.ctx)),
+            this.splitButton("table", "Table (Ctrl+Alt+Shift+T)", null, () => this.tableMenu(), () => this.tableMenu()),
+            this.splitButton("equation", "Equation (Alt+=)", null, () => insertEquation(this.host.view), () => this.equationMenu()),
+            this.splitButton("symbol", "Symbol (Ctrl+Shift+Y)", null, () => this.symbolMenu(), () => this.symbolMenu()),
+            this.button("link", "Link (Ctrl+K)", () => editLink(this.host.view, this.host.ctx)),
+          ),
+          group(
+            this.button("pageBreak", "Page break (Ctrl+Enter)", () => this.run(insertPageBreak())),
+            this.splitButton("header", "Header and footer (Ctrl+Alt+O)", null, () => this.host.editHeader(), () => this.headerMenu()),
+            this.button("footnote", "Footnote (Ctrl+Alt+F)", () => this.host.insertFootnote()),
+          ),
+        ],
+      },
+      {
+        name: "references",
+        label: "References",
+        groups: [
+          group(
+            textButton("Cite", "Cite a source (Alt+Shift+C)", () => insertCitation(this.host.body, this.host.ctx)),
+            textButton("Reference list", "The reference list (Alt+Shift+B)", () => insertBibliography(this.host.body, this.host.ctx)),
+            textButton("Sources…", "Sources and citation style: BibTeX, DOI (Alt+Shift+S)", () => manageSources(this.host.body, this.host.ctx)),
+          ),
+          group(
+            textButton("Caption…", "Insert a caption (Ctrl+Alt+C)", () => captionDialog(this.host.body, this.host.ctx)),
+            textButton("Contents", "Table of contents (Ctrl+Alt+T)", () => insertToc(this.host.body, this.host.ctx)),
+            textButton("Footnote", "Footnote (Ctrl+Alt+F)", () => this.host.insertFootnote()),
+            this.splitButton("references", "References: cross-references, lists of figures, numbered headings (Ctrl+Alt+R)", null, () => this.referencesMenu(), () => this.referencesMenu()),
+          ),
+        ],
+      },
+      {
+        name: "review",
+        label: "Review",
+        groups: [
+          group(
+            this.button("share", "Write together: share this document or join one (Alt+Shift+W)", () => this.host.share()),
+            this.button("comment", "New comment (Ctrl+Alt+M)", () => this.host.newComment()),
+          ),
+          group(
+            this.splitButton("track", "Track changes (Ctrl+Shift+E)", null, () => this.host.toggleTracking(), () => this.trackMenu()),
+            this.button("prevChange", "Previous change or comment (Alt+PageUp)", () => this.host.stepChange(-1)),
+            this.button("nextChange", "Next change or comment (Alt+PageDown)", () => this.host.stepChange(1)),
+            this.splitButton("accept", "Accept the change (Ctrl+Alt+Shift+A)", null, () => this.host.decideChange(true), () => this.reviewMenu(true)),
+            this.splitButton("reject", "Reject the change (Ctrl+Alt+Shift+D)", null, () => this.host.decideChange(false), () => this.reviewMenu(false)),
+          ),
+        ],
+      },
+      {
+        name: "layout",
+        label: "Layout",
+        groups: [
+          group(
+            textButton("Page setup…", "Paper size, orientation, margins (Alt+P)", () => this.host.pageSetup()),
+            textButton("Line numbers", "Line numbers: through the document, from 1 on each page, or none (Alt+Shift+L)", () => this.host.cycleLineNumbers()),
+            this.splitButton("layout", "Layout", null, () => this.layoutMenu(), () => this.layoutMenu()),
+          ),
+        ],
+      },
+    ];
+    const strip = h("div", { class: "ribbon-tabs", role: "tablist" });
+    const panel = h("div", { class: "ribbon-panel" });
+    tabs.forEach((tab, i) => {
+      const button = h("button", { type: "button", class: "ribbon-tab", role: "tab", "data-tab": tab.name, title: `${tab.label} (Alt+${i + 1})` }, tab.label);
+      button.addEventListener("mousedown", (event) => event.preventDefault());
+      button.addEventListener("click", () => this.selectTab(tab.name));
+      strip.append(button);
+      for (const g of tab.groups) {
+        g.dataset.tab = tab.name;
+        panel.append(g);
+      }
+    });
+    panel.append(this.tableGroup);
+    this.tabNames = tabs.map((t) => t.name);
+    this.el = h("div", { class: "toolbar ribbon", role: "toolbar" }, h("div", { class: "ribbon-top" }, quick, strip), panel, fonts, sizes);
+    let remembered = "home";
+    try {
+      remembered = localStorage.getItem("duckwriter.tab") ?? "home";
+    } catch {
+      // The first tab, then.
+    }
+    this.selectTab(this.tabNames.includes(remembered) ? remembered : "home");
     this.textColorBar.style.background = this.lastTextColor;
     this.highlightBar.style.background = HIGHLIGHTS[this.lastHighlight];
     // Escape closes an open menu, wherever the cursor is.
@@ -258,6 +329,7 @@ export class Toolbar {
 
   /** Puts the cursor in the font, size or style box, for choosing from the keyboard. */
   focusBox(box: "font" | "size" | "style") {
+    this.selectTab("home");
     if (box === "style") {
       this.styleByKeyboard = true;
       this.styleSelect.focus();
@@ -268,8 +340,30 @@ export class Toolbar {
     input.select();
   }
 
+  private tabNames: string[] = [];
+
+  /** Shows a tab of the ribbon (by name, or by number from 1: Alt+1…). */
+  selectTab(tab: string | number) {
+    const name = typeof tab === "number" ? this.tabNames[tab - 1] : tab;
+    if (!name) return;
+    for (const el of this.el.querySelectorAll<HTMLElement>(".ribbon-panel [data-tab]")) el.hidden = el.dataset.tab !== name;
+    for (const el of this.el.querySelectorAll<HTMLElement>(".ribbon-tab")) el.classList.toggle("active", el.dataset.tab === name);
+    try {
+      localStorage.setItem("duckwriter.tab", name);
+    } catch {
+      // Not remembered.
+    }
+  }
+
+  /** Makes sure a control is on the tab shown. */
+  private reveal(el: Element | undefined | null) {
+    const tab = el?.closest<HTMLElement>("[data-tab]")?.dataset.tab;
+    if (tab) this.selectTab(tab);
+  }
+
   /** Opens one of the toolbar's menus, ready to use with the arrow keys. */
   openMenuByKeyboard(name: string) {
+    this.reveal(this.menuArrows.get(name));
     this.menuArrows.get(name)?.click();
     const first = this.openMenu?.querySelector<HTMLElement>(".menu-item, .symbol-button, .swatch, .table-grid-cell");
     first?.focus();

@@ -177,6 +177,8 @@ async function session(files, port, run, { profileDir = profile, keepAutoSave = 
       app.evaluate(`(() => {
         const el = document.querySelectorAll(${JSON.stringify(selector)})[${index}];
         if (!el) return null;
+        const tab = el.closest(".ribbon-panel [data-tab]");
+        if (tab?.hidden) document.querySelector('.ribbon-tab[data-tab="' + tab.dataset.tab + '"]').click();
         el.scrollIntoView({ block: "center" });
         const r = el.getBoundingClientRect();
         return [r.left + r.width / 2, r.top + r.height / 2, r.width, r.height];

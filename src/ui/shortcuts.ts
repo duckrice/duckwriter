@@ -69,6 +69,8 @@ export interface ShortcutHost {
   /** The toolbar's boxes and menus. */
   focusBox(box: "font" | "size" | "style"): void;
   openMenu(menu: "symbol" | "references" | "layout" | "textColor" | "highlight" | "table" | "open" | "newDoc"): void;
+  /** Shows a tab of the toolbar, from 1. */
+  selectTab(n: number): void;
   toggleTableLines(): void;
   applyTextColor(): void;
   applyHighlight(): void;
@@ -102,6 +104,7 @@ export const SHORTCUTS: Shortcut[] = [
   { group: "Documents", label: "New document", keys: ["Ctrl+N"], run: (x) => x.newDocument(), everywhere: true },
   { group: "Documents", label: "Open", keys: ["Ctrl+O"], run: (x) => x.open(), everywhere: true },
   { group: "Documents", label: "Recent documents", keys: ["Alt+F"], run: (x) => x.openMenu("open"), everywhere: true },
+  ...["Home", "Insert", "References", "Review", "Layout"].map((tab, i) => ({ group: "Documents", label: `The toolbar's ${tab} tab`, keys: [`Alt+${i + 1}`], run: (x: ShortcutHost) => x.selectTab(i + 1), everywhere: true })),
   { group: "Documents", label: "New from a template (article, report, letter, thesis chapter)", keys: ["Alt+Shift+T"], run: (x) => x.openMenu("newDoc"), everywhere: true },
   { group: "Documents", label: "Page setup: paper size, orientation, margins", keys: ["Alt+P"], run: (x) => x.pageSetup() },
   { group: "Documents", label: "Word count (of the selection too)", keys: ["Ctrl+Shift+G"], run: (x) => x.wordCount(), everywhere: true },
