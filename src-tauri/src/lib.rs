@@ -30,6 +30,34 @@ fn open_url(url: String) -> Result<(), String> {
     Ok(())
 }
 
+/// Builds a window; for tests, off-screen and in the background. A window can't
+/// be created off-screen, so it's created hidden, moved, then shown without focus.
+fn build_window(builder: tauri::WebviewWindowBuilder<'_, tauri::Wry, tauri::AppHandle>) -> tauri::Result<()> {
+    if std::env::var_os("DUCKWRITER_TEST_OFFSCREEN").is_some() {
+        let window = builder.visible(false).focused(false).skip_taskbar(true).build()?;
+        window.set_position(tauri::PhysicalPosition::new(-20000, -20000))?;
+        window.show()?;
+    } else {
+        builder.build()?;
+    }
+    Ok(())
+}
+
+/// Opens another document (or a new one, with no path) in a window of its own, as Word does.
+/// Async: on Windows a window made from a command on the main thread can hang.
+#[tauri::command]
+async fn open_window(app: tauri::AppHandle, path: Option<String>) -> Result<(), String> {
+    static COUNT: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+    let n = COUNT.fetch_add(1, std::sync::atomic::Ordering::Relaxed) + 1;
+    let mut config = app.config().app.windows[0].clone();
+    config.label = format!("doc-{}-{n}", std::process::id());
+    let open = serde_json::to_string(&path.unwrap_or_default()).map_err(|e| e.to_string())?;
+    let builder = tauri::WebviewWindowBuilder::from_config(&app, &config)
+        .map_err(|e| e.to_string())?
+        .initialization_script(format!("window.__DUCKWRITER_OPEN = {open};"));
+    build_window(builder).map_err(|e| e.to_string())
+}
+
 /// The documents DuckWriter was started with ("Open with" or a double-click), as absolute paths.
 #[tauri::command]
 fn startup_files() -> Vec<String> {
@@ -175,20 +203,10 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
             let config = &app.config().app.windows[0];
-            let builder = tauri::WebviewWindowBuilder::from_config(app.handle(), config)?;
-            // Tests open the window off-screen and in the background, so they
-            // can run without taking over the screen. A window can't be created
-            // off-screen, so it's created hidden, moved, then shown without focus.
-            if std::env::var_os("DUCKWRITER_TEST_OFFSCREEN").is_some() {
-                let window = builder.visible(false).focused(false).skip_taskbar(true).build()?;
-                window.set_position(tauri::PhysicalPosition::new(-20000, -20000))?;
-                window.show()?;
-            } else {
-                builder.build()?;
-            }
+            build_window(tauri::WebviewWindowBuilder::from_config(app.handle(), config)?)?;
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![startup_files, read_file, write_file, recovery_dir, recovery_files, delete_recovery, save_pdf, spelling::spell_languages, spelling::spell_check, spelling::spell_suggest, open_url])
+        .invoke_handler(tauri::generate_handler![startup_files, read_file, write_file, recovery_dir, recovery_files, delete_recovery, save_pdf, spelling::spell_languages, spelling::spell_check, spelling::spell_suggest, open_url, open_window])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

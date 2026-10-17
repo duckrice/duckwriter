@@ -97,11 +97,25 @@ export async function writeDocx(doc: Node, ctx: DocContext): Promise<Uint8Array>
 }
 
 class BodyWriter {
-  /** @param story a header, footer or the footnotes being written, whose links live in their own part. */
+  /** @param story a header, footer or the footnotes being written, whose links and pictures live in their own part. */
   constructor(
     private ctx: DocContext,
     private story: { rels: Map<string, Relationship> } | null = null,
   ) {}
+
+  /** Relationships this part (a header, the footnotes) got while being written. */
+  readonly storyRels = new Map<string, Relationship>();
+
+  private addStoryRel(rel: Relationship): string {
+    const rels = this.story!.rels;
+    for (const [id, r] of rels) if (r.type === rel.type && r.target === rel.target && r.external === rel.external) return id;
+    let n = rels.size + 1;
+    while (rels.has(`rId${n}`)) n++;
+    const id = `rId${n}`;
+    rels.set(id, rel);
+    this.storyRels.set(id, rel);
+    return id;
+  }
 
   body(doc: Node): string {
     return this.blocks(doc) + this.ctx.sectPr;
@@ -323,18 +337,24 @@ class BodyWriter {
     return `<w:r>${this.runProps(node.marks)}${pictureXml(rid, layout, this.drawingId++, !this.ctx.prefixes.has("r"))}</w:r>`;
   }
 
-  /** Puts a picture added in DuckWriter into the file's media folder, once. */
+  /** Puts a picture added in DuckWriter into the file's media folder, once, and relates this part to it. */
   private addMedia(key: string | null): string | null {
     const entry = key ? this.ctx.media.get(key) : undefined;
     if (!entry) return null;
-    if (entry.rid) return entry.rid;
     const dir = documentDir(this.ctx);
-    let n = 1;
-    while (this.ctx.zip.file(`${dir}media/duckwriter${n}.${entry.ext}`)) n++;
-    this.ctx.zip.file(`${dir}media/duckwriter${n}.${entry.ext}`, entry.bytes);
+    if (!entry.file) {
+      let n = 1;
+      while (this.ctx.zip.file(`${dir}media/duckwriter${n}.${entry.ext}`)) n++;
+      entry.file = `media/duckwriter${n}.${entry.ext}`;
+      this.ctx.zip.file(dir + entry.file, entry.bytes);
+      this.mediaExtensions.add(entry.ext.toLowerCase());
+    }
+    const rel = { type: "http://schemas.openxmlformats.org/officeDocument/2006/relationships/image", target: entry.file, external: false };
+    // A header's picture is related from the header's own part.
+    if (this.story) return this.addStoryRel(rel);
+    if (entry.rid) return entry.rid;
     entry.rid = newRelId(this.ctx);
-    this.ctx.addedRels.set(entry.rid, { type: "http://schemas.openxmlformats.org/officeDocument/2006/relationships/image", target: `media/duckwriter${n}.${entry.ext}`, external: false });
-    this.mediaExtensions.add(entry.ext.toLowerCase());
+    this.ctx.addedRels.set(entry.rid, rel);
     return entry.rid;
   }
 
@@ -363,10 +383,11 @@ class BodyWriter {
     if (anchor && !href) return `<w:hyperlink w:anchor="${escapeAttr(anchor)}" w:history="1">${content}</w:hyperlink>`;
     let rid: string | null = mark.attrs.rid;
     if (this.story) {
-      // A link in a header keeps its relationship; a new one is written as plain text for now.
+      // A link in a header is related from the header's own part.
       const known = rid ? this.story.rels.get(rid) : undefined;
-      if (!known || known.target !== href) return content;
-      return `<w:hyperlink r:id="${escapeAttr(rid!)}" w:history="1">${content}</w:hyperlink>`;
+      if (!known || known.target !== href) rid = this.addStoryRel({ type: "http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink", target: href, external: true });
+      const ns = this.ctx.prefixes.has("r") ? "" : ` xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"`;
+      return `<w:hyperlink r:id="${escapeAttr(rid!)}" w:history="1"${ns}>${content}</w:hyperlink>`;
     }
     const known = rid ? (this.ctx.rels.get(rid) ?? this.ctx.addedRels.get(rid)) : undefined;
     if (!known || known.target !== href) rid = this.addLinkRel(href);
@@ -492,9 +513,12 @@ async function writeStories(ctx: DocContext) {
       await addContentType(ctx, `/${story.path}`, info.content);
     }
     const start = story.rootStart ?? NEW_ROOT(info.root);
+    const writer = new BodyWriter(ctx, story);
     const xml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-${start}${new BodyWriter(ctx, story).blocks(story.doc)}</${info.root}>`;
+${start}${writer.blocks(story.doc)}</${info.root}>`;
     ctx.zip.file(story.path, xml);
+    await writePartRels(ctx, story.path, writer.storyRels);
+    await writeMediaTypes(ctx, writer.mediaExtensions);
     story.rootStart = start;
     story.saved = story.doc;
   }
@@ -540,6 +564,8 @@ async function writeFootnotes(doc: Node, ctx: DocContext) {
   const notes = ids.map((id) => `<w:footnote w:id="${escapeAttr(id)}">${writer.blocks(fn.notes.get(id)!, NOTE_NUMBER)}</w:footnote>`);
   const start = fn.rootStart ?? NEW_ROOT("w:footnotes");
   ctx.zip.file(fn.path, `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n${start}${special.join("")}${notes.join("")}</w:footnotes>`);
+  await writePartRels(ctx, fn.path, writer.storyRels);
+  await writeMediaTypes(ctx, writer.mediaExtensions);
   fn.rootStart = start;
   fn.special = special;
   fn.saved = new Map(ids.map((id) => [id, fn.notes.get(id)!]));
@@ -830,6 +856,21 @@ async function writeRels(ctx: DocContext) {
   ctx.zip.file(path, xml.slice(0, end) + added + xml.slice(end));
   for (const [id, rel] of ctx.addedRels) ctx.rels.set(id, rel);
   ctx.addedRels.clear();
+}
+
+/** Adds relationships to a part's own .rels (a header's, the footnotes'). */
+async function writePartRels(ctx: DocContext, partPath: string, added: Map<string, Relationship>) {
+  if (!added.size) return;
+  const dir = partPath.slice(0, partPath.lastIndexOf("/") + 1);
+  const path = `${dir}_rels/${partPath.slice(dir.length)}.rels`;
+  let xml = await ctx.zip.file(path)?.async("string");
+  if (!xml) xml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"></Relationships>`;
+  const rels = [...added]
+    .filter(([id]) => !xml!.includes(`Id="${id}"`))
+    .map(([id, rel]) => `<Relationship Id="${escapeAttr(id)}" Type="${escapeAttr(rel.type)}" Target="${escapeAttr(rel.target)}"${rel.external ? ' TargetMode="External"' : ""}/>`)
+    .join("");
+  const end = xml.lastIndexOf("</Relationships>");
+  ctx.zip.file(path, xml.slice(0, end) + rels + xml.slice(end));
 }
 
 async function addContentType(ctx: DocContext, partName: string, contentType: string) {

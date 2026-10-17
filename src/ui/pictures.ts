@@ -36,11 +36,6 @@ function naturalSize(url: string): Promise<{ width: number; height: number }> {
 
 /** Adds a picture at `pos` (or the cursor). */
 export async function insertPicture(view: EditorView, ctx: DocContext, bytes: Uint8Array, ext: string, pos: number | null = null) {
-  // A header's or note's pictures belong to its own part of the file, which isn't written that way yet.
-  if ((view.dom as HTMLElement).classList.contains("hf-doc")) {
-    view.dom.dispatchEvent(new CustomEvent("duckwriter-toast", { bubbles: true, detail: "Pictures can be added to the main text; in headers, footers and footnotes not yet" }));
-    return;
-  }
   const type = ext === "jpg" || ext === "jpeg" ? "image/jpeg" : `image/${ext}`;
   const src = URL.createObjectURL(new Blob([bytes as BlobPart], { type }));
   const size = await naturalSize(src);

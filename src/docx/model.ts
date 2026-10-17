@@ -218,7 +218,7 @@ export interface DocContext {
   /** Style definitions (XML) to add to the document's styles when it is saved. */
   addedStyles: string[];
   /** Pictures added in DuckWriter, by key, until saved into the file's media folder. */
-  media: Map<string, { bytes: Uint8Array; ext: string; rid: string | null }>;
+  media: Map<string, { bytes: Uint8Array; ext: string; rid: string | null; file?: string }>;
   /** Where to show the file's own pictures from, by relationship id. */
   imageSources: Map<string, string>;
   /** Styles whose list numbering changed (numbered headings), by style id: null switches it off. */

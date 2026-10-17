@@ -105,6 +105,17 @@ export async function writePath(path: string, bytes: Uint8Array): Promise<void> 
 }
 
 /** The documents DuckWriter was started with. */
+/** Opens a document (or a new one) in a window of its own. */
+export async function openWindow(path: string | null): Promise<void> {
+  if (isDesktop) await invoke("open_window", { path });
+  else window.open(location.href, "_blank");
+}
+
+/** What this window was opened for: a document's path, "" for a new one; undefined for the first window. */
+export function windowOpening(): string | undefined {
+  return (window as { __DUCKWRITER_OPEN?: string }).__DUCKWRITER_OPEN;
+}
+
 export async function startupFiles(): Promise<string[]> {
   return isDesktop ? invoke<string[]>("startup_files") : [];
 }

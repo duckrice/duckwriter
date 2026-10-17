@@ -1111,6 +1111,17 @@ await session(null, 9571, async (app) => {
   check("no errors in the app", app.errors.length === 0, app.errors.join("; "));
 });
 
+await session(sample("report.docx"), 9573, async (app) => {
+  const pages = async () => (await (await fetch("http://127.0.0.1:9573/json")).json()).filter((t) => t.type === "page");
+  await app.key("N", 78, CTRL);
+  let found = false;
+  for (let i = 0; i < 30 && !found; i++) {
+    await sleep(300);
+    found = (await pages()).length === 2;
+  }
+  check("Ctrl+N opens a new document in a window of its own, leaving this one", found && (await app.evaluate(`document.title.startsWith("report.docx")`)));
+});
+
 await session(sample("letterhead.docx"), 9572, async (app) => {
   check("a logo in the header is shown", await app.waitFor(`!!document.querySelector(".hf-layer img")`, 5000));
   await app.shoot("header-logo");

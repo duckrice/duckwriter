@@ -18,6 +18,7 @@ tauri-build = { version = "2", features = [] }
 tauri = { version = "2", features = [] }
 tauri-plugin-dialog = "2"
 percent-encoding = "2"
+serde_json = "1"
 
 # Saving as PDF uses WebView2's own PDF printer, spelling Windows' spell checker; the same versions Tauri uses.
 [target.'cfg(windows)'.dependencies]

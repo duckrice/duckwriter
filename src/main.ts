@@ -17,7 +17,7 @@ import { schema } from "./editor/schema";
 import { PAGE_GAP, relayout, setPageGap, type PageLayout } from "./editor/pagination";
 import { invoke } from "@tauri-apps/api/core";
 import { stylesheetFor } from "./editor/stylesheet";
-import { baseName, isDesktop, onCloseRequested, pickDocument, pickPdfPath, pickSavePath, readPath, setTitle, startupFiles, windowsSpelling, writePath } from "./platform";
+import { baseName, isDesktop, onCloseRequested, openWindow, pickDocument, pickPdfPath, pickSavePath, readPath, setTitle, startupFiles, windowOpening, windowsSpelling, writePath } from "./platform";
 import { Footnotes } from "./ui/footnotes";
 import { updateTocs } from "./ui/references";
 import { insertPictureFiles, setSnap, snapOn } from "./ui/pictures";
@@ -395,21 +395,31 @@ class App {
 
   // ---- files ----------------------------------------------------------------
 
+  /** An empty document nobody has typed in: the next one opened can take its place. */
+  get blank(): boolean {
+    return !this.path && !this.dirty && this.body.state.doc.textContent === "" && this.body.state.doc.childCount === 1;
+  }
+
   async newDocument(ask = true) {
+    // Another document gets a window of its own, as in Word.
+    if (ask && isDesktop && !this.blank) return void openWindow(null).catch((error) => this.toast(message(error), "error"));
     if (ask && !(await this.confirmDiscard())) return;
     const { doc, context } = await readDocx(await blankDocx());
     this.show(doc, context, "Document1.docx", null);
   }
 
   async open() {
-    if (!(await this.confirmDiscard())) return;
+    const here = !isDesktop || this.blank;
+    if (here && !(await this.confirmDiscard())) return;
     let file;
     try {
       file = await pickDocument();
     } catch (error) {
       return this.toast(`Couldn't open the file: ${message(error)}`, "error");
     }
-    if (file) await this.load(file.bytes, file.name, file.path);
+    if (!file) return;
+    if (!here && file.path) return void openWindow(file.path);
+    await this.load(file.bytes, file.name, file.path);
   }
 
   async openPath(path: string) {
@@ -423,6 +433,7 @@ class App {
 
   /** Opens a document from the recent list; one that is gone is taken off it. */
   async openRecent(path: string) {
+    if (isDesktop && !this.blank) return void openWindow(path);
     if (!(await this.confirmDiscard())) return;
     try {
       const file = await readPath(path);
@@ -822,12 +833,12 @@ function ask(title: string, text: string, buttons: { label: string; value: strin
 }
 
 const app = new App(document.querySelector<HTMLElement>("#app")!);
-const [first] = await startupFiles();
-if (first) {
-  await app.newDocument(false);
-  await app.openPath(first);
-} else await app.newDocument(false);
+// A window opened for another document opens it; the first one opens what DuckWriter was started with.
+const opening = windowOpening();
+const [first] = opening === undefined ? await startupFiles() : [opening];
+await app.newDocument(false);
+if (first) await app.openPath(first);
 if (localStorage.getItem("duckwriter.debug") === "1") {
   Object.assign(window, { __dw: app });
 }
-void app.offerRecovery();
+if (opening === undefined) void app.offerRecovery();

@@ -136,3 +136,23 @@ describe("pictures in headers", () => {
     expect(await part(saved, header.path!)).toBe(await part(bytes, header.path!));
   });
 });
+
+describe("new pictures in headers", () => {
+  it("are related from the header's own part", async () => {
+    const bytes = new Uint8Array(readFileSync(join(__dirname, "..", "samples", "letterhead.docx")));
+    const { doc, context } = await readDocx(bytes);
+    const header = context.stories.find((s) => s.kind === "header")!;
+    context.media.set("logo2", { bytes: new Uint8Array([137, 80, 78, 71]), ext: "png", rid: null });
+    const picture = schema.nodes.image.create({ media: "logo2", src: "", width: 20, height: 10 });
+    header.doc = schema.nodes.doc.create(null, [schema.nodes.paragraph.create(null, [picture, schema.text("Second logo")])]);
+    const saved = await writeDocx(doc, context);
+    const zip = await JSZip.loadAsync(saved);
+    const dir = header.path!.slice(0, header.path!.lastIndexOf("/") + 1);
+    const rels = await zip.file(`${dir}_rels/${header.path!.slice(dir.length)}.rels`)!.async("string");
+    const rid = /Id="(rId\d+)"[^>]*Target="media\/duckwriter1\.png"/.exec(rels)?.[1];
+    expect(rid).toBeTruthy();
+    expect(await zip.file(header.path!)!.async("string")).toContain(`r:embed="${rid}"`);
+    expect(zip.file("word/media/duckwriter1.png")).toBeTruthy();
+    expect(await zip.file("word/_rels/document.xml.rels")!.async("string")).not.toContain("duckwriter1.png");
+  });
+});
