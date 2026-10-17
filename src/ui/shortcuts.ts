@@ -39,6 +39,7 @@ export interface ShortcutHost {
   zoomBy(direction: 1 | -1 | 0): void;
   setLineGrid(on: boolean): void;
   toggleSnap(): void;
+  toggleAutoSave(): void;
   /** The toolbar's boxes and menus. */
   focusBox(box: "font" | "size" | "style"): void;
   openMenu(menu: "symbol" | "references" | "layout" | "textColor" | "highlight"): void;
@@ -75,6 +76,7 @@ export const SHORTCUTS: Shortcut[] = [
   { group: "Documents", label: "Open", keys: ["Ctrl+O"], run: (x) => x.open(), everywhere: true },
   { group: "Documents", label: "Save", keys: ["Ctrl+S"], run: (x) => x.save(), everywhere: true },
   { group: "Documents", label: "Save as", keys: ["F12"], run: (x) => x.save(true), everywhere: true },
+  { group: "Documents", label: "Auto-save, on or off", keys: ["Ctrl+Alt+Shift+S"], run: (x) => x.toggleAutoSave(), everywhere: true },
   { group: "Documents", label: "Keyboard shortcuts (this list)", keys: ["F1"], run: (x) => x.showShortcuts(), everywhere: true },
 
   // ---- editing

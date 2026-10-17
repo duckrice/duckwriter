@@ -5,6 +5,7 @@ use std::{
 
 use percent_encoding::percent_decode_str;
 use tauri::ipc::{InvokeBody, Request, Response};
+use tauri::Manager;
 
 /// The documents DuckWriter was started with ("Open with" or a double-click), as absolute paths.
 #[tauri::command]
@@ -17,6 +18,46 @@ fn startup_files() -> Vec<String> {
         .filter(|path| path.is_file())
         .map(|path| path.to_string_lossy().into_owned())
         .collect()
+}
+
+/// The folder for recovery copies of unsaved work, on this computer only
+/// (%LOCALAPPDATA%\com.duckrice.duckwriter\Recovery). Created if missing.
+#[tauri::command]
+fn recovery_dir(app: tauri::AppHandle) -> Result<String, String> {
+    // Tests use a folder of their own, so they never touch real recovery copies.
+    let dir = match std::env::var_os("DUCKWRITER_RECOVERY_DIR") {
+        Some(dir) => PathBuf::from(dir),
+        None => app.path().app_local_data_dir().map_err(|err| err.to_string())?.join("Recovery"),
+    };
+    fs::create_dir_all(&dir).map_err(|err| format!("Could not create {}: {err}", dir.display()))?;
+    Ok(dir.to_string_lossy().into_owned())
+}
+
+/// The files in the recovery folder.
+#[tauri::command]
+fn recovery_files(app: tauri::AppHandle) -> Result<Vec<String>, String> {
+    let dir = PathBuf::from(recovery_dir(app)?);
+    let entries = fs::read_dir(&dir).map_err(|err| err.to_string())?;
+    Ok(entries
+        .filter_map(Result::ok)
+        .filter(|entry| entry.path().is_file())
+        .map(|entry| entry.path().to_string_lossy().into_owned())
+        .collect())
+}
+
+/// Deletes a recovery copy. Only files in the recovery folder can be deleted this way.
+#[tauri::command]
+fn delete_recovery(app: tauri::AppHandle, path: String) -> Result<(), String> {
+    let dir = PathBuf::from(recovery_dir(app)?);
+    let file = PathBuf::from(&path);
+    if file.parent() != Some(dir.as_path()) {
+        return Err(format!("Not a recovery file: {path}"));
+    }
+    match fs::remove_file(&file) {
+        Ok(()) => Ok(()),
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(err) => Err(err.to_string()),
+    }
 }
 
 #[tauri::command]
@@ -79,7 +120,7 @@ pub fn run() {
             }
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![startup_files, read_file, write_file])
+        .invoke_handler(tauri::generate_handler![startup_files, read_file, write_file, recovery_dir, recovery_files, delete_recovery])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

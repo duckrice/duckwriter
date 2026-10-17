@@ -7,7 +7,7 @@
 // Add `-- --screenshots` to also save pictures of the app along the way, into
 // test-screenshots/ (or `-- --screenshots=some/folder`).
 import { execFileSync, spawn } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { copyFileSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -20,6 +20,7 @@ const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 // Its own browser profile: the test then works while the app is open for real
 // use, and doesn't touch the settings saved there.
 const profile = mkdtempSync(join(tmpdir(), "duckwriter-smoke-"));
+const recoveryDir = join(profile, "Recovery");
 
 const shotsFlag = process.argv.find((arg) => arg === "--screenshots" || arg.startsWith("--screenshots="));
 const shotsDir = shotsFlag ? (shotsFlag.split("=")[1] ?? join(root, "test-screenshots")) : null;
@@ -43,6 +44,7 @@ const appEnv = (port, profileDir = profile) => ({
   DUCKWRITER_TEST_OFFSCREEN: "1",
   WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS: `--remote-debugging-port=${port} --disable-features=CalculateNativeWinOcclusion --disable-backgrounding-occluded-windows --disable-renderer-backgrounding`,
   WEBVIEW2_USER_DATA_FOLDER: profileDir,
+  DUCKWRITER_RECOVERY_DIR: recoveryDir,
 });
 
 /** Copies of DuckWriter currently running, by process id. */
@@ -61,7 +63,7 @@ const requestClose = (pid) =>
   ]);
 
 /** Starts the app with `files` open and hands `run` helpers for driving it. */
-async function session(files, port, run, { profileDir = profile } = {}) {
+async function session(files, port, run, { profileDir = profile, keepAutoSave = false } = {}) {
   files = [files].flat().filter(Boolean);
   const child = spawn(exe, files, { env: appEnv(port, profileDir), stdio: "ignore" });
   let target;
@@ -209,6 +211,8 @@ async function session(files, port, run, { profileDir = profile } = {}) {
   await send("Page.enable");
   try {
     await app.waitFor(`!!document.querySelector(".sheet .doc")`);
+    // Tests edit the sample files; auto-save would change them. One test switches it on.
+    if (!keepAutoSave) await app.evaluate(`localStorage.setItem("duckwriter.autosave", "off")`);
     if (files.length) await app.waitFor(`document.title.startsWith(${JSON.stringify(basename(files[0]))})`, 5000);
     await sleep(800);
     await run(app);
@@ -831,6 +835,62 @@ await session(null, 9490, async (app) => {
   check("the list can be searched", (await app.evaluate(`[...document.querySelectorAll(".shortcut-help .shortcut-row")].map((r) => r.querySelector(".shortcut-label").textContent).join("|")`)).includes("Font size up by one point"));
   await app.shoot("keyboard-shortcuts");
   await app.key("Escape", 27);
+  check("no errors in the app", app.errors.length === 0, app.errors.join("; "));
+});
+
+// ---- auto-save and recovery ------------------------------------------------------------------
+
+const autosaved = join(tmpdir(), "duckwriter-smoke-autosave.docx");
+copyFileSync(sample("report.docx"), autosaved);
+
+await session(autosaved, 9500, async (app) => {
+  await app.evaluate(`localStorage.removeItem("duckwriter.autosave")`);
+  const first = await app.center(".doc > .para", 0);
+  await app.click(first[0] + first[2] / 2 - 2, first[1]);
+  await app.key("End", 35);
+  await app.type(" — auto-saved");
+  check("auto-save says it is on", (await app.evaluate(`document.querySelector(".save-status").textContent`)) === "Auto-save on");
+  check("a few seconds after typing stops, the file is saved by itself", await app.waitFor(`/^Saved \\d/.test(document.querySelector(".save-status").textContent) && !document.title.startsWith("•")`, 12000), await app.evaluate(`document.querySelector(".save-status").textContent`));
+  await app.clickOn(".save-status");
+  check("clicking the status switches auto-save off", (await app.evaluate(`document.querySelector(".save-status").textContent`)) === "Auto-save off");
+  await app.shoot("auto-save");
+}, { keepAutoSave: true });
+
+{
+  const zip = await JSZip.loadAsync(readFileSync(autosaved));
+  const xml = await zip.file("word/document.xml").async("string");
+  check("the auto-saved file on disk has the new text", xml.includes("auto-saved"));
+  rmSync(autosaved, { force: true });
+}
+
+// A new, never-saved document, and then DuckWriter "crashes" (the test kills it).
+await session(null, 9501, async (app) => {
+  await app.type("Work that must not be lost");
+  // Without a file, its recovery copy is kept a few seconds after typing stops.
+  let copies = [];
+  for (let i = 0; i < 40 && copies.length < 2; i++) {
+    await sleep(250);
+    try {
+      copies = readdirSync(recoveryDir);
+    } catch {
+      copies = [];
+    }
+  }
+  check("unsaved work is copied to the recovery folder on this computer", copies.some((f) => f.endsWith(".docx")) && copies.some((f) => f.endsWith(".json")), copies.join(", "));
+}, { keepAutoSave: true });
+
+// Make the copy look old, as after a real crash some time ago.
+for (const f of readdirSync(recoveryDir).filter((f) => f.endsWith(".json"))) {
+  const info = JSON.parse(readFileSync(join(recoveryDir, f), "utf8"));
+  writeFileSync(join(recoveryDir, f), JSON.stringify({ ...info, time: Date.now() - 10 * 60_000 }));
+}
+
+await session(null, 9502, async (app) => {
+  check("on the next start, DuckWriter offers the work back", await app.waitFor(`/Restore unsaved work/.test(document.querySelector("dialog[open]")?.textContent ?? "")`, 5000));
+  await app.shoot("restore-offer");
+  await app.clickOn("dialog[open] .btn.primary");
+  check("restoring brings the text back, still to be saved", await app.waitFor(`document.querySelector(".doc").textContent.includes("Work that must not be lost") && document.title.startsWith("•")`, 5000));
+  check("the old copy is gone from the recovery folder", await app.waitFor(`true`) && readdirSync(recoveryDir).length === 0, readdirSync(recoveryDir).join(", "));
   check("no errors in the app", app.errors.length === 0, app.errors.join("; "));
 });
 

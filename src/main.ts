@@ -8,6 +8,7 @@ import { readDocx } from "./docx/read";
 import { blankDocx } from "./docx/template";
 import { writeDocx } from "./docx/write";
 import { createState, createView } from "./editor/editor";
+import { schema } from "./editor/schema";
 import { PAGE_GAP, relayout, type PageLayout } from "./editor/pagination";
 import { stylesheetFor } from "./editor/stylesheet";
 import { baseName, isDesktop, onCloseRequested, pickDocument, pickSavePath, readPath, setTitle, startupFiles, writePath } from "./platform";
@@ -15,6 +16,7 @@ import { Footnotes } from "./ui/footnotes";
 import { updateTocs } from "./ui/references";
 import { insertPictureFiles, setSnap, snapOn } from "./ui/pictures";
 import { handleShortcuts, showShortcutHelp } from "./ui/shortcuts";
+import { AutoSave } from "./autosave";
 import { placeFloatingPictures } from "./editor/imageview";
 import { HeadersAndFooters } from "./ui/headers";
 import { icon } from "./ui/icons";
@@ -42,6 +44,8 @@ class App {
   private words = h("span", { class: "status-item" });
   private zoomLabel = h("button", { type: "button", class: "status-button", title: "Reset zoom to 100%" });
   private toasts = h("div", { class: "toasts", role: "status" });
+  private saveStatus = h("button", { type: "button", class: "status-button save-status" });
+  private autosave: AutoSave;
   private wordTimer = 0;
   private headers: HeadersAndFooters;
   private footnotes: Footnotes;
@@ -51,6 +55,25 @@ class App {
 
   constructor(root: HTMLElement) {
     this.toolbar = new Toolbar(this);
+    const app = this;
+    this.autosave = new AutoSave({
+      get dirty() {
+        return app.body ? app.dirty : false;
+      },
+      get path() {
+        return app.path;
+      },
+      get name() {
+        return app.name;
+      },
+      build: () => this.build(),
+      saveQuietly: () => this.saveQuietly(),
+      status: (text, title) => {
+        this.saveStatus.textContent = text;
+        this.saveStatus.title = title;
+      },
+    });
+    this.saveStatus.addEventListener("click", () => this.autosave.toggle());
     this.headers = new HeadersAndFooters(this, this.workspace);
     this.footnotes = new Footnotes(this);
     this.sheet.append(this.headers.layer, this.footnotes.layer);
@@ -65,7 +88,7 @@ class App {
     const zoomOut = h("button", { type: "button", class: "status-button", title: "Zoom out", html: icon("zoomOut", 16), onclick: () => this.stepZoom(-1) });
     const zoomIn = h("button", { type: "button", class: "status-button", title: "Zoom in", html: icon("zoomIn", 16), onclick: () => this.stepZoom(1) });
     this.zoomLabel.addEventListener("click", () => this.setZoom(1));
-    const status = h("footer", { class: "statusbar" }, this.pageCount, this.words, h("span", { class: "status-spacer" }), zoomOut, this.zoomLabel, zoomIn);
+    const status = h("footer", { class: "statusbar" }, this.pageCount, this.words, h("span", { class: "status-spacer" }), this.saveStatus, zoomOut, this.zoomLabel, zoomIn);
     document.head.append(this.styleEl);
     root.append(this.toolbar.el, this.workspace, status, this.toasts);
 
@@ -86,7 +109,12 @@ class App {
       if (this.headers.view && !this.headers.layer.contains(event.target as HTMLElement)) this.headers.stop();
     });
     handleShortcuts(this);
-    onCloseRequested(() => this.confirmDiscard());
+    onCloseRequested(async () => {
+      const close = await this.confirmDiscard();
+      // Closed on purpose: the recovery copy isn't needed.
+      if (close) await this.autosave.clearRecovery();
+      return close;
+    });
     window.addEventListener("beforeunload", (event) => {
       if (!isDesktop && this.dirty) event.preventDefault();
     });
@@ -130,7 +158,7 @@ class App {
     this.refreshStyles();
     relayout(this.body);
     this.lineGridSaved = false;
-    this.changed(false);
+    this.changed(false, true);
   }
 
   insertFootnote() {
@@ -143,7 +171,7 @@ class App {
   }
 
   storiesChanged() {
-    this.changed(false);
+    this.changed(false, true);
   }
 
   /** Shows a document; `path` is where Save writes it (null for a new one). */
@@ -209,7 +237,9 @@ class App {
     this.styleEl.textContent = `${stylesheetFor(this.ctx, ".sheet .doc")}\n${stylesheetFor(this.ctx, ".hf-doc")}`;
   }
 
-  private changed(docChanged: boolean) {
+  /** @param contentChanged something that is saved changed (the text, a header, a note, the grid). */
+  private changed(docChanged: boolean, contentChanged = docChanged) {
+    if (contentChanged) this.autosave?.changed();
     this.refreshStyles();
     this.toolbar.update();
     setTitle(`${this.dirty ? "• " : ""}${this.name} – DuckWriter`);
@@ -279,21 +309,69 @@ class App {
       path = await pickSavePath(this.name);
       if (!path) return false;
     }
+    if (!(await this.writeTo(path))) return false;
+    this.toast(`Saved ${this.name}`);
+    return true;
+  }
+
+  /** Auto-save: to the document's own file, without asking or a message. */
+  async saveQuietly(): Promise<boolean> {
+    return !!this.path && (await this.writeTo(this.path, true));
+  }
+
+  private async writeTo(path: string, quiet = false): Promise<boolean> {
     const doc = this.body.state.doc;
+    const titlePage = this.ctx.titlePage;
     try {
       await writePath(path, await this.build());
     } catch (error) {
-      this.toast(`Couldn't save: ${message(error)}`, "error");
+      if (!quiet) this.toast(`Couldn't save: ${message(error)}`, "error");
       return false;
     }
     if (isDesktop) this.path = path;
     this.name = baseName(path);
+    // What was written; changes made while saving still count as unsaved.
     this.savedDoc = doc;
-    this.savedTitlePage = this.ctx.titlePage;
+    this.savedTitlePage = titlePage;
     this.lineGridSaved = true;
+    this.autosave.saved();
     this.changed(false);
-    this.toast(`Saved ${this.name}`);
     return true;
+  }
+
+  toggleAutoSave() {
+    this.autosave.toggle();
+    this.toast(this.autosave.enabled ? "Auto-save is on" : "Auto-save is off");
+  }
+
+  /** Offers back work left by a DuckWriter that closed before it was saved. */
+  async offerRecovery() {
+    for (const found of await AutoSave.abandoned()) {
+      const when = new Date(found.time).toLocaleString([], { dateStyle: "medium", timeStyle: "short" });
+      const answer = await ask(
+        "Restore unsaved work?",
+        `DuckWriter closed before "${found.name}" was saved (${when}). Do you want it back?`,
+        [
+          { label: "Delete it", value: "delete" },
+          { label: "Restore", value: "restore", primary: true },
+        ],
+      );
+      if (answer === "restore") {
+        try {
+          const file = await readPath(found.docx);
+          const { doc, context } = await readDocx(file.bytes);
+          this.show(doc, context, found.name, found.path);
+          // It isn't saved yet: Save puts it back in its file.
+          this.savedDoc = schema.nodes.doc.create(null, schema.nodes.paragraph.create());
+          this.changed(true);
+        } catch (error) {
+          this.toast(`Couldn't restore it: ${message(error)}`, "error");
+          continue;
+        }
+      }
+      if (answer !== null) await AutoSave.discard(found);
+      if (answer === "restore") break;
+    }
   }
 
   /** Offers to save unsaved changes. Resolves to true when it's fine to continue. */
@@ -305,6 +383,7 @@ class App {
       { label: "Save", value: "save", primary: true },
     ]);
     if (answer === "save") return this.save();
+    if (answer === "discard") await this.autosave.clearRecovery();
     return answer === "discard";
   }
 
@@ -409,7 +488,7 @@ if (first) {
   await app.newDocument(false);
   await app.openPath(first);
 } else await app.newDocument(false);
-
 if (localStorage.getItem("duckwriter.debug") === "1") {
   Object.assign(window, { __dw: app });
 }
+void app.offerRecovery();

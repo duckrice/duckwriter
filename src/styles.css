@@ -382,6 +382,11 @@ body {
   flex: 1;
 }
 
+.save-status {
+  margin-right: 8px;
+  padding: 0 8px;
+}
+
 .status-button {
   display: inline-flex;
   align-items: center;
