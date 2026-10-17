@@ -6,6 +6,7 @@ import type { Mark, Node } from "prosemirror-model";
 import { schema } from "../editor/schema";
 import { toLatex } from "../math/ast";
 import { MATH_NS, fromOmml } from "../math/omml";
+import { imageType, readPicture } from "./drawing";
 import {
   DEFAULT_PAGE,
   type Footnotes,
@@ -59,7 +60,18 @@ export async function readDocx(bytes: Uint8Array): Promise<OpenedDocument> {
   if (!body) throw new Error("This Word document has no body.");
   const prefixes = declaredPrefixes(root);
 
-  const reader = new BodyReader(prefixes, rels, themeFonts);
+  // The pictures, ready to show.
+  const imageSources = new Map<string, string>();
+  for (const [rid, rel] of rels) {
+    if (rel.external || !rel.type.endsWith("/image")) continue;
+    const path = resolvePath(dir, rel.target);
+    const bytes = await zip.file(path)?.async("uint8array");
+    if (!bytes) continue;
+    const type = imageType(path.split(".").pop() ?? "");
+    imageSources.set(rid, imageUrl(bytes, type));
+  }
+
+  const reader = new BodyReader(prefixes, rels, themeFonts, imageSources);
   const blocks: Node[] = [];
   let sectPr = "";
   const bodyChildren = children(body);
@@ -151,8 +163,19 @@ export async function readDocx(bytes: Uint8Array): Promise<OpenedDocument> {
     footnotes,
     addedStyles: [],
     styleNumbering: new Map(),
+    media: new Map(),
+    imageSources,
   };
   return { doc: schema.nodes.doc.create(null, blocks), context };
+}
+
+/** A URL to show a picture from. (Outside a browser, as in tests, there may be none.) */
+function imageUrl(bytes: Uint8Array, type: string): string {
+  try {
+    return URL.createObjectURL(new Blob([bytes as BlobPart], { type }));
+  } catch {
+    return "";
+  }
 }
 
 async function mainDocumentPath(zip: JSZip): Promise<string> {
@@ -384,6 +407,8 @@ class BodyReader {
     private prefixes: Set<string>,
     private rels: Map<string, Relationship>,
     private theme: DocContext["themeFonts"],
+    /** Pictures this part can show, by relationship id. */
+    private images: Map<string, string> = new Map(),
   ) {}
 
   private raw = (el: Element) => rawXml(el, this.prefixes);
@@ -556,6 +581,19 @@ class BodyReader {
         case "tab":
           text += "\t";
           break;
+        case "drawing": {
+          const picture = readPicture(el);
+          if (picture && this.images.has(picture.rid)) {
+            flush();
+            const xml = `${startTag(r)}>${rPr ? this.raw(rPr) : ""}${this.raw(el)}</${r.tagName}>`;
+            const { rid, ...layout } = picture;
+            out.push(schema.nodes.image.create({ ...layout, rid, src: this.images.get(rid), xml, original: JSON.stringify(layout) }, null, marks));
+            break;
+          }
+          flush();
+          out.push(this.runPiece(r, el, "Picture", marks));
+          break;
+        }
         case "footnoteRef":
           // The note's own number; written again when the note is saved.
           break;

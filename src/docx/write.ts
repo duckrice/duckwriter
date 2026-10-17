@@ -5,6 +5,7 @@
 import type { Mark, Node } from "prosemirror-model";
 import { schema } from "../editor/schema";
 import { parseMath } from "../math/ast";
+import { adjustPictureXml, imageType, pictureXml, type PictureLayout } from "./drawing";
 import { toOmml } from "../math/omml";
 import { TWIPS_PER_POINT, type DocContext, type Relationship } from "./model";
 import { escapeAttr, escapeText, tag } from "./xml";
@@ -70,6 +71,7 @@ export async function writeDocx(doc: Node, ctx: DocContext): Promise<Uint8Array>
   updateSectPr(ctx);
   const writer = new BodyWriter(ctx);
   const body = writer.body(doc);
+  await writeMediaTypes(ctx, writer.mediaExtensions);
 
   const xml = ctx.documentXml;
   const open = /<w:body(\s[^>]*)?>/.exec(xml);
@@ -183,10 +185,45 @@ class BodyWriter {
     if (node.type === schema.nodes.raw_inline) return node.attrs.xml;
     if (node.type === schema.nodes.math) return this.equation(node);
     if (node.type === schema.nodes.field) return this.field(node);
+    if (node.type === schema.nodes.image) return this.image(node);
     if (node.type === schema.nodes.footnote) {
       return node.attrs.xml ?? `<w:r>${this.runProps(node.marks) || '<w:rPr><w:rStyle w:val="FootnoteReference"/></w:rPr>'}<w:footnoteReference w:id="${escapeAttr(node.attrs.id)}"/></w:r>`;
     }
     return "";
+  }
+
+  /** File extensions of pictures added in this save, for the content types. */
+  readonly mediaExtensions = new Set<string>();
+  private drawingId = 0;
+
+  private image(node: Node): string {
+    const a = node.attrs;
+    const layout: PictureLayout = { width: a.width, height: a.height, floating: a.floating, x: a.x, y: a.y, relX: a.relX, relY: a.relY, wrap: a.wrap };
+    if (a.xml && a.original) {
+      const before = JSON.parse(a.original) as PictureLayout;
+      if (JSON.stringify(before) === JSON.stringify(layout)) return a.xml;
+      const adjusted = adjustPictureXml(a.xml, before, layout);
+      if (adjusted) return adjusted;
+    }
+    const rid = a.rid ?? this.addMedia(a.media);
+    if (!rid) return "";
+    if (!this.drawingId) this.drawingId = Math.max(0, ...[...this.ctx.documentXml.matchAll(/docPr id="(\d+)"/g)].map((m) => Number(m[1]))) + 1;
+    return `<w:r>${this.runProps(node.marks)}${pictureXml(rid, layout, this.drawingId++, !this.ctx.prefixes.has("r"))}</w:r>`;
+  }
+
+  /** Puts a picture added in DuckWriter into the file's media folder, once. */
+  private addMedia(key: string | null): string | null {
+    const entry = key ? this.ctx.media.get(key) : undefined;
+    if (!entry) return null;
+    if (entry.rid) return entry.rid;
+    const dir = documentDir(this.ctx);
+    let n = 1;
+    while (this.ctx.zip.file(`${dir}media/duckwriter${n}.${entry.ext}`)) n++;
+    this.ctx.zip.file(`${dir}media/duckwriter${n}.${entry.ext}`, entry.bytes);
+    entry.rid = newRelId(this.ctx);
+    this.ctx.addedRels.set(entry.rid, { type: "http://schemas.openxmlformats.org/officeDocument/2006/relationships/image", target: `media/duckwriter${n}.${entry.ext}`, external: false });
+    this.mediaExtensions.add(entry.ext.toLowerCase());
+    return entry.rid;
   }
 
   private field(node: Node): string {
@@ -433,6 +470,19 @@ async function writeStyleNumbering(ctx: DocContext) {
   }
   ctx.zip.file(path, xml);
   ctx.styleNumbering.clear();
+}
+
+/** Says what kind of file each new picture is, so Word can open it. */
+async function writeMediaTypes(ctx: DocContext, extensions: Set<string>) {
+  if (!extensions.size) return;
+  const path = "[Content_Types].xml";
+  let xml = (await ctx.zip.file(path)?.async("string")) ?? "";
+  for (const ext of extensions) {
+    if (new RegExp(`<Default Extension="${ext}"`, "i").test(xml)) continue;
+    const end = xml.lastIndexOf("</Types>");
+    xml = xml.slice(0, end) + `<Default Extension="${ext}" ContentType="${imageType(ext)}"/>` + xml.slice(end);
+  }
+  ctx.zip.file(path, xml);
 }
 
 /** The order Word requires for the elements of section properties. */

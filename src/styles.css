@@ -976,3 +976,136 @@ span.page-gap.inline {
 .dialog-input {
   width: 100%;
 }
+
+/* ---- pictures ----------------------------------------------------------------------- */
+
+.picture-box {
+  position: relative;
+  display: inline-block;
+  line-height: 0;
+  text-indent: 0;
+  vertical-align: baseline;
+}
+
+.picture-box img {
+  display: block;
+  user-select: none;
+}
+
+.picture-box.floating.wrap-none,
+.picture-box.floating.wrap-behind {
+  width: 0;
+  height: 0;
+  overflow: visible;
+}
+
+.picture-box.floating.wrap-none img,
+.picture-box.floating.wrap-behind img {
+  position: absolute;
+  max-width: none;
+}
+
+.picture-box.floating.wrap-none img {
+  z-index: 3;
+}
+
+.picture-box.floating.wrap-behind img {
+  z-index: -1;
+}
+
+.picture-box.floating.wrap-topAndBottom {
+  display: block;
+}
+
+.picture-box.floating img {
+  cursor: move;
+}
+
+.picture-box.selected img {
+  outline: 2px solid var(--accent);
+}
+
+.resize-handle {
+  display: none;
+  position: absolute;
+  z-index: 4;
+  width: 9px;
+  height: 9px;
+  border: 1.5px solid var(--accent);
+  border-radius: 50%;
+  background: #ffffff;
+}
+
+.picture-box.selected .resize-handle {
+  display: block;
+}
+
+.picture-box.floating.wrap-none .resize-handle,
+.picture-box.floating.wrap-behind .resize-handle {
+  display: none;
+}
+
+.resize-handle.nw { left: -5px; top: -5px; cursor: nwse-resize; }
+.resize-handle.ne { right: -5px; top: -5px; cursor: nesw-resize; }
+.resize-handle.sw { left: -5px; bottom: -5px; cursor: nesw-resize; }
+.resize-handle.se { right: -5px; bottom: -5px; cursor: nwse-resize; }
+
+.picture-bar {
+  position: absolute;
+  left: 0;
+  top: calc(100% + 6px);
+  z-index: 6;
+  display: flex;
+  gap: 2px;
+  padding: 3px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--panel);
+  box-shadow: var(--shadow);
+  line-height: normal;
+  white-space: nowrap;
+}
+
+.picture-bar button {
+  padding: 3px 8px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text);
+  font: 12px "Segoe UI", sans-serif;
+  cursor: pointer;
+}
+
+.picture-bar button:hover {
+  background: var(--hover);
+}
+
+.picture-bar button.active {
+  background: var(--accent-soft);
+  color: var(--accent-text);
+}
+
+.snap-grid {
+  position: absolute;
+  z-index: 3;
+  pointer-events: none;
+  background-image: radial-gradient(circle, rgb(15 118 110 / 0.45) 1px, transparent 1.2px);
+  background-position: 0 0;
+}
+
+.menu-hint {
+  max-width: 260px;
+  padding: 4px 10px 6px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.picture-bar,
+.picture-bar * {
+  user-select: none;
+}
+
+.picture-bar button::selection,
+.picture-bar::selection {
+  background: transparent;
+}

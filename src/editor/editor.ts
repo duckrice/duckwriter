@@ -24,6 +24,7 @@ import {
 } from "./commands";
 import { changeListLevel, listPlugin, toggleList } from "./lists";
 import { fieldsPlugin } from "./fields";
+import { ImageView, type PictureHooks } from "./imageview";
 import { MathView } from "./mathview";
 import { paginationPlugin, type PaginationHooks } from "./pagination";
 import { editEquation, insertEquation } from "../ui/equation";
@@ -31,6 +32,10 @@ import { editEquation, insertEquation } from "../ui/equation";
 export interface EditorHooks {
   /** Called after every change to the document or the selection. */
   onChange(view: EditorView, docChanged: boolean): void;
+  /** Given for the main text, where pictures can be moved and resized. */
+  pictures?: PictureHooks;
+  /** Picture files pasted or dropped into the text. */
+  onImageFiles?(files: File[], view: EditorView, pos: number | null): void;
 }
 
 /** Applies a heading style if the document has it. */
@@ -117,6 +122,20 @@ export function createView(host: HTMLElement, state: EditorState, hooks: EditorH
     attributes: { spellcheck: "true", class: className },
     nodeViews: {
       math: (node, v, getPos) => new MathView(node, v, getPos, (pos) => editEquation(v, pos)),
+      ...(hooks.pictures ? { image: (node: Node, v: EditorView, getPos: () => number | undefined) => new ImageView(node, v, getPos, hooks.pictures!) } : {}),
+    },
+    handlePaste(v, event) {
+      const files = [...(event.clipboardData?.files ?? [])].filter((f) => f.type.startsWith("image/"));
+      if (!files.length || !hooks.onImageFiles) return false;
+      hooks.onImageFiles(files, v, null);
+      return true;
+    },
+    handleDrop(v, event) {
+      const files = [...(event.dataTransfer?.files ?? [])].filter((f) => f.type.startsWith("image/"));
+      if (!files.length || !hooks.onImageFiles) return false;
+      event.preventDefault();
+      hooks.onImageFiles(files, v, v.posAtCoords({ left: event.clientX, top: event.clientY })?.pos ?? null);
+      return true;
     },
     dispatchTransaction(tr) {
       view.updateState(view.state.apply(tr));

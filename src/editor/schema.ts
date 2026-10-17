@@ -159,6 +159,34 @@ export const schema = new Schema({
       toDOM: (node) => ["span", { class: "footnote-ref", "data-id": node.attrs.id, title: "Footnote" }],
     },
 
+    /**
+     * A picture, in line with the text or floating on the page. `rid` is its
+     * image in the file; `media` a picture added since opening. `xml` is the
+     * picture as read, adjusted rather than rewritten when it is resized or moved.
+     */
+    image: {
+      group: "inline",
+      inline: true,
+      atom: true,
+      draggable: true,
+      attrs: {
+        rid: { default: null },
+        media: { default: null },
+        src: { default: "" },
+        width: {},
+        height: {},
+        floating: { default: false },
+        x: { default: 0 },
+        y: { default: 0 },
+        relX: { default: "column" },
+        relY: { default: "paragraph" },
+        wrap: { default: "square" },
+        xml: { default: null },
+        original: { default: null },
+      },
+      toDOM: (node) => ["img", { class: "picture", src: node.attrs.src, style: `width:${node.attrs.width}pt;height:${node.attrs.height}pt` }],
+    },
+
     /** A part of a paragraph DuckWriter can't edit yet (a picture, a field, a bookmark…), kept as is. */
     raw_inline: {
       group: "inline",

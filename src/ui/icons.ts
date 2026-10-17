@@ -31,6 +31,8 @@ const PATHS = {
   header: '<rect x="4" y="3" width="16" height="18" rx="2"/><path d="M4 8h16M4 16h16M8 12h8"/>',
   footnote: '<path d="M4 6h10M4 10h14M4 14h8"/><path d="M15 13h3v-4" stroke-width="1.500"/><path d="M4 19h7" stroke-width="1.200"/>',
   references: '<path d="M6 3h9l4 4v14H6z"/><path d="M9 10h7M9 14h7M9 18h4"/><circle cx="17" cy="17" r="3" fill="currentColor" stroke="none" opacity=".25"/>',
+  picture: '<rect x="3" y="5" width="18" height="14" rx="2"/><circle cx="8.500" cy="10" r="1.500"/><path d="m21 16-5-5-8 8"/>',
+  layout: '<rect x="3" y="3" width="18" height="18" rx="1"/><path d="M3 9h18M3 15h18M9 3v18M15 3v18" opacity=".55"/>',
   zoomIn: '<circle cx="11" cy="11" r="7"/><path d="m20 20-4-4M8 11h6M11 8v6"/>',
   zoomOut: '<circle cx="11" cy="11" r="7"/><path d="m20 20-4-4M8 11h6"/>',
 } as const;

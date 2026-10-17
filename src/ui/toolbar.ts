@@ -23,6 +23,7 @@ import {
 import { changeListLevel, kindOf, listOf, toggleList } from "../editor/lists";
 import { schema } from "../editor/schema";
 import { insertEquation } from "./equation";
+import { choosePicture, setSnap, snapOn } from "./pictures";
 import { captionDialog, headingsNumbered, insertReference, insertToc, referenceTargets, toggleHeadingNumbers } from "./references";
 import { icon, type IconName } from "./icons";
 
@@ -134,12 +135,14 @@ export class Toolbar {
         this.splitButton("lineSpacing", "Line and paragraph spacing", null, () => this.spacingMenu(), () => this.spacingMenu()),
       ),
       group(
+        this.button("picture", "Picture", () => void choosePicture(this.host.view, this.host.ctx)),
         this.button("equation", "Equation (Alt+=)", () => insertEquation(this.host.view)),
         this.splitButton("symbol", "Symbol", null, () => this.symbolMenu(), () => this.symbolMenu()),
         this.button("pageBreak", "Page break (Ctrl+Enter)", () => this.run(insertPageBreak())),
         this.button("header", "Header and footer", () => this.host.editHeader()),
         this.button("footnote", "Footnote (Ctrl+Alt+F)", () => this.host.insertFootnote()),
         this.splitButton("references", "References", null, () => this.referencesMenu(), () => this.referencesMenu()),
+        this.splitButton("layout", "Layout", null, () => this.layoutMenu(), () => this.layoutMenu()),
       ),
       fonts,
       sizes,
@@ -246,6 +249,16 @@ export class Toolbar {
       this.run(setMark(schema.marks.highlight, { color: name }));
     };
     return h("div", { class: "menu" }, this.swatches(HIGHLIGHT_CHOICES, (c) => HIGHLIGHTS[c], pick, (c) => c.replace(/([A-Z])/g, " $1").toLowerCase()), none);
+  }
+
+  /** Snapping pictures to the grid. */
+  private layoutMenu(): HTMLElement {
+    const snap = h("button", { type: "button", class: `menu-item${snapOn() ? " checked" : ""}` }, `${snapOn() ? "✓ " : ""}Snap pictures to grid`);
+    snap.addEventListener("click", () => {
+      setSnap(!snapOn());
+      this.closeMenu();
+    });
+    return h("div", { class: "menu layout-menu" }, snap, h("div", { class: "menu-hint" }, "Pictures line up on a half-centimetre grid and with the margins when moved or resized. Hold Alt to place freely."));
   }
 
   /** Captions, cross-references, numbered headings and the table of contents. */

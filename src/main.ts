@@ -13,6 +13,8 @@ import { stylesheetFor } from "./editor/stylesheet";
 import { baseName, isDesktop, onCloseRequested, pickDocument, pickSavePath, readPath, setTitle, startupFiles, writePath } from "./platform";
 import { Footnotes } from "./ui/footnotes";
 import { updateTocs } from "./ui/references";
+import { insertPictureFiles, snapOn } from "./ui/pictures";
+import { placeFloatingPictures } from "./editor/imageview";
 import { HeadersAndFooters } from "./ui/headers";
 import { icon } from "./ui/icons";
 import { Toolbar } from "./ui/toolbar";
@@ -142,7 +144,13 @@ class App {
     this.sheet.style.width = `${p.width}pt`;
     const state = createState(doc, () => this.ctx, { onLayout: (layout) => this.drawPages(layout), noteHeight: (id) => this.footnotes.height(id) });
     if (this.body) this.body.updateState(state);
-    else this.body = createView(this.sheet, state, { onChange: (_view, docChanged) => this.changed(docChanged) });
+    else {
+      this.body = createView(this.sheet, state, {
+        onChange: (_view, docChanged) => this.changed(docChanged),
+        pictures: { context: () => this.ctx, snap: snapOn },
+        onImageFiles: (files, view, pos) => void insertPictureFiles(files, view, this.ctx, pos).catch((error) => this.toast(message(error), "error")),
+      });
+    }
     const dom = this.body.dom as HTMLElement;
     dom.style.margin = `${p.marginTop}pt ${p.marginRight}pt 0 ${p.marginLeft}pt`;
     dom.style.minHeight = `${p.height - p.marginTop - p.marginBottom}pt`;
@@ -168,7 +176,10 @@ class App {
     this.headers.render(layout.count);
     this.footnotes.render(layout);
     // After this layout, so the table of contents gets the page numbers just worked out.
-    queueMicrotask(() => updateTocs(this.body, this.ctx, layout));
+    queueMicrotask(() => {
+      updateTocs(this.body, this.ctx, layout);
+      placeFloatingPictures();
+    });
   }
 
   /** The CSS for the document's styles; again whenever a style was added or changed. */

@@ -46,6 +46,28 @@ export async function pickDocument(): Promise<OpenedFile | null> {
   });
 }
 
+/** Asks for a picture file. */
+export async function pickImage(): Promise<{ bytes: Uint8Array; ext: string } | null> {
+  const extensions = ["png", "jpg", "jpeg", "gif", "bmp", "webp"];
+  if (isDesktop) {
+    const path = await open({ multiple: false, directory: false, filters: [{ name: "Pictures", extensions }] });
+    if (!path) return null;
+    const file = await readPath(path);
+    return { bytes: file.bytes, ext: (path.split(".").pop() ?? "png").toLowerCase() };
+  }
+  return new Promise((resolve) => {
+    const input = document.createElement("input");
+    input.type = "file";
+    input.accept = "image/*";
+    input.onchange = async () => {
+      const file = input.files?.[0];
+      resolve(file ? { bytes: new Uint8Array(await file.arrayBuffer()), ext: (file.name.split(".").pop() ?? "png").toLowerCase() } : null);
+    };
+    input.oncancel = () => resolve(null);
+    input.click();
+  });
+}
+
 /** Asks where to save; returns null if cancelled. In the browser there is nothing to ask. */
 export async function pickSavePath(suggested: string): Promise<string | null> {
   if (!isDesktop) return suggested;

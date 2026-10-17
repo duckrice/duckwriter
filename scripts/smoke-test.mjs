@@ -671,6 +671,87 @@ await session(null, 9460, async (app) => {
   rmSync(withRefs, { force: true });
 }
 
+// ---- pictures and snapping to the grid ------------------------------------------------------
+
+const withPictures = join(tmpdir(), "duckwriter-smoke-pictures.docx");
+rmSync(withPictures, { force: true });
+const GRID = 14.173;
+
+await session(null, 9470, async (app) => {
+  await app.debugHandle();
+  await app.evaluate(`localStorage.removeItem("duckwriter.snap")`);
+  await app.type("The apparatus is shown here. ".repeat(12));
+  await app.key("Home", 36, CTRL);
+  // Paste a 400 × 300 picture, as from the clipboard.
+  await app.evaluate(`(async () => {
+    const canvas = document.createElement("canvas");
+    canvas.width = 400; canvas.height = 300;
+    const g = canvas.getContext("2d");
+    g.fillStyle = "#0f766e"; g.fillRect(0, 0, 400, 300);
+    g.fillStyle = "#facc15"; g.beginPath(); g.arc(200, 150, 90, 0, 7); g.fill();
+    const blob = await new Promise((r) => canvas.toBlob(r, "image/png"));
+    const data = new DataTransfer();
+    data.items.add(new File([blob], "setup.png", { type: "image/png" }));
+    window.__dw.body.dom.dispatchEvent(new ClipboardEvent("paste", { clipboardData: data, bubbles: true, cancelable: true }));
+  })()`);
+  check("a pasted picture goes in line with the text, at its own size", await app.waitFor(`(() => { const img = document.querySelector(".doc .picture-box.inline img"); return !!img && img.style.width === "300pt"; })()`, 5000));
+  const image = () => app.evaluate(`(() => { const n = []; window.__dw.body.state.doc.descendants((x) => { if (x.type.name === "image") n.push(x.attrs); }); return n[0]; })()`);
+
+  // Resize from the bottom-right corner: the width snaps to the grid.
+  const handle = await app.center(".picture-box .resize-handle.se");
+  check("selecting a picture shows its handles and the wrapping choices", !!handle && (await app.count(".picture-bar button")) === 5);
+  await app.drag(handle[0], handle[1], handle[0] - 97, handle[1] - 40);
+  let attrs = await image();
+  check("resizing snaps the width to the grid and keeps the proportions", Math.abs(attrs.width / GRID - Math.round(attrs.width / GRID)) < 0.01 && Math.abs(attrs.height / attrs.width - 0.75) < 0.01, JSON.stringify(attrs));
+
+  // Text flows around it.
+  await app.clickText(".picture-bar button", "Square");
+  attrs = await image();
+  check("Square makes it float with the text around it", attrs.floating && attrs.wrap === "square", JSON.stringify(attrs));
+  const beside = await app.evaluate(`(() => {
+    const img = document.querySelector(".picture-box img").getBoundingClientRect();
+    const p = document.querySelector(".doc > .para");
+    const w = document.createTreeWalker(p, NodeFilter.SHOW_TEXT);
+    for (let t = w.nextNode(); t; t = w.nextNode()) {
+      const r = document.createRange(); r.selectNodeContents(t);
+      for (const x of r.getClientRects()) if (x.top < img.bottom - 5 && x.bottom > img.top + 5 && x.left >= img.right) return true;
+    }
+    return false;
+  })()`);
+  check("the text runs beside the picture", beside);
+
+  // Drag it: it lands on the grid, and the grid shows while dragging.
+  const pic = await app.center(".picture-box img");
+  await app.mouse("mouseMoved", pic[0], pic[1], { buttons: 0 });
+  await app.mouse("mousePressed", pic[0], pic[1]);
+  for (let i = 1; i <= 6; i++) await app.mouse("mouseMoved", pic[0] + i * 23, pic[1] + i * 11);
+  check("the grid shows while a picture is moved", (await app.count(".snap-grid")) === 1);
+  await app.shoot("dragging-a-picture");
+  await app.mouse("mouseReleased", pic[0] + 138, pic[1] + 66);
+  attrs = await image();
+  const onGrid = (v) => Math.abs(v / GRID - Math.round(v / GRID)) < 0.01;
+  check("a moved picture lands on the grid", onGrid(attrs.x) && onGrid(attrs.y) && attrs.x > 0, JSON.stringify(attrs));
+  check("the grid goes away afterwards", (await app.count(".snap-grid")) === 0);
+  await app.shoot("picture-with-text-around");
+
+  await app.evaluate(`(async () => {
+    const bytes = await window.__dw.build();
+    await window.__TAURI_INTERNALS__.invoke("write_file", bytes, { headers: { "x-path": encodeURIComponent(${JSON.stringify(withPictures)}) } });
+  })()`);
+  check("no errors in the app", app.errors.length === 0, app.errors.join("; "));
+});
+
+{
+  const zip = await JSZip.loadAsync(readFileSync(withPictures));
+  const xml = await zip.file("word/document.xml").async("string");
+  check("the saved file has the picture, floating with square wrapping", !!zip.file("word/media/duckwriter1.png") && xml.includes("<wp:anchor") && xml.includes("<wp:wrapSquare"));
+}
+
+await session(withPictures, 9471, async (app) => {
+  check("the saved picture opens again where it was", await app.waitFor(`(() => { const img = document.querySelector(".doc .picture-box.floating img"); return !!img && img.naturalWidth === 400; })()`, 5000));
+});
+rmSync(withPictures, { force: true });
+
 await session(sample("not-a-docx.docx"), 9435, async (app) => {
   check("a file that isn't a Word document gets a plain message", await app.waitFor(`/isn't a Word document/.test(document.querySelector(".toast.error")?.textContent ?? "")`, 5000));
 });
