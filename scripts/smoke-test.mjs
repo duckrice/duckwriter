@@ -180,7 +180,7 @@ async function session(files, port, run, { profileDir = profile } = {}) {
       await app.evaluate(`localStorage.setItem("duckwriter.debug", "1")`);
       await app.evaluate("location.reload()");
       await sleep(1500);
-      await app.waitFor(`!!document.querySelector(".page .doc") && !!window.__dw`);
+      await app.waitFor(`!!document.querySelector(".sheet .doc") && !!window.__dw`);
       await sleep(800);
     },
     invoke: (command, args) => app.evaluate(`window.__TAURI_INTERNALS__.invoke(${JSON.stringify(command)}, ${JSON.stringify(args ?? {})})`),
@@ -189,7 +189,7 @@ async function session(files, port, run, { profileDir = profile } = {}) {
   await send("Log.enable");
   await send("Page.enable");
   try {
-    await app.waitFor(`!!document.querySelector(".page .doc")`);
+    await app.waitFor(`!!document.querySelector(".sheet .doc")`);
     if (files.length) await app.waitFor(`document.title.startsWith(${JSON.stringify(basename(files[0]))})`, 5000);
     await sleep(800);
     await run(app);
@@ -221,7 +221,7 @@ rmSync(typed, { force: true });
 
 await session(null, 9433, async (app) => {
   check("starts with a new, empty document", (await app.evaluate("document.title")).startsWith("Document1.docx") && (await app.count(".doc > .para")) === 1);
-  check("the page is A4 with 2.54 cm margins", await app.evaluate(`(() => { const s = document.querySelector(".page").style; return s.width === "595.3pt" && s.padding === "72pt"; })()`));
+  check("the page is A4 with 2.54 cm margins", await app.evaluate(`(() => { const s = document.querySelector(".sheet").style; return s.width === "595.3pt" && document.querySelector(".doc").style.margin === "72pt 72pt 0px"; })()`));
   check("the cursor is in the text, ready to type", await app.evaluate(`document.activeElement?.classList.contains("doc")`));
 
   await app.type("Packing list");
@@ -378,6 +378,62 @@ await session(null, 9436, async (app) => {
   await app.clickOn(`.symbol-button[title="°"]`);
   check("the symbol menu inserts Greek letters and signs", (await app.evaluate(`[...document.querySelectorAll(".doc > .para")].at(-1).textContent`)) === "μ°");
   await app.shoot("equations");
+  check("no errors in the app", app.errors.length === 0, app.errors.join("; "));
+});
+
+// ---- real pages ---------------------------------------------------------------------------
+
+/** Where each line of text is, by page: lines outside a page's text area, and per paragraph the page it starts and ends on. */
+const pageReport = (app) =>
+  app.evaluate(`(() => {
+    const sheets = [...document.querySelectorAll(".page-sheet")].map((s) => s.getBoundingClientRect());
+    const doc = document.querySelector(".doc");
+    const cs = getComputedStyle(doc);
+    const top = parseFloat(cs.marginTop), side = parseFloat(cs.marginLeft);
+    const scale = doc.getBoundingClientRect().width / doc.offsetWidth;
+    // Text area: the page minus the top and bottom margins (equal in the samples).
+    const areas = sheets.map((s) => ({ top: s.top + top * scale, bottom: s.bottom - top * scale }));
+    // Letters may reach a pixel or two beyond their line.
+    const pageAt = (y) => areas.findIndex((a) => y >= a.top - 3 && y <= a.bottom + 3);
+    let outside = 0;
+    const paras = [...doc.querySelectorAll(":scope > .para")].map((p) => {
+      // Only the text itself, not the invisible fillers that make the page gaps.
+      const rects = [];
+      const walker = document.createTreeWalker(p, NodeFilter.SHOW_TEXT);
+      for (let t = walker.nextNode(); t; t = walker.nextNode()) {
+        if (!t.textContent.trim()) continue;
+        const range = document.createRange();
+        range.selectNodeContents(t);
+        rects.push(...[...range.getClientRects()].filter((r) => r.height >= 2 && r.width > 0));
+      }
+      rects.sort((x, y) => x.top - y.top);
+      for (const r of rects) if (pageAt(r.top) < 0 || pageAt(r.bottom) !== pageAt(r.top)) { outside++; window.__outside = [...(window.__outside ?? []), [p.textContent.slice(0, 20), Math.round(r.top), Math.round(r.bottom)]]; }
+      return { text: p.textContent.slice(0, 30), style: p.dataset.style ?? null, first: rects.length ? pageAt(rects[0].top) : -1, last: rects.length ? pageAt(rects.at(-1).top) : -1, top: rects[0]?.top ?? 0, pageTop: rects.length ? areas[pageAt(rects[0].top)]?.top : 0 };
+    });
+    void side;
+    return { pages: sheets.length, outside, paras };
+  })()`);
+
+await session(sample("long.docx"), 9437, async (app) => {
+  let report = await pageReport(app);
+  check("a long document is shown on several pages", report.pages >= 3 && (await app.evaluate(`document.querySelector(".statusbar").textContent`)).includes(`${report.pages} pages`), `${report.pages} pages`);
+  check("no line of text sits in a margin or between pages", report.outside === 0, `${report.outside} lines outside: ${JSON.stringify(await app.evaluate("window.__outside"))}`);
+  const headings = report.paras.map((p, i) => [p, report.paras[i + 1]]).filter(([p]) => p.style === "Heading1");
+  check("a heading is never left alone at the bottom of a page", headings.every(([h, next]) => !next || next.first === h.last), JSON.stringify(headings.map(([h, n]) => [h.text, h.last, n?.first])));
+  const breakAt = report.paras.findIndex((p) => p.text.startsWith("The end of part one."));
+  const after = report.paras[breakAt + 1];
+  check("a page break starts a new page", breakAt >= 0 && after.first === report.paras[breakAt].last + 1 && Math.abs(after.top - after.pageTop) < 30, JSON.stringify([report.paras[breakAt], after]));
+  check("paragraphs continue across pages", report.paras.some((p) => p.last > p.first));
+  await app.evaluate(`document.querySelector(".workspace").scrollTop = document.querySelectorAll(".page-sheet")[1].offsetTop - 200`);
+  await app.shoot("page-boundary");
+
+  // Typing more text moves everything along, and the pages stay tidy.
+  const first = await app.center(".doc > .para", 1);
+  await app.click(first[0], first[1]);
+  for (let i = 0; i < 6; i++) await app.type("Extra words to push the text further down the page. ");
+  await sleep(300);
+  report = await pageReport(app);
+  check("after typing, no line sits in a margin or between pages", report.outside === 0, `${report.outside} lines outside`);
   check("no errors in the app", app.errors.length === 0, app.errors.join("; "));
 });
 

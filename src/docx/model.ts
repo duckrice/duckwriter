@@ -36,6 +36,10 @@ export interface ParaProps {
   ilvl?: number;
   /** No space between neighbouring paragraphs of the same style. */
   contextual?: boolean;
+  /** Stay on the same page as the next paragraph (headings). */
+  keepNext?: boolean;
+  /** Always start on a new page. */
+  pageBreakBefore?: boolean;
 }
 
 export interface StyleDef {

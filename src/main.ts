@@ -7,6 +7,7 @@ import { readDocx } from "./docx/read";
 import { blankDocx } from "./docx/template";
 import { writeDocx } from "./docx/write";
 import { createState, createView } from "./editor/editor";
+import { PAGE_GAP, relayout, type PageLayout } from "./editor/pagination";
 import { stylesheetFor } from "./editor/stylesheet";
 import { baseName, isDesktop, onCloseRequested, pickDocument, pickSavePath, readPath, setTitle, startupFiles, writePath } from "./platform";
 import { icon } from "./ui/icons";
@@ -25,8 +26,11 @@ class App {
 
   private toolbar: Toolbar;
   private styleEl = h("style");
-  private page = h("div", { class: "page" });
-  private workspace = h("main", { class: "workspace" }, this.page);
+  /** The page sheets, drawn behind the text. */
+  private pagesLayer = h("div", { class: "pages", "aria-hidden": "true" });
+  private sheet = h("div", { class: "sheet" }, this.pagesLayer);
+  private workspace = h("main", { class: "workspace" }, this.sheet);
+  private pageCount = h("span", { class: "status-item" });
   private words = h("span", { class: "status-item" });
   private zoomLabel = h("button", { type: "button", class: "status-button", title: "Reset zoom to 100%" });
   private toasts = h("div", { class: "toasts", role: "status" });
@@ -37,7 +41,7 @@ class App {
     const zoomOut = h("button", { type: "button", class: "status-button", title: "Zoom out", html: icon("zoomOut", 16), onclick: () => this.stepZoom(-1) });
     const zoomIn = h("button", { type: "button", class: "status-button", title: "Zoom in", html: icon("zoomIn", 16), onclick: () => this.stepZoom(1) });
     this.zoomLabel.addEventListener("click", () => this.setZoom(1));
-    const status = h("footer", { class: "statusbar" }, this.words, h("span", { class: "status-spacer" }), zoomOut, this.zoomLabel, zoomIn);
+    const status = h("footer", { class: "statusbar" }, this.pageCount, this.words, h("span", { class: "status-spacer" }), zoomOut, this.zoomLabel, zoomIn);
     document.head.append(this.styleEl);
     root.append(this.toolbar.el, this.workspace, status, this.toasts);
 
@@ -48,7 +52,7 @@ class App {
     }, { passive: false });
     // Clicking the grey area or the margins puts the cursor in the text.
     this.workspace.addEventListener("mousedown", (event) => {
-      if (event.target === this.workspace || event.target === this.page) {
+      if (event.target === this.workspace || event.target === this.sheet || this.pagesLayer.contains(event.target as HTMLElement)) {
         event.preventDefault();
         this.view.focus();
       }
@@ -71,17 +75,34 @@ class App {
     this.path = path;
     this.name = name;
     this.savedDoc = doc;
-    const state = createState(doc, () => this.ctx);
-    if (this.view) this.view.updateState(state);
-    else this.view = createView(this.page, state, { onChange: (_view, docChanged) => this.changed(docChanged) });
-    this.styleEl.textContent = stylesheetFor(ctx, ".page .doc");
+    this.styleEl.textContent = stylesheetFor(ctx, ".sheet .doc");
     const p = ctx.page;
-    this.page.style.width = `${p.width}pt`;
-    this.page.style.minHeight = `${p.height}pt`;
-    this.page.style.padding = `${p.marginTop}pt ${p.marginRight}pt ${p.marginBottom}pt ${p.marginLeft}pt`;
+    this.sheet.style.width = `${p.width}pt`;
+    const state = createState(doc, () => this.ctx, (layout) => this.drawPages(layout));
+    if (this.view) this.view.updateState(state);
+    else this.view = createView(this.sheet, state, { onChange: (_view, docChanged) => this.changed(docChanged) });
+    const dom = this.view.dom as HTMLElement;
+    dom.style.margin = `${p.marginTop}pt ${p.marginRight}pt 0 ${p.marginLeft}pt`;
+    dom.style.minHeight = `${p.height - p.marginTop - p.marginBottom}pt`;
+    relayout(this.view);
     this.workspace.scrollTop = 0;
     this.changed(true);
     this.view.focus();
+  }
+
+  /** Draws a sheet of paper behind each page of text. */
+  private drawPages(layout: PageLayout) {
+    const p = this.ctx.page;
+    const pitch = p.height * (4 / 3) + PAGE_GAP;
+    while (this.pagesLayer.children.length < layout.count) this.pagesLayer.append(h("div", { class: "page-sheet" }));
+    while (this.pagesLayer.children.length > layout.count) this.pagesLayer.lastElementChild!.remove();
+    [...this.pagesLayer.children].forEach((el, i) => {
+      const sheet = el as HTMLElement;
+      sheet.style.top = `${i * pitch}px`;
+      sheet.style.height = `${p.height}pt`;
+    });
+    this.sheet.style.height = `${layout.count * pitch - PAGE_GAP}px`;
+    this.pageCount.textContent = `${layout.count} ${layout.count === 1 ? "page" : "pages"}`;
   }
 
   private changed(docChanged: boolean) {
@@ -183,7 +204,7 @@ class App {
 
   private setZoom(zoom: number) {
     this.zoom = Math.min(5, Math.max(0.25, zoom));
-    this.page.style.zoom = String(this.zoom);
+    this.sheet.style.zoom = String(this.zoom);
     this.zoomLabel.textContent = `${Math.round(this.zoom * 100)}%`;
   }
 

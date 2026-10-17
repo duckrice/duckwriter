@@ -195,6 +195,10 @@ export function readParaProps(pPr: Element | null): ParaProps {
   }
   const contextual = toggle(pPr, "contextualSpacing");
   if (contextual !== null) out.contextual = contextual;
+  const keepNext = toggle(pPr, "keepNext");
+  if (keepNext !== null) out.keepNext = keepNext;
+  const pageBreakBefore = toggle(pPr, "pageBreakBefore");
+  if (pageBreakBefore !== null) out.pageBreakBefore = pageBreakBefore;
   const numPr = child(pPr, "numPr");
   if (numPr) {
     const numId = attr(child(numPr, "numId"), "val");

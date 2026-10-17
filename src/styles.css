@@ -240,12 +240,8 @@ body {
   padding: 28px 24px 60px;
 }
 
-.page {
-  margin: 0 auto;
-  background: #ffffff;
+.sheet {
   color: #000000;
-  box-shadow: var(--shadow);
-  cursor: text;
 }
 
 .doc {
@@ -669,4 +665,55 @@ body {
 .symbol-button:hover {
   background: var(--hover);
   outline: 1px solid var(--accent);
+}
+
+/* ---- pages ------------------------------------------------------------------------ */
+
+.sheet {
+  position: relative;
+  /* Keeps the text's top margin inside the sheet. */
+  display: flow-root;
+  margin: 0 auto;
+}
+
+.pages {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+}
+
+.page-sheet {
+  position: absolute;
+  left: 0;
+  right: 0;
+  background: #ffffff;
+  box-shadow: var(--shadow);
+  cursor: text;
+}
+
+.sheet .doc {
+  position: relative;
+  z-index: 1;
+}
+
+.page-gap {
+  display: block;
+  user-select: none;
+  pointer-events: none;
+}
+
+span.page-gap.inline {
+  display: block;
+  text-indent: 0;
+}
+
+/* On real pages the break itself needs no line. */
+.page-break {
+  height: 0;
+  margin: 0;
+  border: 0;
+}
+
+.page-break::after {
+  content: none;
 }

@@ -74,5 +74,22 @@ const report = new docx.Document({
 });
 
 writeFileSync(join(out, "report.docx"), await docx.Packer.toBuffer(report));
+
+// Several pages of text with headings and a page break, for the page layout.
+const lorem =
+  "Measurements were repeated three times at each temperature, and the mean value was used. The uncertainty was estimated from the spread of the results and the resolution of the instruments. ";
+const long = [];
+for (let section = 1; section <= 6; section++) {
+  long.push(new Paragraph({ heading: HeadingLevel.HEADING_1, keepNext: true, children: [new TextRun(`${section}. Section ${section}`)] }));
+  for (let p = 0; p < 5; p++) long.push(new Paragraph({ children: [new TextRun(lorem.repeat(2 + ((section + p) % 3)))] }));
+  if (section === 3) long.push(new Paragraph({ children: [new TextRun("The end of part one."), new docx.PageBreak()] }));
+  // Longer than a page: it has to continue on the next one.
+  if (section === 5) long.push(new Paragraph({ children: [new TextRun("A very long paragraph. " + lorem.repeat(30))] }));
+}
+const longDoc = new docx.Document({
+  styles: { default: { document: { run: { font: "Calibri", size: 22 }, paragraph: { spacing: { after: 160 } } } } },
+  sections: [{ children: long }],
+});
+writeFileSync(join(out, "long.docx"), await docx.Packer.toBuffer(longDoc));
 writeFileSync(join(out, "not-a-docx.docx"), "This is plain text, not a Word document.");
 console.log(`Wrote samples to ${out}`);
