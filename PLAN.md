@@ -58,10 +58,17 @@ written back unchanged.
   language settings at once (Norwegian and English together): a red line
   under unknown words, suggestions on right-click or F7, Ignore all, Add to
   dictionary, Ctrl+F7 to switch it off.
+- **Tracked changes**: Word's tracked changes are shown (new text underlined,
+  deleted text struck through, a colour per reviewer) and kept when saving;
+  accept or reject one at a time or all; **Track changes** (Ctrl+Shift+E)
+  records your own edits, under your name, for Word to read.
+- **Comments** beside the page, level with their text: add (Ctrl+Alt+M),
+  edit, reply, resolve, delete; Word's replies and resolved comments are
+  read and written.
 
 ## Next
 
-- Comments and tracked changes: show them, accept or reject changes.
+- Tracking formatting changes and table rows (now: text and paragraphs).
 - Links: insert and edit (Ctrl+K).
 - Header rows repeated on each page of a long table.
 - Text wrapping on both sides of a picture in the middle of the page.

@@ -47,6 +47,11 @@ export interface ShortcutHost {
   findNext(direction: 1 | -1): void;
   nextSpellingMistake(): void;
   toggleSpelling(): void;
+  newComment(): void;
+  toggleTracking(): void;
+  stepChange(direction: 1 | -1): void;
+  decideChange(accept: boolean): void;
+  decideAllChanges(accept: boolean): void;
   /** The toolbar's boxes and menus. */
   focusBox(box: "font" | "size" | "style"): void;
   openMenu(menu: "symbol" | "references" | "layout" | "textColor" | "highlight" | "table"): void;
@@ -162,6 +167,12 @@ export const SHORTCUTS: Shortcut[] = [
 
   // ---- inserting
   { group: "Insert", label: "Equation", keys: ["Alt+="], run: (x) => insertEquation(x.view) },
+  { group: "Review", label: "New comment", keys: ["Ctrl+Alt+M"], run: (x) => x.newComment() },
+  { group: "Review", label: "Track changes, on or off", keys: ["Ctrl+Shift+E"], run: (x) => x.toggleTracking(), everywhere: true },
+  { group: "Review", label: "Next change or comment", keys: ["Alt+PageDown"], run: (x) => x.stepChange(1) },
+  { group: "Review", label: "Previous change or comment", keys: ["Alt+PageUp"], run: (x) => x.stepChange(-1) },
+  { group: "Review", label: "Accept the change and go to the next", keys: ["Ctrl+Alt+Shift+A"], run: (x) => x.decideChange(true) },
+  { group: "Review", label: "Reject the change and go to the next", keys: ["Ctrl+Alt+Shift+D"], run: (x) => x.decideChange(false) },
   { group: "Insert", label: "Symbol (Greek letters, maths signs…)", keys: ["Ctrl+Shift+Y"], run: (x) => x.openMenu("symbol") },
   { group: "Insert", label: "Picture", keys: ["Ctrl+Alt+P"], run: (x) => void choosePicture(x.body, x.ctx) },
   { group: "Insert", label: "Footnote", keys: ["Ctrl+Alt+F"], run: (x) => x.insertFootnote() },
@@ -186,7 +197,7 @@ export const SHORTCUTS: Shortcut[] = [
 
   // ---- equations, headers, notes
   { group: "Equations, headers and notes", label: "Finish the equation", keys: ["Enter"] },
-  { group: "Equations, headers and notes", label: "Leave the equation, header, footer or note", keys: ["Esc"] },
+  { group: "Equations, headers and notes", label: "Leave the equation, header, footer, note or comment", keys: ["Esc"] },
 
   // ---- view and layout
   { group: "View and layout", label: "Zoom in", keys: ["Ctrl+Alt++", "Ctrl+Alt+="], run: (x) => x.zoomBy(1), everywhere: true },

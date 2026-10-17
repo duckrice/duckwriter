@@ -93,6 +93,8 @@ export const schema = new Schema({
         ilvl: { default: 0 },
         /** Paragraph properties DuckWriter doesn't handle, as XML, written back unchanged. */
         extra: { default: "" },
+        /** A tracked change to the paragraph mark: { kind: "ins" | "del", id, author, date }, or null. */
+        change: { default: null },
       },
       parseDOM: [{ tag: "p" }],
       toDOM(node): DOMOutputSpec {
@@ -234,6 +236,20 @@ export const schema = new Schema({
       toDOM: (node) => ["img", { class: "picture", src: node.attrs.src, style: `width:${node.attrs.width}pt;height:${node.attrs.height}pt` }],
     },
 
+    /**
+     * Where a comment starts or ends in the text, or its mark (Word's
+     * commentReference, after the end). The comment itself lives with the
+     * document's comments.
+     */
+    comment: {
+      group: "inline",
+      inline: true,
+      atom: true,
+      selectable: false,
+      attrs: { id: {}, kind: {}, xml: { default: null } },
+      toDOM: (node) => ["span", { class: `comment-anchor comment-${node.attrs.kind}`, "data-id": node.attrs.id }],
+    },
+
     /** A part of a paragraph DuckWriter can't edit yet (a picture, a field, a bookmark…), kept as is. */
     raw_inline: {
       group: "inline",
@@ -298,6 +314,18 @@ export const schema = new Schema({
       attrs: { id: {} },
       toDOM: (mark) => ["span", { "data-cstyle": mark.attrs.id }, 0],
     },
+    /** Text added while changes were tracked (Word's w:ins, or w:moveTo with move). */
+    insertion: {
+      attrs: { id: {}, author: { default: "" }, date: { default: null }, move: { default: false } },
+      inclusive: false,
+      toDOM: (mark) => ["ins", { class: `tc-ins ${authorClass(mark.attrs.author)}`, title: changeTitle(mark, "Inserted") }, 0],
+    },
+    /** Text removed while changes were tracked: still there until the change is accepted (w:del, w:moveFrom). */
+    deletion: {
+      attrs: { id: {}, author: { default: "" }, date: { default: null }, move: { default: false } },
+      inclusive: false,
+      toDOM: (mark) => ["del", { class: `tc-del ${authorClass(mark.attrs.author)}`, title: changeTitle(mark, "Deleted") }, 0],
+    },
     /** Character properties DuckWriter doesn't handle, as XML, written back unchanged. */
     runExtra: {
       attrs: { xml: {} },
@@ -305,6 +333,19 @@ export const schema = new Schema({
     },
   },
 });
+
+/** Each reviewer gets a colour of their own, as in Word. */
+export function authorClass(author: string): string {
+  let hash = 0;
+  for (const ch of author) hash = (hash * 31 + ch.charCodeAt(0)) >>> 0;
+  return `author-${hash % 6}`;
+}
+
+function changeTitle(mark: Mark, what: string): string {
+  const when = mark.attrs.date ? new Date(mark.attrs.date) : null;
+  const date = when && !Number.isNaN(when.getTime()) ? `, ${when.toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" })}` : "";
+  return `${what}${mark.attrs.move ? " (moved)" : ""} by ${mark.attrs.author || "someone"}${date}`;
+}
 
 /** The kind of a field, from its instruction: " PAGE  \* MERGEFORMAT " is "PAGE". */
 export function fieldKind(instr: string): string {

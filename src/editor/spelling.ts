@@ -112,9 +112,13 @@ export function wordsOf(block: Node, blockPos: number): Mistake[] {
   const positions: number[] = [];
   block.forEach((child, offset) => {
     const start = blockPos + 1 + offset;
-    if (child.isText) {
+    if (child.isText && !child.marks.some((m) => m.type.name === "deletion")) {
       for (let i = 0; i < child.text!.length; i++) positions.push(start + i);
       text += child.text;
+    } else if (child.isText) {
+      // Deleted text (a tracked change) isn't checked.
+      for (let i = 0; i < child.text!.length; i++) positions.push(start + i);
+      text += " ".repeat(child.text!.length);
     } else {
       // An equation or a field ends a word.
       positions.push(start);

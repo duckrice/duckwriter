@@ -107,4 +107,53 @@ const tableDoc = new docx.Document({
 });
 writeFileSync(join(out, "table-long.docx"), await docx.Packer.toBuffer(tableDoc));
 writeFileSync(join(out, "not-a-docx.docx"), "This is plain text, not a Word document.");
+
+// A reviewed document: tracked changes by two people, and comments.
+const ada = { author: "Ada Lovelace", date: "2026-10-01T09:00:00Z" };
+const max = { author: "Max Planck", date: "2026-10-02T14:30:00Z" };
+const reviewDoc = new docx.Document({
+  styles: { default: { document: { run: { font: "Calibri", size: 22 }, paragraph: { spacing: { after: 160 } } } } },
+  comments: {
+    children: [
+      { id: 0, author: ada.author, date: new Date(ada.date), initials: "AL", children: [new Paragraph("Is this the right figure?")] },
+      { id: 1, author: max.author, date: new Date(max.date), initials: "MP", children: [new Paragraph("Please cite the source."), new Paragraph("Any review paper will do.")] },
+    ],
+  },
+  sections: [
+    {
+      children: [
+        new Paragraph({
+          children: [
+            new TextRun("The rate "),
+            new docx.DeletedTextRun({ text: "was", id: 10, ...ada }),
+            new docx.InsertedTextRun({ text: "is", id: 11, ...ada }),
+            new TextRun(" proportional to the temperature."),
+          ],
+        }),
+        new Paragraph({
+          children: [
+            new TextRun("As shown in "),
+            new docx.CommentRangeStart(0),
+            new TextRun("figure 3"),
+            new docx.CommentRangeEnd(0),
+            new TextRun({ children: [new docx.CommentReference(0)] }),
+            new TextRun(", the curve "),
+            new docx.InsertedTextRun({ text: "clearly ", id: 12, ...max }),
+            new TextRun("flattens out."),
+          ],
+        }),
+        new Paragraph({
+          children: [
+            new docx.CommentRangeStart(1),
+            new TextRun("Earlier work found the same."),
+            new docx.CommentRangeEnd(1),
+            new TextRun({ children: [new docx.CommentReference(1)] }),
+            new docx.DeletedTextRun({ text: " This sentence goes.", id: 13, ...max }),
+          ],
+        }),
+      ],
+    },
+  ],
+});
+writeFileSync(join(out, "review.docx"), await docx.Packer.toBuffer(reviewDoc));
 console.log(`Wrote samples to ${out}`);

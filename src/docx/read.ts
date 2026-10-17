@@ -10,6 +10,8 @@ import { imageType, readPicture } from "./drawing";
 import {
   DEFAULT_PAGE,
   originalXml,
+  type CommentData,
+  type Comments,
   type Footnotes,
   type TableBorders,
   type Story,
@@ -119,7 +121,7 @@ export async function readDocx(bytes: Uint8Array): Promise<OpenedDocument> {
     if (!content.length) content.push(schema.nodes.paragraph.create());
     const doc = schema.nodes.doc.create(null, content);
     const type = (attr(ref, "type") ?? "default") as Story["type"];
-    stories.push({ kind, type, path, rid, rootStart: /<w:(?:hdr|ftr)[^>]*>/.exec(partXml)?.[0] ?? null, prefixes: partPrefixes, rels: partRels, doc, saved: doc });
+    stories.push({ kind, type, path, rid, rootStart: /<w:(?:hdr|ftr)\b[^>]*>/.exec(partXml)?.[0] ?? null, prefixes: partPrefixes, rels: partRels, doc, saved: doc });
   }
 
   const footnotes: Footnotes = { path: null, rootStart: null, prefixes: new Set(), rels: new Map(), special: [], notes: new Map(), saved: new Map() };
@@ -148,6 +150,10 @@ export async function readDocx(bytes: Uint8Array): Promise<OpenedDocument> {
     }
   }
 
+  const comments = await readComments(zip, partFor("comments"), partFor("commentsExtended"));
+  const settings = await text(partFor("settings"));
+  const trackChanges = !!settings && /<w:trackRevisions(?:\s*\/>|\s+w:val="(?:1|true|on)")/.test(settings);
+
   const context: DocContext = {
     zip,
     documentXml,
@@ -167,8 +173,70 @@ export async function readDocx(bytes: Uint8Array): Promise<OpenedDocument> {
     styleNumbering: new Map(),
     media: new Map(),
     imageSources,
+    comments,
+    trackChanges,
+    trackChangesSaved: trackChanges,
   };
   return { doc: schema.nodes.doc.create(null, blocks), context };
+}
+
+/** The comments, with who wrote them and when, and which answer which (from commentsExtended). */
+async function readComments(zip: JSZip, path: string | null, extendedPath: string | null): Promise<Comments> {
+  const comments: Comments = { path: null, rootStart: null, items: new Map(), extendedPath: null, extendedRootStart: null, version: 0, savedVersion: 0, savedIds: "" };
+  const xml = path ? await zip.file(path)?.async("string") : undefined;
+  if (!path || !xml) return comments;
+  const root = parseXml(xml).documentElement;
+  const prefixes = declaredPrefixes(root);
+  comments.path = path;
+  comments.rootStart = /<w:comments\b[^>]*>/.exec(xml)?.[0] ?? null;
+  const byParaId = new Map<string, CommentData>();
+  for (const el of childrenNamed(root, "comment")) {
+    const paras = childrenNamed(el, "p");
+    const text = paras.map(commentParagraphText).join("\n");
+    const paraId = paras.length ? paras[paras.length - 1].getAttributeNS(NS.w14, "paraId") : null;
+    const item: CommentData = {
+      id: attr(el, "id") ?? "",
+      author: attr(el, "author") ?? "",
+      initials: attr(el, "initials") ?? "",
+      date: attr(el, "date"),
+      text,
+      xml: rawXml(el, prefixes),
+      original: text,
+      paraId,
+      parent: null,
+      done: false,
+    };
+    comments.items.set(item.id, item);
+    if (paraId) byParaId.set(paraId.toUpperCase(), item);
+  }
+  comments.savedIds = [...comments.items.keys()].join(",");
+  const extended = extendedPath ? await zip.file(extendedPath)?.async("string") : undefined;
+  if (extendedPath && extended) {
+    comments.extendedPath = extendedPath;
+    comments.extendedRootStart = /<w15:commentsEx\b[^>]*>/.exec(extended)?.[0] ?? null;
+    for (const ex of Array.from(parseXml(extended).getElementsByTagNameNS(NS.w15, "commentEx"))) {
+      const item = byParaId.get((ex.getAttributeNS(NS.w15, "paraId") ?? "").toUpperCase());
+      if (!item) continue;
+      item.done = ex.getAttributeNS(NS.w15, "done") === "1";
+      const parent = byParaId.get((ex.getAttributeNS(NS.w15, "paraIdParent") ?? "").toUpperCase());
+      if (parent && parent !== item) item.parent = parent.id;
+    }
+  }
+  return comments;
+}
+
+function commentParagraphText(p: Element): string {
+  let out = "";
+  const walk = (node: Element) => {
+    for (const c of children(node)) {
+      if (isW(c, "t")) out += c.textContent ?? "";
+      else if (isW(c, "tab")) out += "\t";
+      else if (isW(c, "br")) out += " ";
+      else if (!isW(c, "instrText") && !isW(c, "pPr") && !isW(c, "rPr")) walk(c);
+    }
+  };
+  walk(p);
+  return out;
 }
 
 /** A URL to show a picture from. (Outside a browser, as in tests, there may be none.) */
@@ -544,8 +612,16 @@ class BodyReader {
     const pPr = child(p, "pPr");
     const props = readParaProps(pPr);
     const extra = pPr ? children(pPr).filter((c) => !(c.namespaceURI === NS.w && KNOWN_PPR.has(c.localName))).map(this.raw).join("") : "";
-    // The paragraph mark's own formatting (pPr/rPr) is kept with the extras.
-    const markRPr = child(pPr, "rPr");
+    // The paragraph mark's own formatting (pPr/rPr) is kept with the extras; a tracked change to it is read apart.
+    let markRPr = child(pPr, "rPr");
+    let change: { kind: "ins" | "del"; id: string; author: string; date: string | null } | null = null;
+    const changeEl = markRPr && children(markRPr).find((c) => isW(c, "ins") || isW(c, "del") || isW(c, "moveTo") || isW(c, "moveFrom"));
+    if (markRPr && changeEl) {
+      change = { kind: isW(changeEl, "ins") || isW(changeEl, "moveTo") ? "ins" : "del", id: attr(changeEl, "id") ?? "", author: attr(changeEl, "author") ?? "", date: attr(changeEl, "date") };
+      markRPr = markRPr.cloneNode(true) as Element;
+      for (const c of children(markRPr)) if (isW(c, "ins") || isW(c, "del") || isW(c, "moveTo") || isW(c, "moveFrom")) markRPr.removeChild(c);
+      if (!children(markRPr).length) markRPr = null;
+    }
     const attrs = {
       style: attr(child(pPr, "pStyle"), "val"),
       align: props.align ?? null,
@@ -560,6 +636,7 @@ class BodyReader {
       numId: props.numId ?? null,
       ilvl: props.ilvl ?? 0,
       extra: extra + (markRPr ? this.raw(markRPr) : ""),
+      change,
     };
     const content: Node[] = [];
     this.capture = null;
@@ -603,19 +680,28 @@ class BodyReader {
           break;
         }
         case "ins":
+        case "moveTo":
+        case "del":
+        case "moveFrom": {
+          // A tracked change: shown, and kept until it is accepted or rejected.
+          const kind = el.localName === "ins" || el.localName === "moveTo" ? schema.marks.insertion : schema.marks.deletion;
+          const mark = kind.create({ id: attr(el, "id") ?? "", author: attr(el, "author") ?? "", date: attr(el, "date"), move: el.localName.startsWith("move") });
+          this.inlines(el, mark.addToSet(marks), out);
+          break;
+        }
+        case "commentRangeStart":
+        case "commentRangeEnd":
+          out.push(schema.nodes.comment.create({ id: attr(el, "id") ?? "", kind: el.localName === "commentRangeStart" ? "start" : "end", xml: this.raw(el) }));
+          break;
         case "smartTag":
         case "customXml":
         case "dir":
         case "bdo":
-          // Wrappers: their runs are ordinary text. (A tracked insertion is shown as accepted.)
+          // Wrappers: their runs are ordinary text.
           this.inlines(el, marks, out);
           break;
         case "sdt":
           this.inlines(child(el, "sdtContent") ?? el, marks, out);
-          break;
-        case "del":
-        case "moveFrom":
-          // Text a tracked change deleted is no longer part of the document.
           break;
         case "fldSimple": {
           const firstRun = childrenNamed(el, "r")[0];
@@ -669,8 +755,8 @@ class BodyReader {
         if (fieldChar === "begin") c.depth++;
         else if (fieldChar === "separate" && c.depth === 1) c.separated = true;
         else if (fieldChar === "end") c.depth--;
-        else if (isW(el, "instrText") && c.depth === 1 && !c.separated) c.instr += el.textContent ?? "";
-        else if (c.separated && isW(el, "t")) {
+        else if ((isW(el, "instrText") || isW(el, "delInstrText")) && c.depth === 1 && !c.separated) c.instr += el.textContent ?? "";
+        else if (c.separated && (isW(el, "t") || isW(el, "delText"))) {
           c.result += el.textContent ?? "";
           c.marks ??= marks;
         } else if (c.separated && isW(el, "tab")) c.result += "\t";
@@ -682,7 +768,16 @@ class BodyReader {
       }
       switch (el.localName) {
         case "t":
+        case "delText":
           text += el.textContent ?? "";
+          break;
+        case "commentReference": {
+          flush();
+          const xml = `${startTag(r)}>${rPr ? this.raw(rPr) : ""}${this.raw(el)}</${r.tagName}>`;
+          out.push(schema.nodes.comment.create({ id: attr(el, "id") ?? "", kind: "ref", xml }));
+          break;
+        }
+        case "annotationRef":
           break;
         case "tab":
           text += "\t";

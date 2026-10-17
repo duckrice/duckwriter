@@ -20,6 +20,9 @@ const BUILTINS: Record<string, string> = {
   TOC3: para("TOC3", "toc 3", '<w:spacing w:after="100"/><w:ind w:left="440"/>', "", '<w:uiPriority w:val="39"/><w:unhideWhenUsed/>'),
   TableGrid:
     '<w:style w:type="table" w:styleId="TableGrid"><w:name w:val="Table Grid"/><w:basedOn w:val="TableNormal"/><w:uiPriority w:val="39"/><w:pPr><w:spacing w:after="0" w:line="240" w:lineRule="auto"/></w:pPr><w:tblPr><w:tblBorders><w:top w:val="single" w:sz="4" w:space="0" w:color="auto"/><w:left w:val="single" w:sz="4" w:space="0" w:color="auto"/><w:bottom w:val="single" w:sz="4" w:space="0" w:color="auto"/><w:right w:val="single" w:sz="4" w:space="0" w:color="auto"/><w:insideH w:val="single" w:sz="4" w:space="0" w:color="auto"/><w:insideV w:val="single" w:sz="4" w:space="0" w:color="auto"/></w:tblBorders></w:tblPr></w:style>',
+  CommentText: para("CommentText", "annotation text", '<w:spacing w:line="240" w:lineRule="auto"/>', '<w:sz w:val="20"/><w:szCs w:val="20"/>', '<w:uiPriority w:val="99"/><w:unhideWhenUsed/>'),
+  CommentReference:
+    '<w:style w:type="character" w:styleId="CommentReference"><w:name w:val="annotation reference"/><w:basedOn w:val="DefaultParagraphFont"/><w:uiPriority w:val="99"/><w:semiHidden/><w:unhideWhenUsed/><w:rPr><w:sz w:val="16"/><w:szCs w:val="16"/></w:rPr></w:style>',
   Header: para("Header", "header", '<w:tabs><w:tab w:val="center" w:pos="4513"/><w:tab w:val="right" w:pos="9026"/></w:tabs><w:spacing w:after="0" w:line="240" w:lineRule="auto"/>', "", '<w:uiPriority w:val="99"/><w:unhideWhenUsed/>'),
   Footer: para("Footer", "footer", '<w:tabs><w:tab w:val="center" w:pos="4513"/><w:tab w:val="right" w:pos="9026"/></w:tabs><w:spacing w:after="0" w:line="240" w:lineRule="auto"/>', "", '<w:uiPriority w:val="99"/><w:unhideWhenUsed/>'),
 };

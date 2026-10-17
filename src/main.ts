@@ -21,6 +21,8 @@ import { AutoSave } from "./autosave";
 import { FindBar } from "./ui/findbar";
 import { mistakeAt, nextMistake, openMenuFor, setSpellChecker, setSpelling, spellingOn } from "./editor/spelling";
 import { closeSpellMenu, showSpellMenu } from "./ui/spellmenu";
+import { CommentsPane, askName } from "./ui/comments";
+import { changes, changesAt, commentAnchors, decide, decideAll, nextChange, reviewKey } from "./editor/review";
 import { placeFloatingPictures } from "./editor/imageview";
 import { HeadersAndFooters } from "./ui/headers";
 import { icon } from "./ui/icons";
@@ -55,6 +57,8 @@ class App {
   private wordTimer = 0;
   private headers: HeadersAndFooters;
   private findBar: FindBar;
+  private comments: CommentsPane;
+  private trackStatus = h("button", { type: "button", class: "status-button track-status", hidden: true, title: "Changes are tracked (Ctrl+Shift+E to stop)" }, "Tracking changes");
   /** The page size for printing, as an @page rule. */
   private pageRule = h("style");
   /** Resolves when the next page layout is done. */
@@ -95,6 +99,22 @@ class App {
     }
     this.headers = new HeadersAndFooters(this, this.workspace);
     this.findBar = new FindBar(this);
+    this.comments = new CommentsPane({
+      get body() {
+        return app.body;
+      },
+      get ctx() {
+        return app.ctx;
+      },
+      sheet: this.sheet,
+      get zoom() {
+        return app.zoom;
+      },
+      commentsChanged: () => this.changed(false, true),
+    });
+    this.sheet.append(this.comments.el);
+    this.trackStatus.addEventListener("click", () => this.toggleTracking());
+    window.addEventListener("resize", () => this.placeSheet());
     this.workspace.prepend(this.findBar.el);
     this.footnotes = new Footnotes(this);
     this.sheet.append(this.headers.layer, this.footnotes.layer);
@@ -109,7 +129,7 @@ class App {
     const zoomOut = h("button", { type: "button", class: "status-button", title: "Zoom out", html: icon("zoomOut", 16), onclick: () => this.stepZoom(-1) });
     const zoomIn = h("button", { type: "button", class: "status-button", title: "Zoom in", html: icon("zoomIn", 16), onclick: () => this.stepZoom(1) });
     this.zoomLabel.addEventListener("click", () => this.setZoom(1));
-    const status = h("footer", { class: "statusbar" }, this.pageCount, this.words, h("span", { class: "status-spacer" }), this.spellStatus, this.saveStatus, zoomOut, this.zoomLabel, zoomIn);
+    const status = h("footer", { class: "statusbar" }, this.pageCount, this.words, h("span", { class: "status-spacer" }), this.trackStatus, this.spellStatus, this.saveStatus, zoomOut, this.zoomLabel, zoomIn);
     document.head.append(this.styleEl, this.pageRule);
     root.append(this.toolbar.el, this.workspace, status, this.toasts);
 
@@ -151,6 +171,7 @@ class App {
     if (!this.savedDoc) return false;
     if (!this.body.state.doc.eq(this.savedDoc) || this.ctx.titlePage !== this.savedTitlePage || !this.lineGridSaved) return true;
     if (this.ctx.stories.some((s) => !s.saved || !s.doc.eq(s.saved))) return true;
+    if (this.ctx.comments.version !== this.ctx.comments.savedVersion || this.ctx.trackChanges !== this.ctx.trackChangesSaved) return true;
     const fn = this.ctx.footnotes;
     return [...fn.notes].some(([id, doc]) => {
       const saved = fn.saved.get(id);
@@ -243,6 +264,7 @@ class App {
     this.pageCount.textContent = `${layout.count} ${layout.count === 1 ? "page" : "pages"}`;
     this.headers.render(layout.count);
     this.footnotes.render(layout);
+    this.comments.layout();
     this.laidOut?.();
     this.laidOut = null;
     // After this layout, so the table of contents gets the page numbers just worked out.
@@ -265,6 +287,9 @@ class App {
   private changed(docChanged: boolean, contentChanged = docChanged) {
     if (contentChanged) this.autosave?.changed();
     this.findBar?.update();
+    this.comments?.render();
+    this.placeSheet();
+    this.trackStatus.hidden = !this.ctx?.trackChanges;
     this.refreshStyles();
     this.toolbar.update();
     setTitle(`${this.dirty ? "• " : ""}${this.name} – DuckWriter`);
@@ -478,6 +503,88 @@ class App {
     this.findBar.go(direction);
   }
 
+  // ---- reviewing ----------------------------------------------------------------
+
+  /** Moves the page left to make room for the comments beside it, when the window is narrow. */
+  private placeSheet() {
+    if (!this.sheet || !this.comments) return;
+    if (!this.comments.visible) {
+      this.sheet.style.marginLeft = "";
+      return;
+    }
+    const zoom = this.zoom || 1;
+    const room = this.workspace.clientWidth - 48;
+    const page = this.sheet.offsetWidth * zoom;
+    const pane = 300 * zoom;
+    const left = Math.max(0, Math.min((room - page) / 2, room - page - pane));
+    this.sheet.style.marginLeft = `${left / zoom}px`;
+  }
+
+  async newComment() {
+    if (!(await askName("Your name is shown with your comments."))) return;
+    this.headers.stop();
+    this.footnotes.stop();
+    this.comments.add();
+  }
+
+  async toggleTracking() {
+    if (!this.ctx.trackChanges && !(await askName("Your name is shown with the changes you make."))) return;
+    this.ctx.trackChanges = !this.ctx.trackChanges;
+    this.toast(this.ctx.trackChanges ? "Changes are tracked" : "Changes aren't tracked any more");
+    this.changed(false, true);
+    this.view.focus();
+  }
+
+  /** Goes to the next (1) or previous (-1) tracked change or comment. */
+  stepChange(direction: 1 | -1) {
+    const view = this.body;
+    const { state } = view;
+    const targets = [
+      ...changes(state.doc).map((c) => ({ from: c.from, to: c.to, comment: null as string | null })),
+      ...commentAnchors(state.doc)
+        .filter((a) => !this.ctx.comments.items.get(a.id)?.parent)
+        .map((a) => ({ from: a.from + 1, to: a.from + 1, comment: a.id })),
+    ].sort((a, b) => a.from - b.from);
+    if (!targets.length) return this.toast("No changes or comments");
+    const { from, to } = state.selection;
+    const target =
+      direction > 0
+        ? (targets.find((t) => t.from > from || (t.from === from && t.to > to)) ?? targets[0])
+        : ([...targets].reverse().find((t) => t.from < from) ?? targets[targets.length - 1]);
+    const tr = state.tr.setSelection(TextSelection.create(state.doc, target.from, target.to)).scrollIntoView();
+    if (target.comment) tr.setMeta(reviewKey, { active: target.comment });
+    view.dispatch(tr);
+    view.focus();
+  }
+
+  /** Accepts or rejects the change at the cursor (or those selected), then goes to the next one. */
+  decideChange(accept: boolean) {
+    const view = this.body;
+    const here = changesAt(view.state);
+    if (!here.length) {
+      const next = nextChange(view.state, 1);
+      if (!next) return this.toast("No tracked changes");
+      return this.stepChange(1);
+    }
+    const tr = decide(view.state, here, accept);
+    if (!tr) return;
+    view.dispatch(tr);
+    const next = nextChange(view.state, 1);
+    if (next) view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, next.from, next.to)).scrollIntoView());
+    else this.toast("That was the last change");
+    view.focus();
+  }
+
+  decideAllChanges(accept: boolean) {
+    const view = this.body;
+    const count = changes(view.state.doc).length;
+    const tr = decideAll(view.state, accept);
+    if (!tr) return this.toast("No tracked changes");
+    view.dispatch(tr);
+    this.toast(`${accept ? "Accepted" : "Rejected"} ${count} ${count === 1 ? "change" : "changes"}`);
+    view.focus();
+  }
+
   /** Selects the next word with a red line and opens its suggestions (F7). */
   nextSpellingMistake() {
     const view = this.view;
@@ -549,6 +656,7 @@ class App {
   private setZoom(zoom: number) {
     this.zoom = Math.min(5, Math.max(0.25, zoom));
     this.sheet.style.zoom = String(this.zoom);
+    this.placeSheet();
     this.zoomLabel.textContent = `${Math.round(this.zoom * 100)}%`;
   }
 

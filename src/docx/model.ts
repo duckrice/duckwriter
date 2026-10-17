@@ -147,6 +147,48 @@ export interface Footnotes {
   saved: Map<string, Node>;
 }
 
+/** A comment, from the document's comments part or added in DuckWriter. */
+export interface CommentData {
+  id: string;
+  author: string;
+  initials: string;
+  /** When it was written, as Word writes dates (2026-10-17T12:00:00Z); may be missing. */
+  date: string | null;
+  /** The text, paragraphs separated by "\n". */
+  text: string;
+  /** The comment as read, written back unchanged while its text stays the same. */
+  xml: string | null;
+  original: string | null;
+  /** Word's id for the comment's last paragraph, which replies and "resolved" refer to. */
+  paraId: string | null;
+  /** The comment this one answers. */
+  parent: string | null;
+  /** Resolved (Word's "done"). */
+  done: boolean;
+}
+
+export interface Comments {
+  /** Path of the part; null until the first comment is saved. */
+  path: string | null;
+  rootStart: string | null;
+  items: Map<string, CommentData>;
+  /** Word's part for replies and resolved comments (commentsExtended.xml). */
+  extendedPath: string | null;
+  extendedRootStart: string | null;
+  /** Counts edits to the comments, to tell whether there is something to save. */
+  version: number;
+  savedVersion: number;
+  /** The comments in the file when it was last saved (or opened), in order. */
+  savedIds: string;
+}
+
+/** Who made a tracked change, and when. */
+export interface ChangeInfo {
+  id: string;
+  author: string;
+  date: string | null;
+}
+
 export interface DocContext {
   zip: JSZip;
   /** The original word/document.xml, which saving rewrites the body of. */
@@ -179,6 +221,23 @@ export interface DocContext {
   imageSources: Map<string, string>;
   /** Styles whose list numbering changed (numbered headings), by style id: null switches it off. */
   styleNumbering: Map<string, { numId: string; ilvl: number } | null>;
+  comments: Comments;
+  /** The last id handed out by newAnnotationId. */
+  lastAnnotationId?: number;
+  /** Changes are tracked (Word's w:trackRevisions in the settings). */
+  trackChanges: boolean;
+  /** As the settings say now, to tell when they need updating. */
+  trackChangesSaved: boolean;
+}
+
+/** A new id for a comment or tracked change: Word wants them different from all others in the document. */
+export function newAnnotationId(ctx: DocContext): string {
+  if (ctx.lastAnnotationId !== undefined) return String(++ctx.lastAnnotationId);
+  let max = 0;
+  for (const m of ctx.documentXml.matchAll(/<w:(?:ins|del|moveFrom|moveTo|comment\w*)\b[^>]*?w:id="(\d+)"/g)) max = Math.max(max, Number(m[1]));
+  for (const id of ctx.comments.items.keys()) if (/^\d+$/.test(id)) max = Math.max(max, Number(id));
+  ctx.lastAnnotationId = Math.max(ctx.lastAnnotationId ?? 0, max) + 1;
+  return String(ctx.lastAnnotationId);
 }
 
 export const TWIPS_PER_POINT = 20;

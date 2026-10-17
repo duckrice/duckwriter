@@ -6,6 +6,8 @@ export const NS = {
   rel: "http://schemas.openxmlformats.org/package/2006/relationships",
   a: "http://schemas.openxmlformats.org/drawingml/2006/main",
   ct: "http://schemas.openxmlformats.org/package/2006/content-types",
+  w14: "http://schemas.microsoft.com/office/word/2010/wordml",
+  w15: "http://schemas.microsoft.com/office/word/2012/wordml",
 } as const;
 
 export function parseXml(text: string): Document {

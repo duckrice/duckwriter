@@ -42,6 +42,11 @@ export interface ToolbarHost {
   insertFootnote(): void;
   showShortcuts(): void;
   find(replace: boolean): void;
+  newComment(): void;
+  toggleTracking(): void;
+  stepChange(direction: 1 | -1): void;
+  decideChange(accept: boolean): void;
+  decideAllChanges(accept: boolean): void;
 }
 
 const FONTS = [
@@ -191,6 +196,14 @@ export class Toolbar {
         this.button("footnote", "Footnote (Ctrl+Alt+F)", () => this.host.insertFootnote()),
         this.splitButton("references", "References (Ctrl+Alt+R)", null, () => this.referencesMenu(), () => this.referencesMenu()),
         this.splitButton("layout", "Layout", null, () => this.layoutMenu(), () => this.layoutMenu()),
+      ),
+      group(
+        this.button("comment", "New comment (Ctrl+Alt+M)", () => this.host.newComment()),
+        this.button("track", "Track changes (Ctrl+Shift+E)", () => this.host.toggleTracking()),
+        this.button("prevChange", "Previous change or comment (Alt+PageUp)", () => this.host.stepChange(-1)),
+        this.button("nextChange", "Next change or comment (Alt+PageDown)", () => this.host.stepChange(1)),
+        this.splitButton("accept", "Accept the change (Ctrl+Alt+Shift+A)", null, () => this.host.decideChange(true), () => this.reviewMenu(true)),
+        this.splitButton("reject", "Reject the change (Ctrl+Alt+Shift+D)", null, () => this.host.decideChange(false), () => this.reviewMenu(false)),
       ),
       this.tableGroup,
       fonts,
@@ -416,6 +429,24 @@ export class Toolbar {
     );
   }
 
+  private reviewMenu(accept: boolean): HTMLElement {
+    const item = (label: string, onClick: () => void) => {
+      const b = h("button", { type: "button", class: "menu-item" }, label);
+      b.addEventListener("click", () => {
+        this.closeMenu();
+        onClick();
+      });
+      return b;
+    };
+    const word = accept ? "Accept" : "Reject";
+    return h(
+      "div",
+      { class: "menu" },
+      item(`${word} this change and go to the next`, () => this.host.decideChange(accept)),
+      item(`${word} all changes`, () => this.host.decideAllChanges(accept)),
+    );
+  }
+
   /** Captions, cross-references, numbered headings and the table of contents. */
   private referencesMenu(): HTMLElement {
     const { ctx } = this.host;
@@ -525,6 +556,7 @@ export class Toolbar {
     if (document.activeElement !== this.sizeInput) this.sizeInput.value = run.size !== undefined ? String(run.size) : "";
     this.syncStyles(paragraph?.attrs.style ?? ctx.styles.defaultParagraph);
     this.tableGroup.hidden = !isInTable(view.state);
+    active("track", ctx.trackChanges);
   }
 
   private syncStyles(current: string | null) {

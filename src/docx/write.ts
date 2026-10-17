@@ -8,7 +8,7 @@ import { parseMath } from "../math/ast";
 import { adjustPictureXml, imageType, pictureXml, type PictureLayout } from "./drawing";
 import { toOmml } from "../math/omml";
 import { TableMap } from "prosemirror-tables";
-import { TWIPS_PER_POINT, originalXml, type DocContext, type Relationship } from "./model";
+import { TWIPS_PER_POINT, originalXml, type CommentData, type DocContext, type Relationship } from "./model";
 import { escapeAttr, escapeText, tag } from "./xml";
 
 /** The order Word requires for the elements of a paragraph's properties. */
@@ -74,6 +74,8 @@ export async function writeDocx(doc: Node, ctx: DocContext): Promise<Uint8Array>
   // Headers and footers first: new ones change the section properties.
   await writeStories(ctx);
   await writeFootnotes(doc, ctx);
+  await writeComments(doc, ctx);
+  await writeTrackSetting(ctx);
   await writeAddedStyles(ctx);
   await writeStyleNumbering(ctx);
   updateSectPr(ctx);
@@ -237,36 +239,59 @@ class BodyWriter {
       );
     }
     if (a.align) props.push(tag("w:jc", { "w:val": a.align === "justify" ? "both" : a.align }));
-    props.push(...splitElements(a.extra));
+    const extras = splitElements(a.extra);
+    if (a.change) {
+      // A tracked change to the paragraph mark lives in the mark's run properties, first.
+      const c = a.change as { kind: "ins" | "del"; id: string; author: string; date: string | null };
+      const record = tag(`w:${c.kind}`, { "w:id": c.id, "w:author": c.author, "w:date": c.date });
+      const i = extras.findIndex((e) => localName(e) === "rPr");
+      if (i < 0) extras.push(`<w:rPr>${record}</w:rPr>`);
+      else extras[i] = extras[i].replace(/^<w:rPr\b([^>]*?)\/>$/, "<w:rPr$1></w:rPr>").replace(/^<w:rPr\b[^>]*>/, (open) => open + record);
+    }
+    props.push(...extras);
     const pPr = props.length ? `<w:pPr>${ordered(props, PPR_ORDER)}</w:pPr>` : "";
     return `<w:p>${pPr}${lead}${this.inlines(node)}</w:p>`;
   }
 
-  /** The paragraph's content; neighbouring pieces with the same link share one hyperlink element. */
+  /**
+   * The paragraph's content. Neighbouring pieces with the same link share one
+   * hyperlink element, and inside it, those of the same tracked change one
+   * w:ins or w:del.
+   */
   private inlines(para: Node): string {
+    const nodes: Node[] = [];
+    para.forEach((node) => nodes.push(node));
+    return this.wrapped(nodes, 0);
+  }
+
+  private wrapped(nodes: Node[], level: number): string {
+    const type = [schema.marks.link, schema.marks.insertion, schema.marks.deletion][level];
+    if (!type) return nodes.map((n) => this.inline(n)).join("");
     let out = "";
-    let link: Mark | null = null;
-    let inLink = "";
-    const closeLink = () => {
-      if (link) out += this.hyperlink(link, inLink);
-      link = null;
-      inLink = "";
-    };
-    para.forEach((node) => {
-      const nodeLink = node.marks.find((m) => m.type === schema.marks.link) ?? null;
-      if (link && (!nodeLink || !nodeLink.eq(link))) closeLink();
-      const xml = this.inline(node);
-      if (nodeLink) {
-        link = nodeLink;
-        inLink += xml;
-      } else out += xml;
-    });
-    closeLink();
+    for (let i = 0; i < nodes.length; ) {
+      const mark = type.isInSet(nodes[i].marks) ?? null;
+      let j = i + 1;
+      while (j < nodes.length && sameMark(type.isInSet(nodes[j].marks) ?? null, mark)) j++;
+      const inner = this.wrapped(nodes.slice(i, j), level + 1);
+      out += mark ? this.wrap(mark, inner) : inner;
+      i = j;
+    }
     return out;
   }
 
+  private wrap(mark: Mark, content: string): string {
+    if (mark.type === schema.marks.link) return this.hyperlink(mark, content);
+    const a = mark.attrs;
+    const name = mark.type === schema.marks.insertion ? (a.move ? "w:moveTo" : "w:ins") : a.move ? "w:moveFrom" : "w:del";
+    return `<${name} w:id="${escapeAttr(a.id)}" w:author="${escapeAttr(a.author)}"${a.date ? ` w:date="${escapeAttr(a.date)}"` : ""}>${content}</${name}>`;
+  }
+
   private inline(node: Node): string {
-    if (node.isText) return `<w:r>${this.runProps(node.marks)}${textXml(node.text!)}</w:r>`;
+    if (node.isText) {
+      const deleted = node.marks.some((m) => m.type === schema.marks.deletion);
+      return `<w:r>${this.runProps(node.marks)}${textXml(node.text!, deleted)}</w:r>`;
+    }
+    if (node.type === schema.nodes.comment) return node.attrs.xml ?? commentAnchorXml(node.attrs.kind, node.attrs.id);
     if (node.type === schema.nodes.hard_break) return `<w:r>${this.runProps(node.marks)}<w:br/></w:r>`;
     if (node.type === schema.nodes.page_break) return `<w:r>${this.runProps(node.marks)}<w:br w:type="page"/></w:r>`;
     if (node.type === schema.nodes.raw_inline) return node.attrs.xml;
@@ -405,16 +430,25 @@ class BodyWriter {
   }
 }
 
-/** Text as run content: tabs and special hyphens become their own elements. */
-function textXml(text: string): string {
+/** Text as run content: tabs and special hyphens become their own elements. Deleted text is w:delText. */
+function textXml(text: string, deleted = false): string {
   let out = "";
+  const t = deleted ? "w:delText" : "w:t";
   for (const piece of text.split(/([\t‑­])/)) {
     if (piece === "\t") out += "<w:tab/>";
     else if (piece === "‑") out += "<w:noBreakHyphen/>";
     else if (piece === "­") out += "<w:softHyphen/>";
-    else if (piece) out += `<w:t xml:space="preserve">${escapeText(piece)}</w:t>`;
+    else if (piece) out += `<${t} xml:space="preserve">${escapeText(piece)}</${t}>`;
   }
   return out;
+}
+
+const sameMark = (a: Mark | null, b: Mark | null) => (a && b ? a.eq(b) : a === b);
+
+function commentAnchorXml(kind: string, id: string): string {
+  if (kind === "start") return `<w:commentRangeStart w:id="${escapeAttr(id)}"/>`;
+  if (kind === "end") return `<w:commentRangeEnd w:id="${escapeAttr(id)}"/>`;
+  return `<w:r><w:rPr><w:rStyle w:val="CommentReference"/></w:rPr><w:commentReference w:id="${escapeAttr(id)}"/></w:r>`;
 }
 
 // ---- headers and footers -----------------------------------------------------------
@@ -499,6 +533,122 @@ async function writeFootnotes(doc: Node, ctx: DocContext) {
   fn.rootStart = start;
   fn.special = special;
   fn.saved = new Map(ids.map((id) => [id, fn.notes.get(id)!]));
+}
+
+// ---- comments -----------------------------------------------------------------------
+
+const COMMENTS = {
+  type: "http://schemas.openxmlformats.org/officeDocument/2006/relationships/comments",
+  content: "application/vnd.openxmlformats-officedocument.wordprocessingml.comments+xml",
+};
+const COMMENTS_EXTENDED = {
+  type: "http://schemas.microsoft.com/office/2011/relationships/commentsExtended",
+  content: "application/vnd.openxmlformats-officedocument.wordprocessingml.commentsExtended+xml",
+};
+const W14 = "http://schemas.microsoft.com/office/word/2010/wordml";
+
+/** The comments the document (with its headers, footers and footnotes) still has anchors for, in order. */
+export function referencedComments(doc: Node, ctx: DocContext): string[] {
+  const ids: string[] = [];
+  const visit = (d: Node) =>
+    d.descendants((n) => {
+      if (n.type === schema.nodes.comment && !ids.includes(n.attrs.id)) ids.push(n.attrs.id);
+    });
+  visit(doc);
+  for (const story of ctx.stories) visit(story.doc);
+  for (const note of ctx.footnotes.notes.values()) visit(note);
+  return ids.filter((id) => ctx.comments.items.has(id));
+}
+
+/** A new Word paragraph id: eight hex digits, below 80000000. */
+const newParaId = () => Math.floor(Math.random() * 0x7fffffff).toString(16).toUpperCase().padStart(8, "0");
+
+/** Gives the last paragraph of a comment written by another program its id. */
+function withParaId(xml: string, id: string): string {
+  const at = Math.max(xml.lastIndexOf("<w:p>"), xml.lastIndexOf("<w:p "));
+  return at < 0 ? xml : `${xml.slice(0, at)}<w:p w14:paraId="${id}"${xml.slice(at + 4)}`;
+}
+
+function commentXml(c: CommentData): string {
+  if (c.xml && c.text === c.original) return c.xml;
+  const lines = c.text.split("\n");
+  c.paraId ??= newParaId();
+  const paras = lines.map((line, i) => {
+    const id = i === lines.length - 1 ? c.paraId! : newParaId();
+    const mark = i === 0 ? '<w:r><w:rPr><w:rStyle w:val="CommentReference"/></w:rPr><w:annotationRef/></w:r>' : "";
+    return `<w:p w14:paraId="${id}" w14:textId="77777777"><w:pPr><w:pStyle w:val="CommentText"/></w:pPr>${mark}<w:r>${textXml(line)}</w:r></w:p>`;
+  });
+  return `<w:comment w:id="${escapeAttr(c.id)}" w:author="${escapeAttr(c.author)}"${c.date ? ` w:date="${escapeAttr(c.date)}"` : ""} w:initials="${escapeAttr(c.initials)}">${paras.join("")}</w:comment>`;
+}
+
+async function writeComments(doc: Node, ctx: DocContext) {
+  const cm = ctx.comments;
+  const ids = referencedComments(doc, ctx);
+  if (cm.version === cm.savedVersion && ids.join(",") === cm.savedIds) return;
+  if (!ids.length && !cm.path) return;
+  const dir = documentDir(ctx);
+  if (!cm.path) {
+    cm.path = `${dir}comments.xml`;
+    ctx.addedRels.set(newRelId(ctx), { type: COMMENTS.type, target: "comments.xml", external: false });
+    await addContentType(ctx, `/${cm.path}`, COMMENTS.content);
+  }
+  let start = cm.rootStart ?? `${NEW_ROOT("w:comments").slice(0, -1)} xmlns:w14="${W14}">`;
+  // New and edited comments have paragraph ids, for replies and "resolved".
+  if (!/xmlns:w14=/.test(start)) start = start.replace(/>$/, ` xmlns:w14="${W14}">`);
+  const items = ids.map((id) => cm.items.get(id)!);
+  // Resolved comments and those with replies need a paragraph id for Word to say so.
+  for (const c of items) {
+    const needed = c.done || c.parent || items.some((r) => r.parent === c.id);
+    if (needed && !c.paraId) {
+      c.paraId = newParaId();
+      if (c.xml) c.xml = withParaId(c.xml, c.paraId);
+    }
+  }
+  const body = items.map(commentXml).join("");
+  ctx.zip.file(cm.path, `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n${start}${body}</w:comments>`);
+  cm.rootStart = start;
+
+  // Replies and resolved comments: Word's commentsExtended part.
+  const threaded = items.filter((c) => c.paraId);
+  if (cm.extendedPath || threaded.some((c) => c.parent || c.done)) {
+    if (!cm.extendedPath) {
+      cm.extendedPath = `${dir}commentsExtended.xml`;
+      ctx.addedRels.set(newRelId(ctx), { type: COMMENTS_EXTENDED.type, target: "commentsExtended.xml", external: false });
+      await addContentType(ctx, `/${cm.extendedPath}`, COMMENTS_EXTENDED.content);
+    }
+    const exStart = cm.extendedRootStart ?? '<w15:commentsEx xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" xmlns:w15="http://schemas.microsoft.com/office/word/2012/wordml" mc:Ignorable="w15">';
+    const entries = threaded.map((c) => {
+      const parent = c.parent ? cm.items.get(c.parent)?.paraId : null;
+      return `<w15:commentEx w15:paraId="${c.paraId}"${parent ? ` w15:paraIdParent="${parent}"` : ""} w15:done="${c.done ? 1 : 0}"/>`;
+    });
+    ctx.zip.file(cm.extendedPath, `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n${exStart}${entries.join("")}</w15:commentsEx>`);
+    cm.extendedRootStart = exStart;
+  }
+  // Written as they are now: unchanged from here on.
+  for (const c of items) {
+    if (c.text !== c.original) {
+      c.xml = commentXml(c);
+      c.original = c.text;
+    }
+  }
+  cm.savedVersion = cm.version;
+  cm.savedIds = ids.join(",");
+}
+
+/** Whether Word should go on tracking changes when it opens the document. */
+async function writeTrackSetting(ctx: DocContext) {
+  if (ctx.trackChanges === ctx.trackChangesSaved) return;
+  const path = `${documentDir(ctx)}settings.xml`;
+  const xml = await ctx.zip.file(path)?.async("string");
+  if (!xml) return;
+  let out = xml.replace(/<w:trackRevisions\b[^>]*\/>/g, "");
+  if (ctx.trackChanges) {
+    const at = out.search(/<w:(doNotTrackMoves|doNotTrackFormatting|documentProtection|autoFormatOverride|styleLockTheme|styleLockQFSet|defaultTabStop|autoHyphenation|consecutiveHyphenLimit|hyphenationZone|doNotHyphenateCaps|showEnvelope|summaryLength|clickAndTypeStyle|defaultTableStyle|evenAndOddHeaders|bookFoldRevPrinting|bookFoldPrinting|bookFoldPrintingSheets|drawingGridHorizontalSpacing|drawingGridVerticalSpacing|displayHorizontalDrawingGridEvery|displayVerticalDrawingGridEvery|doNotUseMarginsForDrawingGridOrigin|drawingGridHorizontalOrigin|drawingGridVerticalOrigin|doNotShadeFormData|noPunctuationKerning|characterSpacingControl|printTwoOnOne|strictFirstAndLastChars|noLineBreaksAfter|noLineBreaksBefore|savePreviewPicture|doNotValidateAgainstSchema|saveInvalidXml|ignoreMixedContent|alwaysShowPlaceholderText|doNotDemarcateInvalidXml|saveXmlDataOnly|useXSLTWhenSaving|saveThroughXslt|showXMLTags|alwaysMergeEmptyNamespace|updateFields|hdrShapeDefaults|footnotePr|endnotePr|compat|docVars|rsids|mathPr|attachedSchema|themeFontLang|clrSchemeMapping|doNotIncludeSubdocsInStats|doNotAutoCompressPictures|forceUpgrade|captions|readModeInkLockDown|smartTagType|schemaLibrary|shapeDefaults|doNotEmbedSmartTags|decimalSymbol|listSeparator)\b/);
+    const end = out.lastIndexOf("</w:settings>");
+    out = at >= 0 ? out.slice(0, at) + "<w:trackRevisions/>" + out.slice(at) : out.slice(0, end) + "<w:trackRevisions/>" + out.slice(end);
+  }
+  ctx.zip.file(path, out);
+  ctx.trackChangesSaved = ctx.trackChanges;
 }
 
 /** Word lists the separator notes in the settings. */

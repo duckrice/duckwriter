@@ -1021,6 +1021,79 @@ await session(null, 9540, async (app) => {
   check("no errors in the app", app.errors.length === 0, app.errors.join("; "));
 });
 
+// ---- reviewing: tracked changes and comments ------------------------------------------------------
+
+const reviewed = join(tmpdir(), "duckwriter-smoke-review.docx");
+rmSync(reviewed, { force: true });
+const ALT = 1;
+
+await session(sample("review.docx"), 9550, async (app) => {
+  await app.debugHandle();
+  const text = (i) => app.evaluate(`document.querySelectorAll(".doc p")[${i}].textContent`);
+  check("a Word file's tracked changes are shown: deleted text struck through, new text underlined", (await app.count(".doc del.tc-del")) === 2 && (await app.count(".doc ins.tc-ins")) === 2 && (await text(0)) === "The rate wasis proportional to the temperature.");
+  const cards = () => app.evaluate(`[...document.querySelectorAll(".comment-card")].map((c) => [...c.querySelectorAll(".comment-text")].map((t) => t.value).join(" / "))`);
+  check("its comments are shown beside the page", JSON.stringify(await cards()) === JSON.stringify(["Is this the right figure?", "Please cite the source.\nAny review paper will do."]), JSON.stringify(await cards()));
+  check("the comments are right of the page, the first level with its text, none overlapping", await app.evaluate(`(() => {
+    const page = document.querySelector(".page-sheet").getBoundingClientRect();
+    const cards = [...document.querySelectorAll(".comment-card")].map((c) => c.getBoundingClientRect());
+    const first = document.querySelector(".doc .comment-range").getBoundingClientRect();
+    return cards.every((r, i) => r.left > page.right && (i === 0 || r.top >= cards[i - 1].bottom)) && Math.abs(cards[0].top - first.top) < 20;
+  })()`));
+  await app.shoot("review");
+  // Alt+PageDown from the top: the first change ("was"), then the next.
+  await app.key("Home", 36, CTRL);
+  await app.key("PageDown", 34, ALT);
+  const selected = () => app.evaluate(`(() => { const s = window.__dw.body.state; return s.doc.textBetween(s.selection.from, s.selection.to); })()`);
+  check("Alt+PageDown goes to the first change", (await selected()) === "was", await selected());
+  await app.key("D", 68, CTRL | ALT | SHIFT);
+  check("Ctrl+Alt+Shift+D rejects it (the deletion is undone) and goes on to the next", (await text(0)) === "The rate wasis proportional to the temperature." && (await app.count(".doc del.tc-del")) === 1 && (await selected()) === "is", `${await text(0)} / ${await selected()}`);
+  await app.key("D", 68, CTRL | ALT | SHIFT);
+  check("rejecting an insertion removes it", (await text(0)) === "The rate was proportional to the temperature.");
+  await app.clickOn('.split-arrow[title^="Accept the change"]');
+  await app.clickText(".menu .menu-item", "Accept all changes");
+  check("Accept all changes accepts the rest", (await app.count(".doc del.tc-del, .doc ins.tc-ins")) === 0 && (await text(1)) === "As shown in figure 3, the curve clearly flattens out." && (await text(2)) === "Earlier work found the same.");
+
+  // A new comment, by keyboard: the first time it asks for your name.
+  await app.clickText(".doc p", "As shown");
+  await app.key("End", 35);
+  await app.key("ArrowLeft", 37, CTRL);
+  await app.key("ArrowLeft", 37, CTRL);
+  await app.key("M", 77, CTRL | ALT);
+  check("Ctrl+Alt+M asks once for your name", await app.waitFor(`!!document.querySelector("dialog[open] input")`, 3000));
+  await app.type("Kari Nordmann");
+  await app.key("Enter", 13);
+  check("then puts the cursor in a new comment on the word", (await app.waitFor(`document.activeElement?.classList.contains("comment-text")`, 3000)) && (await app.count(".comment-card")) === 3, await app.evaluate(`document.activeElement?.outerHTML.slice(0, 120)`));
+  await app.type("Which curve is this?");
+  await app.key("Escape", 27);
+  check("Esc goes back to the text", await app.evaluate(`!!document.activeElement?.closest(".doc")`));
+  check("the comment shows who wrote it", await app.evaluate(`[...document.querySelectorAll(".comment-author")].some((a) => a.textContent === "Kari Nordmann")`));
+  await app.shoot("new-comment");
+
+  // Tracking changes while typing.
+  await app.key("E", 69, CTRL | SHIFT);
+  check("Ctrl+Shift+E starts tracking changes", await app.evaluate(`!document.querySelector(".track-status").hidden && document.querySelector('.tb[title^="Track changes"]').classList.contains("active")`));
+  await app.clickText(".doc p", "The rate");
+  await app.key("End", 35);
+  await app.key("Backspace", 8);
+  await app.type(" here.");
+  check("typing is marked as new and deleted text stays, struck through", (await text(0)) === "The rate was proportional to the temperature here.." && (await app.count(".doc ins.tc-ins")) === 1 && (await app.count(".doc del.tc-del")) === 1, await text(0));
+  await app.shoot("tracking");
+  await app.evaluate(`(async () => {
+    const bytes = await window.__dw.build();
+    await window.__TAURI_INTERNALS__.invoke("write_file", bytes, { headers: { "x-path": encodeURIComponent(${JSON.stringify(reviewed)}) } });
+  })()`);
+  check("no errors in the app", app.errors.length === 0, app.errors.join("; "));
+});
+
+{
+  const zip = await JSZip.loadAsync(readFileSync(reviewed));
+  const xml = await zip.file("word/document.xml").async("string");
+  const comments = (await zip.file("word/comments.xml")?.async("string")) ?? "";
+  const settings = (await zip.file("word/settings.xml")?.async("string")) ?? "";
+  check("saved for Word: the new comment, the tracked changes by name, and tracking left on", comments.includes("Which curve is this?") && comments.includes('w:author="Kari Nordmann"') && /<w:ins w:id="\d+" w:author="Kari Nordmann"/.test(xml) && /<w:del [^>]*w:author="Kari Nordmann"[^>]*><w:r>(?:<w:rPr>.*?<\/w:rPr>)?<w:delText xml:space="preserve">\.<\/w:delText>/.test(xml) && settings.includes("<w:trackRevisions/>"));
+  rmSync(reviewed, { force: true });
+}
+
 // ---- save as PDF -------------------------------------------------------------------------------
 
 const pdfPath = join(tmpdir(), "duckwriter-smoke.pdf");

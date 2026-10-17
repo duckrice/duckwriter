@@ -1530,3 +1530,240 @@ kbd {
     display: none !important;
   }
 }
+
+/* ---- reviewing: tracked changes and comments ------------------------------------------------- */
+
+.author-0 { --rev: #b42318; }
+.author-1 { --rev: #1d4ed8; }
+.author-2 { --rev: #047857; }
+.author-3 { --rev: #7e22ce; }
+.author-4 { --rev: #b45309; }
+.author-5 { --rev: #be185d; }
+
+.doc ins.tc-ins,
+.hf-doc ins.tc-ins {
+  color: var(--rev);
+  text-decoration: underline;
+  text-decoration-color: var(--rev);
+}
+
+.doc del.tc-del,
+.hf-doc del.tc-del {
+  color: var(--rev);
+  text-decoration: line-through;
+  text-decoration-color: var(--rev);
+}
+
+.doc .tc-para {
+  color: var(--rev);
+  font-size: 0.85em;
+  user-select: none;
+}
+
+.doc .tc-para.tc-del {
+  text-decoration: line-through;
+}
+
+.doc .comment-range {
+  background: rgb(250 204 21 / 0.28);
+  border-bottom: 1px solid rgb(202 138 4 / 0.6);
+}
+
+.doc .comment-range.active {
+  background: rgb(250 204 21 / 0.55);
+}
+
+.doc .comment-range.done {
+  background: rgb(148 163 184 / 0.18);
+  border-bottom-color: transparent;
+}
+
+.comment-anchor {
+  display: inline;
+}
+
+.comments-pane {
+  position: absolute;
+  top: 0;
+  left: calc(100% + 20px);
+  width: 260px;
+  z-index: 5;
+  color: var(--text);
+  font: 13px/1.4 "Segoe UI", system-ui, sans-serif;
+}
+
+.comment-card {
+  position: absolute;
+  left: 0;
+  right: 0;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-left: 3px solid rgb(234 179 8);
+  border-radius: 6px;
+  background: var(--panel);
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.08);
+  cursor: default;
+  transition: top 0.12s ease;
+}
+
+.comment-card.active {
+  box-shadow: var(--shadow);
+  border-left-color: var(--accent);
+}
+
+.comment-card.done {
+  opacity: 0.6;
+  border-left-color: var(--border);
+}
+
+.comment-entry.reply {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border);
+}
+
+.comment-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 2px;
+}
+
+.comment-avatar {
+  display: inline-grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: var(--rev);
+  color: #ffffff;
+  font-size: 10px;
+  font-weight: 600;
+  flex: none;
+}
+
+.comment-author {
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.comment-date {
+  color: var(--muted);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.comment-head .comment-actions {
+  margin-left: auto;
+  display: flex;
+  gap: 2px;
+}
+
+.comment-card:not(.active) .comment-head .comment-actions {
+  visibility: hidden;
+}
+
+.comment-card:hover .comment-head .comment-actions {
+  visibility: visible;
+}
+
+.comment-button {
+  padding: 1px 6px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  cursor: pointer;
+}
+
+.comment-button:hover {
+  background: var(--hover);
+  color: var(--text);
+}
+
+.comment-text,
+.comment-reply {
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  padding: 2px 4px;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  resize: none;
+  overflow: hidden;
+}
+
+.comment-text:hover {
+  border-color: var(--border);
+}
+
+.comment-text:focus,
+.comment-reply:focus {
+  border-color: var(--accent);
+  outline: none;
+  background: var(--panel);
+}
+
+.comment-reply {
+  margin-top: 6px;
+  border-color: var(--border);
+}
+
+.comment-card:not(.active) > .comment-actions {
+  display: none;
+}
+
+.comment-name {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 4px 0;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.comment-name[hidden] {
+  display: none;
+}
+
+.comment-name-input {
+  flex: 1;
+  min-width: 0;
+  padding: 2px 4px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  font: inherit;
+}
+
+.dialog-hint {
+  margin: 0 0 12px;
+  color: var(--muted);
+  font-size: 13px;
+  max-width: 340px;
+}
+
+.track-status {
+  color: #b42318;
+  font-weight: 600;
+}
+
+@media print {
+  .comments-pane {
+    display: none !important;
+  }
+
+  .doc .comment-range {
+    background: none !important;
+    border: 0 !important;
+  }
+}
+
+.status-button[hidden] {
+  display: none;
+}

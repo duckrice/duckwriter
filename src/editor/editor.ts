@@ -17,6 +17,9 @@ import { changeListLevel, listPlugin } from "./lists";
 import { fieldsPlugin } from "./fields";
 import { findPlugin } from "./find";
 import { spellingPlugin } from "./spelling";
+import { reviewPlugin } from "./review";
+import { trackPlugin } from "./track";
+import { authorName } from "../author";
 import { ImageView, type PictureHooks } from "./imageview";
 import { MathView } from "./mathview";
 import { paginationPlugin, type PaginationHooks } from "./pagination";
@@ -77,6 +80,8 @@ export function createState(doc: Node, ctx: () => DocContext, pages?: Omit<Pagin
       fieldsPlugin(),
       findPlugin(),
       spellingPlugin(),
+      reviewPlugin(ctx),
+      trackPlugin({ on: () => !!ctx().trackChanges, author: authorName, context: ctx }),
       ...(pages ? [paginationPlugin({ context: ctx, ...pages })] : []),
       dropCursor({ color: "#0f766e", width: 2 }),
       gapCursor(),
