@@ -2077,3 +2077,18 @@ kbd {
     background: none;
   }
 }
+
+.update-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 6px 12px;
+  border-top: 1px solid var(--border);
+  background: var(--accent-soft);
+  color: var(--accent-text);
+}
+
+.update-message {
+  flex: 1;
+}

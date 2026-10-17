@@ -201,6 +201,8 @@ fn write_atomically(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_process::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .setup(|app| {
             let config = &app.config().app.windows[0];
             build_window(tauri::WebviewWindowBuilder::from_config(app.handle(), config)?)?;

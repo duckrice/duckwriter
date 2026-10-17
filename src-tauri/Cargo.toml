@@ -1,6 +1,6 @@
 [package]
 name = "duckwriter"
-version = "0.1.0"
+version = "1.0.0"
 description = "A free word processor that opens and saves Word documents"
 authors = ["Duckrice"]
 edition = "2021"
@@ -17,6 +17,8 @@ tauri-build = { version = "2", features = [] }
 [dependencies]
 tauri = { version = "2", features = [] }
 tauri-plugin-dialog = "2"
+tauri-plugin-process = "2"
+tauri-plugin-updater = "2"
 percent-encoding = "2"
 serde_json = "1"
 

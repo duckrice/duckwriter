@@ -13,6 +13,7 @@ import { addRecent, removeRecent } from "./recent";
 import { pageSetup } from "./ui/pagesetup";
 import { NavigationPane } from "./ui/navigation";
 import { count, showCounts } from "./ui/wordcount";
+import { offerUpdate } from "./updates";
 import { schema } from "./editor/schema";
 import { PAGE_GAP, relayout, setPageGap, type PageLayout } from "./editor/pagination";
 import { invoke } from "@tauri-apps/api/core";
@@ -842,4 +843,10 @@ if (first) await app.openPath(first);
 if (localStorage.getItem("duckwriter.debug") === "1") {
   Object.assign(window, { __dw: app });
 }
-if (opening === undefined) void app.offerRecovery();
+if (opening === undefined) {
+  void app.offerRecovery();
+  // Give the document a moment to open before going online. Not while testing.
+  if (!navigator.webdriver && localStorage.getItem("duckwriter.debug") !== "1") {
+    setTimeout(() => void offerUpdate(document.querySelector(".toolbar")!, { beforeInstall: () => app.confirmDiscard() }), 3000);
+  }
+}

@@ -1,7 +1,7 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "DuckWriter",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "identifier": "com.duckrice.duckwriter",
   "build": {
     "beforeDevCommand": "npm run dev",
@@ -22,22 +22,44 @@
       }
     ],
     "security": {
-      "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data: blob:; connect-src 'self' ipc: http://ipc.localhost data: blob: https://api.crossref.org",
+      "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data: blob:; connect-src 'self' ipc: http://ipc.localhost data: blob: https://api.crossref.org https://github.com https://objects.githubusercontent.com",
       "devCsp": "default-src * 'unsafe-inline' 'unsafe-eval' data: blob: ipc: ws: http://ipc.localhost"
     }
   },
   "bundle": {
     "active": true,
-    "targets": ["nsis"],
-    "icon": ["icons/32x32.png", "icons/128x128.png", "icons/128x128@2x.png", "icons/icon.icns", "icons/icon.ico"],
+    "targets": [
+      "nsis"
+    ],
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
     "fileAssociations": [
       {
-        "ext": ["docx"],
+        "ext": [
+          "docx"
+        ],
         "name": "Word Document",
         "description": "Word Document",
         "mimeType": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
         "role": "Editor"
       }
-    ]
+    ],
+    "createUpdaterArtifacts": true
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEM1RjQxMENDNUFEOUY4MjgKUldRbytObGF6QkQweGJReGpnT0E3aUNMN2drQjZZc1MzamhTUDIvVlErZHBTTzFDZ1piSFpEVTMK",
+      "endpoints": [
+        "https://github.com/duckrice/duckwriter/releases/latest/download/latest.json"
+      ],
+      "windows": {
+        "installMode": "passive"
+      }
+    }
   }
 }
