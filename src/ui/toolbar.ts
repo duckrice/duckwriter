@@ -1,3 +1,5 @@
+import { TEMPLATES } from "../templates";
+import { modifyStyle, updateStyleToMatch } from "./styles";
 import { insertBibliography, insertCitation, manageSources } from "./sources";
 import { autoFormatOn, setAutoFormat } from "../editor/autoformat";
 import { armPainter, painterArmed } from "./painter";
@@ -52,9 +54,12 @@ export interface ToolbarHost {
   markup: "all" | "final" | "original";
   setMarkup(mode: "all" | "final" | "original"): void;
   pageNumbers(where: "bottom-center" | "bottom-right" | "top-right"): void;
+  styleChanged(id: string): void;
   setLineNumbers(restart: "continuous" | "newPage" | null): void;
   share(): void;
   openRecent(path: string): void;
+  versions(): void;
+  newFromTemplate(kind: import("../templates").TemplateKind): void;
   pageSetup(): void;
   toggleTracking(): void;
   stepChange(direction: 1 | -1): void;
@@ -158,7 +163,7 @@ export class Toolbar {
       "div",
       { class: "toolbar", role: "toolbar" },
       group(
-        this.button("newDoc", "New document (Ctrl+N)", () => this.host.newDocument()),
+        this.splitButton("newDoc", "New document (Ctrl+N)", null, () => this.host.newDocument(), () => this.newMenu()),
         this.splitButton("open", "Open (Ctrl+O)", null, () => this.host.open(), () => this.recentMenu()),
         this.button("save", "Save (Ctrl+S)", () => this.host.save()),
         this.button("print", "Print (Ctrl+P)", () => this.host.print()),
@@ -166,7 +171,7 @@ export class Toolbar {
         this.button("keyboard", "Keyboard shortcuts (F1)", () => this.host.showShortcuts()),
       ),
       group(this.button("undo", "Undo (Ctrl+Z)", () => this.run(undo)), this.button("redo", "Redo (Ctrl+Y)", () => this.run(redo)), this.button("find", "Find and replace (Ctrl+F, Ctrl+H)", () => this.host.find(false))),
-      group(this.styleSelect),
+      group(this.styleSelect, this.styleMenuButton()),
       group(
         this.fontInput,
         this.sizeInput,
@@ -471,6 +476,18 @@ export class Toolbar {
     );
   }
 
+  /** New: blank, or from a template. */
+  private newMenu(): HTMLElement {
+    return h(
+      "div",
+      { class: "menu" },
+      this.simpleItem("Blank document (Ctrl+N)", () => this.host.newDocument()),
+      h("div", { class: "menu-separator" }),
+      h("div", { class: "menu-title" }, "From a template (Alt+Shift+T)"),
+      ...TEMPLATES.map((t) => this.simpleItem(t.name, () => this.host.newFromTemplate(t.kind))),
+    );
+  }
+
   /** The documents opened lately. */
   private recentMenu(): HTMLElement {
     const list = recentFiles();
@@ -489,6 +506,8 @@ export class Toolbar {
       { class: "menu recent-menu" },
       h("div", { class: "menu-title" }, "Recent documents"),
       ...(items.length ? items : [h("div", { class: "menu-hint" }, "Documents you open or save are listed here.")]),
+      h("div", { class: "menu-separator" }),
+      this.simpleItem("Earlier versions of this document… (Alt+Shift+V)", () => this.host.versions()),
     );
   }
 
@@ -499,6 +518,33 @@ export class Toolbar {
       onClick();
     });
     return b;
+  }
+
+  /** The arrow next to the style box: change the style itself. */
+  private styleMenuButton(): HTMLElement {
+    const arrow = h("button", { type: "button", class: "tb split-arrow", title: "Change this style (Alt+Shift+Y)", "aria-label": "Change this style", html: icon("caret", 14) });
+    arrow.addEventListener("mousedown", (event) => event.preventDefault());
+    const wrap = h("div", { class: "split" }, arrow);
+    this.menuArrows.set("style", arrow);
+    arrow.addEventListener("click", () => {
+      if (this.openMenu?.dataset.owner === "style") return this.closeMenu();
+      this.closeMenu();
+      const { view, ctx } = this.host;
+      const menu = h(
+        "div",
+        { class: "menu" },
+        this.simpleItem("Modify this style… (Alt+Shift+Y)", () => modifyStyle(view, ctx, (id) => this.host.styleChanged(id))),
+        this.simpleItem("Update this style to match the paragraph", () => {
+          const id = updateStyleToMatch(view, ctx);
+          if (id) this.host.styleChanged(id);
+        }),
+      );
+      menu.dataset.owner = "style";
+      menu.addEventListener("keydown", (event) => this.menuKeys(event, menu));
+      wrap.append(menu);
+      this.openMenu = menu;
+    });
+    return wrap;
   }
 
   private equationMenu(): HTMLElement {

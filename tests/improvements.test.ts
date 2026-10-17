@@ -156,3 +156,23 @@ describe("new pictures in headers", () => {
     expect(await zip.file("word/_rels/document.xml.rels")!.async("string")).not.toContain("duckwriter1.png");
   });
 });
+
+describe("changing a style", () => {
+  it("writes the new formatting into Word's styles, keeping the rest", async () => {
+    const { changeStyle } = await import("../src/ui/styles");
+    const { doc, context } = await readDocx(await blankDocx());
+    changeStyle(context, "Heading1", { font: "Georgia", size: 20, bold: false, color: "#1f4e79" }, { align: "center", spaceAfter: 12 });
+    const styles = await part(await writeDocx(doc, context), "word/styles.xml");
+    const heading = /<w:style\b[^>]*w:styleId="Heading1"[^>]*>[\s\S]*?<\/w:style>/.exec(styles)![0];
+    expect(heading).toContain('w:ascii="Georgia"');
+    expect(heading).toContain('<w:sz w:val="40"/>');
+    expect(heading).toContain('<w:b w:val="0"/>');
+    expect(heading).toContain('<w:color w:val="1F4E79"/>');
+    expect(heading).toContain('<w:jc w:val="center"/>');
+    expect(heading).toMatch(/<w:spacing [^>]*w:after="240"/);
+    expect(heading).toContain('<w:basedOn w:val="Normal"/>');
+    expect(heading.indexOf("<w:pPr>")).toBeLessThan(heading.indexOf("<w:rPr>"));
+    const again = await readDocx(await writeDocx(doc, context));
+    expect(again.context.styles.byId.get("Heading1")!.run).toMatchObject({ font: "Georgia", size: 20, bold: false });
+  });
+});

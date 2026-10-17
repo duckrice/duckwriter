@@ -81,9 +81,25 @@ written back unchanged.
   and paragraphs.
 - **Pictures in headers and footers** (a logo in a letterhead) are shown and kept.
 
+### Round 3
+- **Citations and a reference list**: sources as Word keeps them; APA,
+  Harvard, Chicago, IEEE and Vancouver; BibTeX import and DOI lookup.
+- **Writing together** (see COLLABORATION.md): on the local network, through
+  a relay server, or through a shared folder; encrypted end to end.
+- **Markup views**: all markup, the final text, or the original (Alt+Shift+M).
+- **Go to page** (Ctrl+G), **page numbers** from the header button, **change
+  case** (Alt+Shift+K).
+- **Line numbers** in the margin (Alt+Shift+L), for manuscripts.
+- **Lists of figures and tables**, and **numbered equations** (Alt+Shift+E)
+  that can be referred to as (1).
+- **Changing a style** for all its paragraphs (Alt+Shift+Y), written for Word.
+- **Earlier versions** kept on this computer at each save (Alt+Shift+V).
+- **Templates**: scientific article, report, letter, thesis chapter (Alt+Shift+T).
+- **Each document in its own window**; pictures and links in headers.
+- **Installer and auto-update**, ready to publish.
+
 ## Next
 
-- Tracking table rows and paragraph formatting (now: text, paragraphs, character formatting).
-- Text wrapping on both sides of a picture in the middle of the page.
-- Several documents in tabs, recent files.
-- Auto-update and an installer, published on GitHub like Duckument.
+- Text wrapping on both sides of a picture (the browser engine can't do this).
+- Tracking table rows and paragraph formatting.
+- Publishing: the GitHub repository, the first release.

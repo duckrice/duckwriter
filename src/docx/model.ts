@@ -228,6 +228,10 @@ export interface DocContext {
   comments: Comments;
   /** The sources citations refer to (Word's bibliography sources). */
   bibliography: import("./bibliography").Bibliography;
+  /** Styles changed in DuckWriter (Modify style), written into the styles when saved. */
+  styleChanges: Map<string, { run: RunProps; para: ParaProps }>;
+  /** Counts style changes, so the page's look is worked out again. */
+  styleVersion?: number;
   /** The last id handed out by newAnnotationId. */
   lastAnnotationId?: number;
   /** Changes are tracked (Word's w:trackRevisions in the settings). */

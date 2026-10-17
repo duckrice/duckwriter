@@ -12,6 +12,8 @@ import { createState, createView, setLinkOpener } from "./editor/editor";
 import { bookmarkPosition } from "./ui/references";
 import { addRecent, removeRecent } from "./recent";
 import { pageSetup } from "./ui/pagesetup";
+import { showVersions, type Version } from "./ui/versions";
+import { TEMPLATES, templateDoc, type TemplateKind } from "./templates";
 import { NavigationPane } from "./ui/navigation";
 import { count, showCounts } from "./ui/wordcount";
 import { offerUpdate } from "./updates";
@@ -45,7 +47,7 @@ class App {
   ctx!: DocContext;
   /** The editor of the main text. */
   body!: EditorView;
-  private path: string | null = null;
+  path: string | null = null;
   name = "Document1.docx";
   /** The document as last opened or saved, to tell whether there are unsaved changes. */
   private savedDoc: Node | null = null;
@@ -238,6 +240,7 @@ class App {
     if (this.ctx.stories.some((s) => !s.saved || !s.doc.eq(s.saved))) return true;
     if (this.ctx.comments.version !== this.ctx.comments.savedVersion || this.ctx.trackChanges !== this.ctx.trackChangesSaved) return true;
     if (this.ctx.bibliography.version !== this.ctx.bibliography.savedVersion) return true;
+    if (this.ctx.styleChanges.size) return true;
     const fn = this.ctx.footnotes;
     return [...fn.notes].some(([id, doc]) => {
       const saved = fn.saved.get(id);
@@ -408,6 +411,49 @@ class App {
     this.toast(restart === "continuous" ? "Lines are numbered through the document" : restart === "newPage" ? "Lines are numbered from 1 on each page" : "No line numbers");
   }
 
+  /** A new document from a template: here if this window is unused, else in a window of its own. */
+  async newFromTemplate(kind: TemplateKind) {
+    if (isDesktop && !this.blank) return void openWindow(`template:${kind}`);
+    if (!(await this.confirmDiscard())) return;
+    this.leaveSharing();
+    const bytes = await blankDocx();
+    const { context } = await readDocx(bytes);
+    const doc = templateDoc(kind, context);
+    this.base = bytes;
+    this.show(doc, context, TEMPLATES.find((t) => t.kind === kind)?.file ?? "Document1.docx", null);
+  }
+
+  /** Earlier versions of this document (Alt+Shift+V). */
+  versions() {
+    void showVersions(this);
+  }
+
+  /** Shows an earlier version as the document; saving keeps it, closing without saving goes back. */
+  async restoreVersion(version: Version) {
+    if (!(await this.confirmDiscard())) return;
+    try {
+      const file = await readPath(version.path);
+      const { doc, context } = await readDocx(file.bytes);
+      this.show(doc, context, this.name, this.path);
+      this.base = file.bytes;
+      // Not saved yet: it differs from the file.
+      this.savedDoc = schema.nodes.doc.create(null, schema.nodes.paragraph.create());
+      this.changed(true);
+      this.toast(`Restored the version from ${new Date(version.time).toLocaleString([], { dateStyle: "medium", timeStyle: "short" })}. Save to keep it.`);
+    } catch (error) {
+      this.toast(`Couldn't restore it: ${message(error)}`, "error");
+    }
+  }
+
+  /** A style changed: the page shows it at once, and laid out again. */
+  styleChanged(id: string) {
+    this.refreshStyles();
+    relayout(this.body);
+    this.changed(false, true);
+    const name = this.ctx.styles.byId.get(id)?.name ?? id;
+    this.toast(`Style "${name}" changed`);
+  }
+
   /** Shows or hides the headings beside the page (Alt+Shift+N). */
   toggleNavigation() {
     this.navigation.toggle();
@@ -515,7 +561,7 @@ class App {
 
   /** The CSS for the document's styles; again whenever a style was added or changed. */
   private refreshStyles() {
-    const key = `${this.ctx.styles.byId.size}|${this.ctx.addedStyles.length}|${this.ctx.styleNumbering.size}`;
+    const key = `${this.ctx.styles.byId.size}|${this.ctx.addedStyles.length}|${this.ctx.styleNumbering.size}|${this.ctx.styleVersion ?? 0}`;
     if (this.styleEl.dataset.key === key && this.styleEl.dataset.doc === this.name) return;
     this.styleEl.dataset.key = key;
     this.styleEl.dataset.doc = this.name;
@@ -717,6 +763,8 @@ class App {
     const titlePage = this.ctx.titlePage;
     try {
       const bytes = await this.build();
+      // The file as it was is kept first (auto-save: at most every ten minutes).
+      if (isDesktop) await invoke("versions_keep", { path, minAgeSecs: quiet ? 600 : 0 }).catch((error) => console.warn("No earlier version kept", error));
       await writePath(path, bytes);
       this.base = bytes;
     } catch (error) {
@@ -979,7 +1027,7 @@ class App {
     this.toolbar.focusBox(box);
   }
 
-  openMenu(menu: "symbol" | "references" | "layout" | "textColor" | "highlight" | "table" | "open") {
+  openMenu(menu: "symbol" | "references" | "layout" | "textColor" | "highlight" | "table" | "open" | "newDoc") {
     this.toolbar.openMenuByKeyboard(menu);
   }
 
@@ -1065,7 +1113,8 @@ const app = new App(document.querySelector<HTMLElement>("#app")!);
 const opening = windowOpening();
 const [first] = opening === undefined ? await startupFiles() : [opening];
 await app.newDocument(false);
-if (first) await app.openPath(first);
+if (first?.startsWith("template:")) await app.newFromTemplate(first.slice(9) as TemplateKind);
+else if (first) await app.openPath(first);
 if (localStorage.getItem("duckwriter.debug") === "1") {
   Object.assign(window, { __dw: app });
 }

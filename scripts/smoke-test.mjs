@@ -36,6 +36,15 @@ function check(name, ok, detail = "") {
   console.log(`${ok ? "ok  " : "FAIL"}  ${name}${detail && !ok ? `  (${detail})` : ""}`);
 }
 
+/** Removes a test folder; WebView2 may hold on to a profile for a moment after the app closes. */
+function removeFolder(path) {
+  try {
+    rmSync(path, { recursive: true, force: true, maxRetries: 20, retryDelay: 250 });
+  } catch {
+    // Left for Windows to clean up with the other temporary files.
+  }
+}
+
 /** The test's environment for a copy of the app. */
 const appEnv = (port, profileDir = profile) => ({
   ...process.env,
@@ -1156,6 +1165,96 @@ await session(sample("letterhead.docx"), 9572, async (app) => {
   await app.shoot("header-logo");
 });
 
+// ---- round 3: pages, line numbers, markup, styles, equations, versions, templates -------------------
+
+const versioned = join(tmpdir(), "duckwriter-smoke-versions.docx");
+copyFileSync(sample("long.docx"), versioned);
+
+await session(versioned, 9590, async (app) => {
+  await app.debugHandle();
+  await app.key("G", 71, CTRL);
+  check("Ctrl+G asks which page", await app.waitFor(`document.querySelector("dialog[open] h2")?.textContent === "Go to page"`, 3000));
+  await app.type("3");
+  await app.key("Enter", 13);
+  const pageOfCursor = () => app.evaluate(`(() => { const s = window.__dw.body.state; const r = window.__dw.body.coordsAtPos(s.selection.from); const sheets = [...document.querySelectorAll(".page-sheet")].map((p) => p.getBoundingClientRect()); return sheets.findIndex((p) => r.top >= p.top && r.top <= p.bottom) + 1; })()`);
+  check("and goes there", (await pageOfCursor()) === 3, String(await pageOfCursor()));
+
+  await app.key("L", 76, ALT | SHIFT);
+  const numbers = () => app.evaluate(`[...document.querySelectorAll(".line-number")].map((n) => Number(n.textContent))`);
+  const first = await numbers();
+  check("Alt+Shift+L numbers the lines in the margin", first.length > 100 && first[0] === 1 && first.every((n, i) => n === i + 1), `${first.length} numbers, starting ${first.slice(0, 3)}`);
+  await app.evaluate(`document.querySelector(".line-number")?.scrollIntoView({ block: "center" })`);
+  await app.shoot("line-numbers");
+  await app.key("L", 76, ALT | SHIFT);
+  const perPage = await numbers();
+  check("then from 1 on each page", perPage.filter((n) => n === 1).length === (await app.count(".page-sheet")));
+  await app.key("L", 76, ALT | SHIFT);
+  check("then none", (await app.count(".line-number")) === 0);
+
+  // Page numbers in the footer.
+  await app.clickOn('.split-arrow[title^="Header and footer"]');
+  await app.clickText(".menu .menu-item", "At the bottom, centred");
+  check("page numbers go in the footer: Page 1 of 6", await app.waitFor(`[...document.querySelectorAll(".hf.footer")].some((f) => /Page 1 of \\d/.test(f.textContent))`, 5000));
+
+  // Changing a style changes all its paragraphs.
+  await app.clickText(".doc p", "1. Section 1");
+  await app.key("Y", 89, ALT | SHIFT);
+  check("Alt+Shift+Y opens the style", await app.waitFor(`/^Style: /.test(document.querySelector("dialog[open] h2")?.textContent ?? "")`, 3000));
+  await app.evaluate(`(() => { const f = document.querySelector('dialog[open] input[aria-label="Font"]'); f.value = "Georgia"; })()`);
+  await app.clickText("dialog[open] .btn", "OK");
+  const headingFonts = () => app.evaluate(`[...document.querySelectorAll('.doc p[data-style="Heading1"]')].map((p) => getComputedStyle(p).fontFamily.split(",")[0].replace(/"/g, ""))`);
+  check("every Heading 1 is in the new font", (await headingFonts()).length >= 6 && (await headingFonts()).every((f) => f === "Georgia"), JSON.stringify(await headingFonts()));
+
+  // Versions: saved twice, the first file is kept and can be restored.
+  await app.key("S", 83, CTRL);
+  await app.waitFor(`/Saved/.test(document.querySelector(".toasts").textContent)`, 8000);
+  await app.key("Home", 36, CTRL);
+  await app.type("Second version. ");
+  await app.key("S", 83, CTRL);
+  await sleep(1500);
+  await app.key("V", 86, ALT | SHIFT);
+  check("Alt+Shift+V lists the earlier versions", await app.waitFor(`document.querySelectorAll("dialog[open] .source-item").length === 2`, 5000), String(await app.count("dialog[open] .source-item")));
+  // The newest kept one is the file before "Second version" was typed.
+  await app.clickText("dialog[open] .source-item .btn", "Restore");
+  check("restoring one shows it, unsaved", await app.waitFor(`!window.__dw.body.state.doc.textContent.startsWith("Second version") && document.title.startsWith("•")`, 5000));
+  check("no errors in the app", app.errors.length === 0, app.errors.join("; "));
+});
+rmSync(versioned, { force: true });
+
+const round3Profile = mkdtempSync(join(tmpdir(), "duckwriter-smoke-r3-"));
+await session(null, 9591, async (app) => {
+  await app.evaluate(`localStorage.getItem("duckwriter.author") || localStorage.setItem("duckwriter.author", "Kari Nordmann")`);
+  await app.debugHandle();
+  // A template, in this unused window.
+  await app.key("T", 84, ALT | SHIFT);
+  await app.clickText(".menu .menu-item", "Scientific article");
+  check("Alt+Shift+T: a scientific article from the template", await app.waitFor(`document.querySelector('.doc p[data-style="Title"]')?.textContent === "Title of the article" && !!document.querySelector(".doc .bibliography")`, 5000));
+  await app.shoot("template");
+  // A numbered equation.
+  await app.clickText(".doc p", "Describe the analysis");
+  await app.key("End", 35);
+  await app.key("Enter", 13);
+  await app.key("E", 69, ALT | SHIFT);
+  check("Alt+Shift+E: a numbered equation, writing it straight away", await app.waitFor(`!!document.querySelector(".eq-editor") && document.activeElement?.classList.contains("eq-input")`, 3000));
+  await app.type("E = mc^2");
+  await app.key("Enter", 13);
+  const number = () => app.evaluate(`[...document.querySelectorAll(".doc td")].map((c) => c.textContent).join("|")`);
+  check("it is numbered (1) on the right", await app.waitFor(`[...document.querySelectorAll(".doc td")].some((c) => c.textContent === "(1)")`, 3000), await number());
+  // Show the text as if the changes were accepted.
+  await app.key("E", 69, CTRL | SHIFT);
+  await app.clickText(".doc p", "Funding and help");
+  await app.key("End", 35);
+  await app.type(" Thanks to all.");
+  const deleted = await app.evaluate(`document.querySelectorAll(".doc ins.tc-ins").length`);
+  await app.key("M", 77, ALT | SHIFT);
+  check("Alt+Shift+M shows the final text, without markup", deleted > 0 && (await app.evaluate(`getComputedStyle(document.querySelector(".doc ins.tc-ins")).textDecorationLine`)) === "none");
+  await app.key("M", 77, ALT | SHIFT);
+  check("and the original, without what was added", (await app.evaluate(`getComputedStyle(document.querySelector(".doc ins.tc-ins")).display`)) === "none");
+  await app.key("M", 77, ALT | SHIFT);
+  check("no errors in the app", app.errors.length === 0, app.errors.join("; "));
+}, { profileDir: round3Profile });
+removeFolder(round3Profile);
+
 // ---- writing together: two DuckWriters, three ways of connecting --------------------------------
 
 const relayPort = 8799;
@@ -1204,11 +1303,11 @@ for (const [method, place, ports] of [
       check(`${method}: no errors in either app`, kari.errors.length === 0 && ola.errors.length === 0, [...kari.errors, ...ola.errors].join("; "));
     }, { profileDir: otherProfile });
   }, { profileDir: kariProfile });
-  rmSync(kariProfile, { recursive: true, force: true });
-  rmSync(otherProfile, { recursive: true, force: true });
+  removeFolder(kariProfile);
+  removeFolder(otherProfile);
 }
 relay.kill();
-rmSync(liveFolder, { recursive: true, force: true });
+removeFolder(liveFolder);
 
 // ---- links ----------------------------------------------------------------------------------------
 
@@ -1335,7 +1434,7 @@ await session(sample("not-a-docx.docx"), 9435, async (app) => {
   check("a file that isn't a Word document gets a plain message", await app.waitFor(`/isn't a Word document/.test(document.querySelector(".toast.error")?.textContent ?? "")`, 5000));
 });
 
-rmSync(profile, { recursive: true, force: true });
+removeFolder(profile);
 if (shotsDir) console.log(`\n${shots} screenshots saved to ${shotsDir}`);
 console.log(failures ? `\n${failures} check(s) failed` : "\nAll checks passed");
 process.exit(failures ? 1 : 0);

@@ -43,7 +43,16 @@ export interface Source {
   xml: string | null;
 }
 
-export type CitationStyle = "APA" | "Harvard" | "IEEE";
+export type CitationStyle = "APA" | "Harvard" | "Chicago" | "IEEE" | "Vancouver";
+
+/** The styles, as offered in the Sources dialog. */
+export const CITATION_STYLES: { style: CitationStyle; label: string }[] = [
+  { style: "APA", label: "APA 7: (Smith & Jones, 2020)" },
+  { style: "Harvard", label: "Harvard: (Smith and Jones 2020)" },
+  { style: "Chicago", label: "Chicago author-date: (Smith and Jones 2020)" },
+  { style: "IEEE", label: "IEEE: [1]" },
+  { style: "Vancouver", label: "Vancouver: (1)" },
+];
 
 export interface Bibliography {
   /** The customXml part, or null until sources are first saved. */
@@ -61,6 +70,9 @@ const STYLES: Record<CitationStyle, { file: string; name: string }> = {
   APA: { file: "\\APASixthEditionOfficeOnline.xsl", name: "APA" },
   Harvard: { file: "\\HarvardAnglia2008OfficeOnline.xsl", name: "Harvard - Anglia" },
   IEEE: { file: "\\IEEE2006OfficeOnline.xsl", name: "IEEE" },
+  Chicago: { file: "\\ChicagoFifteenthEditionOfficeOnline.xsl", name: "Chicago" },
+  // Word has no Vancouver style; its numbered ISO 690 is the closest.
+  Vancouver: { file: "\\ISO690Nmerical.xsl", name: "ISO 690 - Numerical Reference" },
 };
 
 function text(el: Element | null | undefined, name: string): string {
@@ -80,7 +92,7 @@ export async function readBibliography(zip: JSZip): Promise<Bibliography> {
     if (root.localName !== "Sources") continue;
     bib.path = path;
     const styleName = root.getAttribute("StyleName") ?? root.getAttribute("SelectedStyle") ?? "";
-    bib.style = /ieee/i.test(styleName) ? "IEEE" : /harvard/i.test(styleName) ? "Harvard" : "APA";
+    bib.style = /ieee/i.test(styleName) ? "IEEE" : /harvard/i.test(styleName) ? "Harvard" : /chicago/i.test(styleName) ? "Chicago" : /numerical|vancouver/i.test(styleName) ? "Vancouver" : "APA";
     const serializer = new XMLSerializer();
     for (const el of Array.from(root.children).filter((c) => c.localName === "Source")) {
       const type: string = text(el, "SourceType");

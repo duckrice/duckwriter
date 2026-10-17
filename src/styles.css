@@ -2222,3 +2222,14 @@ kbd {
   font: 9pt/1 Calibri, "Segoe UI", sans-serif;
   font-variant-numeric: tabular-nums;
 }
+
+.style-checks {
+  display: flex;
+  gap: 12px;
+}
+
+.style-checks label {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+}

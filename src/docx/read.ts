@@ -176,6 +176,7 @@ export async function readDocx(bytes: Uint8Array): Promise<OpenedDocument> {
     imageSources,
     comments,
     bibliography: await readBibliography(zip),
+    styleChanges: new Map(),
     trackChanges,
     trackChangesSaved: trackChanges,
   };

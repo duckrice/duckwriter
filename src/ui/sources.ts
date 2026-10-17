@@ -4,7 +4,7 @@
 
 import { TextSelection } from "prosemirror-state";
 import type { EditorView } from "prosemirror-view";
-import { SOURCE_TYPES, emptySource, makeTag, parseBibtex, type CitationStyle, type Source, type SourceType } from "../docx/bibliography";
+import { CITATION_STYLES, SOURCE_TYPES, emptySource, makeTag, parseBibtex, type CitationStyle, type Source, type SourceType } from "../docx/bibliography";
 import { ensureStyles } from "../docx/builtins";
 import type { DocContext } from "../docx/model";
 import { h } from "../dom";
@@ -69,7 +69,7 @@ export async function lookUpDoi(doi: string): Promise<Source> {
 export function manageSources(view: EditorView, ctx: DocContext, afterwards?: () => void) {
   const bib = ctx.bibliography;
   const list = h("div", { class: "source-list", role: "listbox", "aria-label": "Sources" });
-  const style = h("select", { class: "tb-select", "aria-label": "Citation style" }, ...(["APA", "Harvard", "IEEE"] as CitationStyle[]).map((s) => h("option", { value: s }, s === "IEEE" ? "IEEE (numbered [1])" : s === "APA" ? "APA 7 (Author, year)" : "Harvard (Author year)"))) as HTMLSelectElement;
+  const style = h("select", { class: "tb-select", "aria-label": "Citation style" }, ...CITATION_STYLES.map((s) => h("option", { value: s.style }, s.label))) as HTMLSelectElement;
   style.value = bib.style;
   style.addEventListener("change", () => {
     bib.style = style.value as CitationStyle;

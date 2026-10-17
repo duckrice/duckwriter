@@ -65,11 +65,24 @@ export function formatCitation(c: Citation, bib: Bibliography, order: string[]):
     });
     return parts.map((p) => `[${p}]`).join(", ");
   }
+  if (bib.style === "Vancouver") {
+    const numbers = c.tags.map((t) => order.indexOf(t) + 1).sort((a, b) => a - b);
+    // Runs of three or more as a range: (1–3, 5).
+    const parts: string[] = [];
+    for (let i = 0; i < numbers.length; ) {
+      let j = i;
+      while (j + 1 < numbers.length && numbers[j + 1] === numbers[j] + 1) j++;
+      parts.push(numbers[i] === 0 ? "?" : j - i >= 2 ? `${numbers[i]}–${numbers[j]}` : numbers.slice(i, j + 1).join(", "));
+      i = j + 1;
+    }
+    return `(${parts.join(", ")}${c.page ? `, p. ${c.page}` : ""})`;
+  }
   const parts = found.map((s, i) => {
     if (!s) return `${c.tags[i]}?`;
     const who = authorsShort(s.authors, bib.style) || s.title;
     const year = s.year || "n.d.";
     const page = i === 0 && c.page ? `, ${/[–-]/.test(c.page) ? "pp." : "p."} ${c.page}` : "";
+    if (bib.style === "Chicago") return `${who} ${year}${i === 0 && c.page ? `, ${c.page}` : ""}`;
     return bib.style === "APA" ? `${who}, ${year}${page}` : `${who} ${year}${page}`;
   });
   return `(${parts.join("; ")})`;
@@ -112,6 +125,41 @@ export function formatEntry(s: Source, style: CitationStyle, n: number): Piece[]
   const pieces: Piece[] = [];
   const add = (text: string, italic = false) => text && pieces.push({ text, italic });
   const pages = s.pages.replace(/-+/g, "–");
+  if (style === "Vancouver") {
+    // Smith A, Jones B. Title. Journal. 2020;3(2):1–10. doi:…
+    const names = s.authors.map((a) => `${a.last} ${initials(a.first, false).replace(/\s+/g, "")}`.trim());
+    add(`${n}.\t`);
+    if (names.length) add(`${names.length > 6 ? `${names.slice(0, 6).join(", ")}, et al` : names.join(", ")}. `);
+    add(end(s.title));
+    if (s.type === "JournalArticle") add(` ${end(s.container)} ${s.year}${s.volume ? `;${s.volume}` : ""}${s.issue ? `(${s.issue})` : ""}${pages ? `:${pages}` : ""}.`);
+    else if (s.type === "BookSection" || s.type === "ConferenceProceedings") add(` In: ${end(s.container)} ${[s.city && s.publisher ? `${s.city}: ${s.publisher}` : s.publisher, s.year].filter(Boolean).join("; ")}.${pages ? ` p. ${pages}.` : ""}`);
+    else add(` ${[s.city && s.publisher ? `${s.city}: ${s.publisher}` : s.publisher, s.year].filter(Boolean).join("; ")}.`);
+    if (s.doi) add(` doi:${s.doi}`);
+    else if (s.url) add(` Available from: ${s.url}`);
+    return pieces;
+  }
+  if (style === "Chicago") {
+    // Smith, Anna, and Bob Jones. 2020. "Title." Journal 3 (2): 1–10. https://doi.org/…
+    const names = s.authors.map((a, i) => (i === 0 ? [a.last, a.first].filter(Boolean).join(", ") : [a.first, a.last].filter(Boolean).join(" ")));
+    const who = names.length <= 1 ? (names[0] ?? "") : names.length === 2 ? `${names[0]}, and ${names[1]}` : `${names.slice(0, -1).join(", ")}, and ${names[names.length - 1]}`;
+    if (who) add(`${end(who)} `);
+    add(`${s.year || "n.d."}. `);
+    if (s.type === "Book" || s.type === "Report" || s.type === "Misc") {
+      add(end(s.title), true);
+      add(` ${end([s.city, s.publisher].filter(Boolean).join(": "))}`.replace(/^ \.$/, ""));
+    } else {
+      add(`“${end(s.title)}”`);
+      if (s.container) {
+        add(s.type === "JournalArticle" ? " " : " In ");
+        add(s.container, true);
+      }
+      if (s.type === "JournalArticle") add(`${s.volume ? ` ${s.volume}` : ""}${s.issue ? ` (${s.issue})` : ""}${pages ? `: ${pages}` : ""}.`);
+      else add(`${pages ? `, ${pages}` : ""}.${s.publisher ? ` ${end([s.city, s.publisher].filter(Boolean).join(": "))}` : ""}`);
+    }
+    const link = doiLink(s);
+    if (link) add(` ${link}.`);
+    return pieces;
+  }
   if (style === "IEEE") {
     add(`[${n}]\t`);
     if (s.authors.length) add(`${namesIeee(s.authors)}, `);
@@ -167,7 +215,7 @@ export function bibliographyEntries(doc: Node, bib: Bibliography): Piece[][] {
   const cited = order.map((t) => bib.sources.find((s) => s.tag === t)).filter((s): s is Source => !!s);
   // Nothing cited yet: all the sources, so the list isn't empty.
   const list = cited.length ? cited : [...bib.sources];
-  if (bib.style !== "IEEE") list.sort((a, b) => (a.authors[0]?.last || a.title).localeCompare(b.authors[0]?.last || b.title) || a.year.localeCompare(b.year));
+  if (bib.style !== "IEEE" && bib.style !== "Vancouver") list.sort((a, b) => (a.authors[0]?.last || a.title).localeCompare(b.authors[0]?.last || b.title) || a.year.localeCompare(b.year));
   return list.map((s, i) => formatEntry(s, bib.style, i + 1));
 }
 

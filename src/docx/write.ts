@@ -85,6 +85,7 @@ export async function writeDocx(doc: Node, ctx: DocContext): Promise<Uint8Array>
   );
   await writeAddedStyles(ctx);
   await writeStyleNumbering(ctx);
+  await writeStyleChanges(ctx);
   updateSectPr(ctx);
   const writer = new BodyWriter(ctx);
   const body = writer.body(doc);
@@ -769,6 +770,70 @@ async function writeStyleNumbering(ctx: DocContext) {
   }
   ctx.zip.file(path, xml);
   ctx.styleNumbering.clear();
+}
+
+/** The order of a style's own elements. */
+const STYLE_ORDER = ["name", "aliases", "basedOn", "next", "link", "autoRedefine", "hidden", "uiPriority", "semiHidden", "unhideWhenUsed", "qFormat", "locked", "personal", "personalCompose", "personalReply", "rsid", "pPr", "rPr", "tblPr", "trPr", "tcPr", "tblStylePr"];
+
+/** Writes styles changed in DuckWriter (Modify style) into the document's styles. */
+async function writeStyleChanges(ctx: DocContext) {
+  if (!ctx.styleChanges.size) return;
+  const rel = [...ctx.rels.values(), ...ctx.addedRels.values()].find((r) => r.type.endsWith("/styles"));
+  if (!rel) return;
+  const path = documentDir(ctx) + rel.target.replace(/^\//, "");
+  let xml = await ctx.zip.file(path)?.async("string");
+  if (!xml) return;
+  const writer = new BodyWriter(ctx);
+  for (const [id, change] of ctx.styleChanges) {
+    const match = new RegExp(`<w:style\\b[^>]*w:styleId="${id.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}"[^>]*>([\\s\\S]*?)</w:style>`).exec(xml);
+    if (!match) continue;
+    const open = match[0].slice(0, match[0].indexOf(">") + 1);
+    const parts = splitElements(match[1]);
+    const inner = (name: string) => {
+      const el = parts.find((p) => localName(p) === name);
+      return el ? splitElements(el.replace(new RegExp(`^<w:${name}\\b[^>]*>|</w:${name}>$`, "g"), "").replace(new RegExp(`^<w:${name}\\b[^>]*/>$`), "")) : [];
+    };
+    // Run properties: the changed ones replace what was there.
+    const r = change.run;
+    const runMarks = [
+      r.font ? schema.marks.font.create({ family: r.font }) : null,
+      r.size !== undefined ? schema.marks.size.create({ pt: r.size }) : null,
+      r.bold !== undefined ? schema.marks.bold.create({ on: r.bold }) : null,
+      r.italic !== undefined ? schema.marks.italic.create({ on: r.italic }) : null,
+      r.underline !== undefined ? schema.marks.underline.create({ on: r.underline }) : null,
+      r.color ? schema.marks.color.create({ color: r.color }) : null,
+    ].filter((m): m is Mark => !!m);
+    const newRun = splitElements(writer.runProps(runMarks).replace(/^<w:rPr>|<\/w:rPr>$/g, ""));
+    const replaced = new Set(newRun.map(localName));
+    if (replaced.has("b")) replaced.add("bCs");
+    if (replaced.has("i")) replaced.add("iCs");
+    if (replaced.has("sz")) replaced.add("szCs");
+    const rPr = [...inner("rPr").filter((e) => !replaced.has(localName(e))), ...newRun];
+    // Paragraph properties: alignment and spacing.
+    const p = change.para;
+    const pPrParts = inner("pPr").filter((e) => !(p.align !== undefined && localName(e) === "jc"));
+    if (p.align !== undefined) pPrParts.push(tag("w:jc", { "w:val": p.align === "justify" ? "both" : p.align }));
+    if (p.spaceBefore !== undefined || p.spaceAfter !== undefined || p.lineSpacing !== undefined) {
+      const old = pPrParts.find((e) => localName(e) === "spacing") ?? "";
+      const attrs = new Map([...old.matchAll(/(w:\w+)="([^"]*)"/g)].map((m) => [m[1], m[2]]));
+      if (p.spaceBefore !== undefined) attrs.set("w:before", String(twips(p.spaceBefore)));
+      if (p.spaceAfter !== undefined) attrs.set("w:after", String(twips(p.spaceAfter)));
+      if (p.lineSpacing !== undefined) {
+        attrs.set("w:line", String(Math.round(p.lineSpacing * 240)));
+        attrs.set("w:lineRule", "auto");
+      }
+      const i = pPrParts.findIndex((e) => localName(e) === "spacing");
+      const spacing = tag("w:spacing", Object.fromEntries(attrs));
+      if (i >= 0) pPrParts[i] = spacing;
+      else pPrParts.push(spacing);
+    }
+    const others = parts.filter((e) => localName(e) !== "rPr" && localName(e) !== "pPr");
+    if (pPrParts.length) others.push(`<w:pPr>${ordered(pPrParts, PPR_ORDER)}</w:pPr>`);
+    if (rPr.length) others.push(`<w:rPr>${ordered(rPr, RPR_ORDER)}</w:rPr>`);
+    xml = xml.replace(match[0], `${open}${ordered(others, STYLE_ORDER)}</w:style>`);
+  }
+  ctx.zip.file(path, xml);
+  ctx.styleChanges.clear();
 }
 
 /** Says what kind of file each new picture is, so Word can open it. */

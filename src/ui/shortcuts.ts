@@ -1,3 +1,4 @@
+import { modifyStyle } from "./styles";
 import { insertBibliography, insertCitation, manageSources } from "./sources";
 import { copyFormatting, pasteFormatting, pastePlain } from "./painter";
 import { editLink } from "./links";
@@ -53,6 +54,8 @@ export interface ShortcutHost {
   toggleSpelling(): void;
   newComment(): void;
   cycleMarkup(): void;
+  versions(): void;
+  styleChanged(id: string): void;
   cycleLineNumbers(): void;
   goToPage(): void;
   share(): void;
@@ -65,7 +68,7 @@ export interface ShortcutHost {
   decideAllChanges(accept: boolean): void;
   /** The toolbar's boxes and menus. */
   focusBox(box: "font" | "size" | "style"): void;
-  openMenu(menu: "symbol" | "references" | "layout" | "textColor" | "highlight" | "table" | "open"): void;
+  openMenu(menu: "symbol" | "references" | "layout" | "textColor" | "highlight" | "table" | "open" | "newDoc"): void;
   toggleTableLines(): void;
   applyTextColor(): void;
   applyHighlight(): void;
@@ -99,9 +102,11 @@ export const SHORTCUTS: Shortcut[] = [
   { group: "Documents", label: "New document", keys: ["Ctrl+N"], run: (x) => x.newDocument(), everywhere: true },
   { group: "Documents", label: "Open", keys: ["Ctrl+O"], run: (x) => x.open(), everywhere: true },
   { group: "Documents", label: "Recent documents", keys: ["Alt+F"], run: (x) => x.openMenu("open"), everywhere: true },
+  { group: "Documents", label: "New from a template (article, report, letter, thesis chapter)", keys: ["Alt+Shift+T"], run: (x) => x.openMenu("newDoc"), everywhere: true },
   { group: "Documents", label: "Page setup: paper size, orientation, margins", keys: ["Alt+P"], run: (x) => x.pageSetup() },
   { group: "Documents", label: "Word count (of the selection too)", keys: ["Ctrl+Shift+G"], run: (x) => x.wordCount(), everywhere: true },
   { group: "Documents", label: "Go to page", keys: ["Ctrl+G"], run: (x) => x.goToPage() },
+  { group: "Documents", label: "Earlier versions of this document (kept on this computer)", keys: ["Alt+Shift+V"], run: (x) => x.versions(), everywhere: true },
   { group: "Documents", label: "Line numbers: through the document, from 1 on each page, or none", keys: ["Alt+Shift+L"], run: (x) => x.cycleLineNumbers() },
   { group: "Documents", label: "Headings beside the page (the navigation pane); arrows and Enter go to one", keys: ["Alt+Shift+N"], run: (x) => x.toggleNavigation(), everywhere: true },
   { group: "Documents", label: "Open a document by dropping it on the window", keys: ["Drag and drop"] },
@@ -160,6 +165,7 @@ export const SHORTCUTS: Shortcut[] = [
   // ---- paragraphs
   { group: "Paragraphs", label: "Choose a style (type it, Enter)", keys: ["Ctrl+Shift+S"], run: (x) => x.focusBox("style") },
   { group: "Paragraphs", label: "Normal text", keys: ["Ctrl+Shift+N"], run: cmd((c) => setStyle(c, null)) },
+  { group: "Paragraphs", label: "Change the paragraph's style (all paragraphs in it change)", keys: ["Alt+Shift+Y"], run: (x) => modifyStyle(x.view, x.ctx, (id) => x.styleChanged(id)) },
   { group: "Paragraphs", label: "Heading 1", keys: ["Ctrl+Alt+1"], run: heading(1) },
   { group: "Paragraphs", label: "Heading 2", keys: ["Ctrl+Alt+2"], run: heading(2) },
   { group: "Paragraphs", label: "Heading 3", keys: ["Ctrl+Alt+3"], run: heading(3) },
