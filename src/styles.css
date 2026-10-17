@@ -902,3 +902,77 @@ span.page-gap.inline {
 .fn-note.editing .fn-doc {
   padding-left: 0.6em;
 }
+
+/* ---- references: table of contents, captions, dialogs ---------------------------------- */
+
+.doc .toc {
+  margin: 6pt 0 12pt;
+  padding: 4pt 0;
+  border-radius: 3px;
+  text-indent: 0;
+}
+
+.doc .toc.ProseMirror-selectednode {
+  outline: 2px solid var(--accent);
+}
+
+.toc-title {
+  margin-bottom: 6pt;
+  color: #2f5496;
+  font-size: 16pt;
+}
+
+.toc-entry {
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+  margin-bottom: 3pt;
+  cursor: pointer;
+}
+
+.toc-entry:hover .toc-text {
+  text-decoration: underline;
+}
+
+.toc-entry.level-2 {
+  padding-left: 11pt;
+}
+
+.toc-entry.level-3 {
+  padding-left: 22pt;
+}
+
+.toc-dots {
+  flex: 1;
+  border-bottom: 1.5px dotted #000000;
+  transform: translateY(-3px);
+}
+
+.toc-empty {
+  color: #65707d;
+  font-style: italic;
+}
+
+.references-menu {
+  width: 320px;
+  max-height: 70vh;
+  overflow-y: auto;
+}
+
+.dialog-form {
+  display: grid;
+  gap: 10px;
+  margin: 10px 0 16px;
+}
+
+.dialog-form label {
+  display: grid;
+  grid-template-columns: 80px 1fr;
+  align-items: center;
+  gap: 8px;
+  color: var(--text);
+}
+
+.dialog-input {
+  width: 100%;
+}

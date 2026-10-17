@@ -23,6 +23,7 @@ import {
   toggleVertAlign,
 } from "./commands";
 import { changeListLevel, listPlugin, toggleList } from "./lists";
+import { fieldsPlugin } from "./fields";
 import { MathView } from "./mathview";
 import { paginationPlugin, type PaginationHooks } from "./pagination";
 import { editEquation, insertEquation } from "../ui/equation";
@@ -91,6 +92,7 @@ export function createState(doc: Node, ctx: () => DocContext, pages?: Omit<Pagin
       }),
       keymap(baseKeymap),
       listPlugin(ctx),
+      fieldsPlugin(),
       ...(pages ? [paginationPlugin({ context: ctx, ...pages })] : []),
       dropCursor({ color: "#0f766e", width: 2 }),
       gapCursor(),

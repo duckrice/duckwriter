@@ -172,6 +172,18 @@ async function session(files, port, run, { profileDir = profile } = {}) {
       await app.click(at[0], at[1]);
     },
     tool: (title) => app.clickOn(`.tb[title^="${title}"]`),
+    /** Clicks the first element matching `selector` whose text starts with `text`. */
+    async clickText(selector, text) {
+      const at = await app.evaluate(`(() => {
+        const el = [...document.querySelectorAll(${JSON.stringify(selector)})].find((e) => e.textContent.trim().startsWith(${JSON.stringify(text)}));
+        if (!el) return null;
+        el.scrollIntoView({ block: "nearest" });
+        const r = el.getBoundingClientRect();
+        return [r.left + r.width / 2, r.top + r.height / 2];
+      })()`);
+      if (!at) throw new Error(`No ${selector} reading "${text}"`);
+      await app.click(at[0], at[1]);
+    },
     count: (selector) => app.evaluate(`document.querySelectorAll(${JSON.stringify(selector)}).length`),
     async waitFor(expression, ms = 10000) {
       for (let t = 0; t < ms; t += 200) {
@@ -577,6 +589,87 @@ await session(sample("long.docx"), 9451, async (app) => {
   await app.shoot("footnote-near-page-end");
   check("no errors in the app", app.errors.length === 0, app.errors.join("; "));
 });
+
+// ---- captions, cross-references, numbered headings, table of contents -------------------------
+
+const withRefs = join(tmpdir(), "duckwriter-smoke-references.docx");
+rmSync(withRefs, { force: true });
+
+await session(null, 9460, async (app) => {
+  await app.debugHandle();
+  const setStyle = (id) => app.evaluate(`(() => { const s = document.querySelector(".style-select"); s.value = "${id}"; s.dispatchEvent(new Event("change")); })()`);
+  const references = () => app.clickOn(`.tb[title="References options"]`);
+  await app.type("Introduction");
+  await setStyle("Heading1");
+  await app.key("End", 35);
+  await app.key("Enter", 13);
+  await app.type("Some text about the experiment.");
+  await app.key("Enter", 13);
+  await app.type("Setup");
+  await setStyle("Heading2");
+  await app.key("End", 35);
+  await app.key("Enter", 13);
+  await app.type("Picture of the setup goes here.");
+
+  await references();
+  await app.clickText(".references-menu .menu-item", "Numbered headings");
+  const labels = () => app.evaluate(`[...document.querySelectorAll(".doc > .para")].map((p) => p.querySelector(".list-label")?.textContent ?? "")`);
+  check("numbered headings: 1, 1.1", JSON.stringify((await labels()).filter(Boolean)) === JSON.stringify(["1", "1.1"]), JSON.stringify(await labels()));
+
+  // A caption under the picture paragraph.
+  await references();
+  await app.clickText(".references-menu .menu-item", "Insert caption");
+  await app.waitFor(`!!document.querySelector("dialog[open] .dialog-form")`, 3000);
+  await app.type("The setup");
+  await app.clickOn("dialog[open] .btn.primary");
+  const captions = () => app.evaluate(`[...document.querySelectorAll('.doc > .para[data-style="Caption"]')].map((p) => p.textContent)`);
+  check("a caption is added and numbered", JSON.stringify(await captions()) === JSON.stringify(["Figure 1: The setup"]), JSON.stringify(await captions()));
+  check("it looks like a caption: small and italic", await app.evaluate(`(() => { const cs = getComputedStyle(document.querySelector('.doc > .para[data-style="Caption"]')); return cs.fontStyle === "italic" && cs.fontSize === "12px"; })()`));
+
+  // A second figure before the first renumbers both.
+  const intro = await app.center(".doc > .para", 1);
+  await app.click(intro[0], intro[1]);
+  await references();
+  await app.clickText(".references-menu .menu-item", "Insert caption");
+  await app.waitFor(`!!document.querySelector("dialog[open] .dialog-form")`, 3000);
+  await app.type("Overview");
+  await app.clickOn("dialog[open] .btn.primary");
+  check("captions renumber themselves", JSON.stringify(await captions()) === JSON.stringify(["Figure 1: Overview", "Figure 2: The setup"]), JSON.stringify(await captions()));
+
+  // "As Figure 2 shows": a cross-reference at the end of the text.
+  const last = await app.center(".doc > .para", 1);
+  await app.click(last[0], last[1]);
+  await app.key("End", 35);
+  await app.type(" As ");
+  await references();
+  await app.clickText(".references-menu .menu-item", "Figure 2: The setup");
+  await app.type(" shows, it works.");
+  const refText = await app.evaluate(`[...document.querySelectorAll(".doc .field")].find((f) => f.dataset.instr === "REF")?.textContent`);
+  check("a cross-reference shows the figure's number", refText === "Figure 2", String(refText));
+
+  // A table of contents at the top.
+  await app.key("Home", 36, CTRL);
+  await references();
+  await app.clickText(".references-menu .menu-item", "Table of contents");
+  check(
+    "the table of contents lists the headings with their page numbers",
+    await app.waitFor(`[...document.querySelectorAll(".toc-entry")].map((e) => e.textContent).join("|") === "1 Introduction1|1.1 Setup1"`, 5000),
+    await app.evaluate(`[...document.querySelectorAll(".toc-entry")].map((e) => e.textContent).join("|")`),
+  );
+  await app.shoot("references");
+  await app.evaluate(`(async () => {
+    const bytes = await window.__dw.build();
+    await window.__TAURI_INTERNALS__.invoke("write_file", bytes, { headers: { "x-path": encodeURIComponent(${JSON.stringify(withRefs)}) } });
+  })()`);
+  check("no errors in the app", app.errors.length === 0, app.errors.join("; "));
+});
+
+{
+  const zip = await JSZip.loadAsync(readFileSync(withRefs));
+  const xml = await zip.file("word/document.xml").async("string");
+  check("the saved file has Word fields for the captions, the reference and the contents", xml.includes("SEQ Figure") && xml.includes(" REF _Ref") && xml.includes(" TOC "));
+  rmSync(withRefs, { force: true });
+}
 
 await session(sample("not-a-docx.docx"), 9435, async (app) => {
   check("a file that isn't a Word document gets a plain message", await app.waitFor(`/isn't a Word document/.test(document.querySelector(".toast.error")?.textContent ?? "")`, 5000));

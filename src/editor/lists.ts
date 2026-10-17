@@ -67,7 +67,8 @@ export function listLabels(ctx: DocContext, doc: Node): Map<number, { label: str
       label = level.text.replace(/%(\d)/g, (_m, n: string) => {
         const i = Number(n) - 1;
         const l = levels[i];
-        return l ? formatNumber(count![i] ?? l.start, i === list.ilvl ? level.format : l.format) : "";
+        // A level that was skipped (Heading 3 straight after Heading 1) counts as 0, as in Word: 1.0.1.
+        return l ? formatNumber(count![i] ?? l.start - 1, i === list.ilvl ? level.format : l.format) : "";
       });
     }
     out.set(pos, { label, level });

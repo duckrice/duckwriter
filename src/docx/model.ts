@@ -41,6 +41,8 @@ export interface ParaProps {
   keepNext?: boolean;
   /** Always start on a new page. */
   pageBreakBefore?: boolean;
+  /** Outline level: 0 for a top-level heading … 8; 9 means body text. */
+  outline?: number;
 }
 
 export interface StyleDef {
@@ -159,6 +161,8 @@ export interface DocContext {
   footnotes: Footnotes;
   /** Style definitions (XML) to add to the document's styles when it is saved. */
   addedStyles: string[];
+  /** Styles whose list numbering changed (numbered headings), by style id: null switches it off. */
+  styleNumbering: Map<string, { numId: string; ilvl: number } | null>;
 }
 
 export const TWIPS_PER_POINT = 20;

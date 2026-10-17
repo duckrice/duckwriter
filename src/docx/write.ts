@@ -66,6 +66,7 @@ export async function writeDocx(doc: Node, ctx: DocContext): Promise<Uint8Array>
   await writeStories(ctx);
   await writeFootnotes(doc, ctx);
   await writeAddedStyles(ctx);
+  await writeStyleNumbering(ctx);
   updateSectPr(ctx);
   const writer = new BodyWriter(ctx);
   const body = writer.body(doc);
@@ -100,6 +101,23 @@ class BodyWriter {
     doc.forEach((node, _offset, index) => {
       if (node.type === schema.nodes.paragraph) out += this.paragraph(node, index === 0 ? lead : "");
       else if (node.type === schema.nodes.raw_block) out += node.attrs.xml;
+      else if (node.type === schema.nodes.toc) out += this.toc(node);
+    });
+    return out;
+  }
+
+  /** A table of contents as Word writes one: a TOC field spanning its entries, so Word can update it too. */
+  private toc(node: Node): string {
+    const p = this.ctx.page;
+    const tab = twips(p.width - p.marginLeft - p.marginRight);
+    const entries = node.attrs.entries as { level: number; text: string; page: number }[];
+    let out = `<w:p><w:pPr><w:pStyle w:val="TOCHeading"/></w:pPr><w:r><w:t xml:space="preserve">${escapeText(node.attrs.title)}</w:t></w:r></w:p>`;
+    const begin = '<w:r><w:fldChar w:fldCharType="begin"/></w:r><w:r><w:instrText xml:space="preserve"> TOC \\o "1-3" \\h \\z \\u </w:instrText></w:r><w:r><w:fldChar w:fldCharType="separate"/></w:r>';
+    const end = '<w:r><w:fldChar w:fldCharType="end"/></w:r>';
+    if (!entries.length) return `${out}<w:p>${begin}<w:r><w:t>No headings yet.</w:t></w:r>${end}</w:p>`;
+    entries.forEach((e, i) => {
+      const pPr = `<w:pPr><w:pStyle w:val="TOC${Math.min(e.level, 3)}"/><w:tabs><w:tab w:val="right" w:leader="dot" w:pos="${tab}"/></w:tabs></w:pPr>`;
+      out += `<w:p>${pPr}${i === 0 ? begin : ""}<w:r><w:t xml:space="preserve">${escapeText(e.text)}</w:t></w:r><w:r><w:tab/></w:r><w:r><w:t>${e.page}</w:t></w:r>${i === entries.length - 1 ? end : ""}</w:p>`;
     });
     return out;
   }
@@ -386,6 +404,35 @@ async function writeAddedStyles(ctx: DocContext) {
   }
   ctx.zip.file(path, xml);
   ctx.addedStyles = [];
+}
+
+/** Numbers (or stops numbering) paragraph styles, for numbered headings. */
+async function writeStyleNumbering(ctx: DocContext) {
+  if (!ctx.styleNumbering.size) return;
+  const rel = [...ctx.rels.values(), ...ctx.addedRels.values()].find((r) => r.type.endsWith("/styles"));
+  if (!rel) return;
+  const path = documentDir(ctx) + rel.target.replace(/^\//, "");
+  let xml = await ctx.zip.file(path)?.async("string");
+  if (!xml) return;
+  for (const [id, numbering] of ctx.styleNumbering) {
+    const re = new RegExp(`<w:style\\b[^>]*w:styleId="${id}"[^>]*>[\\s\\S]*?</w:style>`);
+    const match = re.exec(xml);
+    if (!match) continue;
+    let style = match[0];
+    const numPr = numbering ? `<w:numPr><w:ilvl w:val="${numbering.ilvl}"/><w:numId w:val="${numbering.numId}"/></w:numPr>` : "";
+    const pPr = /<w:pPr>([\s\S]*?)<\/w:pPr>|<w:pPr\/>/.exec(style);
+    if (pPr) {
+      const parts = splitElements(pPr[1] ?? "").filter((p) => localName(p) !== "numPr");
+      if (numPr) parts.push(numPr);
+      style = style.replace(pPr[0], parts.length ? `<w:pPr>${ordered(parts, PPR_ORDER)}</w:pPr>` : "");
+    } else if (numPr) {
+      const at = style.search(/<w:rPr\b|<w:tblPr\b|<\/w:style>/);
+      style = style.slice(0, at) + `<w:pPr>${numPr}</w:pPr>` + style.slice(at);
+    }
+    xml = xml.replace(match[0], style);
+  }
+  ctx.zip.file(path, xml);
+  ctx.styleNumbering.clear();
 }
 
 /** The order Word requires for the elements of section properties. */

@@ -20,6 +20,8 @@ export interface PageLayout {
   count: number;
   /** The footnotes at the bottom of each page, by id. */
   notes: string[][];
+  /** The page (from 0) each top-level paragraph starts on, by its position. */
+  pageOfBlock: Map<number, number>;
 }
 
 export interface PaginationHooks {
@@ -184,6 +186,7 @@ function layout(view: EditorView, hooks: PaginationHooks) {
   };
   const fits = (bottom: number, k: number, ids: string[]) => bottom <= contentBottom(k) - noteRoom(k, ids) + 0.5;
 
+  const pageOfBlock = new Map<number, number>();
   for (let i = 0; i < blocks.length; i++) {
     const b = blocks[i];
     const top = () => b.top + shift;
@@ -293,5 +296,13 @@ function layout(view: EditorView, hooks: PaginationHooks) {
   gaps.sort((a, b) => a.pos - b.pos || Number(a.inline) - Number(b.inline));
   view.dispatch(view.state.tr.setMeta(paginationKey, DecorationSet.create(view.state.doc, gaps.map(gapWidget))).setMeta("addToHistory", false));
   sheet.style.minHeight = "";
-  hooks.onLayout({ count, notes: Array.from({ length: count }, (_, k) => notesOn[k] ?? []) });
+  // Every gap before a block moved it down; its final top is its first line's page.
+  let moved = 0;
+  const gapsBefore = [...gaps].sort((a, b) => a.pos - b.pos);
+  let g = 0;
+  for (const b of blocks) {
+    while (g < gapsBefore.length && gapsBefore[g].pos <= b.pos) moved += gapsBefore[g++].height;
+    pageOfBlock.set(b.pos, pageOf(b.top + moved + 1));
+  }
+  hooks.onLayout({ count, notes: Array.from({ length: count }, (_, k) => notesOn[k] ?? []), pageOfBlock });
 }

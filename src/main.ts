@@ -1,5 +1,6 @@
 import "./styles.css";
 import type { Node } from "prosemirror-model";
+import { TextSelection } from "prosemirror-state";
 import type { EditorView } from "prosemirror-view";
 import { h } from "./dom";
 import type { DocContext } from "./docx/model";
@@ -11,6 +12,7 @@ import { PAGE_GAP, relayout, type PageLayout } from "./editor/pagination";
 import { stylesheetFor } from "./editor/stylesheet";
 import { baseName, isDesktop, onCloseRequested, pickDocument, pickSavePath, readPath, setTitle, startupFiles, writePath } from "./platform";
 import { Footnotes } from "./ui/footnotes";
+import { updateTocs } from "./ui/references";
 import { HeadersAndFooters } from "./ui/headers";
 import { icon } from "./ui/icons";
 import { Toolbar } from "./ui/toolbar";
@@ -48,10 +50,13 @@ class App {
     this.headers = new HeadersAndFooters(this, this.workspace);
     this.footnotes = new Footnotes(this);
     this.sheet.append(this.headers.layer, this.footnotes.layer);
-    // Clicking a footnote's mark in the text opens the note.
+    // Clicking a footnote's mark in the text opens the note; clicking a contents entry goes to the heading.
     this.sheet.addEventListener("click", (event) => {
-      const mark = (event.target as HTMLElement).closest<HTMLElement>(".doc .footnote-ref");
+      const target = event.target as HTMLElement;
+      const mark = target.closest<HTMLElement>(".doc .footnote-ref");
       if (mark?.dataset.id) this.footnotes.start(mark.dataset.id);
+      const entry = target.closest<HTMLElement>(".doc .toc-entry");
+      if (entry?.dataset.pos) this.goTo(Number(entry.dataset.pos));
     });
     const zoomOut = h("button", { type: "button", class: "status-button", title: "Zoom out", html: icon("zoomOut", 16), onclick: () => this.stepZoom(-1) });
     const zoomIn = h("button", { type: "button", class: "status-button", title: "Zoom in", html: icon("zoomIn", 16), onclick: () => this.stepZoom(1) });
@@ -100,6 +105,15 @@ class App {
     });
   }
 
+  /** Puts the cursor at the start of the paragraph at `pos` and shows it. */
+  goTo(pos: number) {
+    const view = this.body;
+    const at = Math.min(pos + 1, view.state.doc.content.size);
+    view.dispatch(view.state.tr.setSelection(TextSelection.near(view.state.doc.resolve(at))));
+    (view.nodeDOM(pos) as HTMLElement | null)?.scrollIntoView({ block: "start", behavior: "smooth" });
+    view.focus();
+  }
+
   insertFootnote() {
     this.headers.stop();
     this.footnotes.insert();
@@ -122,7 +136,8 @@ class App {
     this.name = name;
     this.savedDoc = doc;
     this.savedTitlePage = ctx.titlePage;
-    this.styleEl.textContent = `${stylesheetFor(ctx, ".sheet .doc")}\n${stylesheetFor(ctx, ".hf-doc")}`;
+    delete this.styleEl.dataset.key;
+    this.refreshStyles();
     const p = ctx.page;
     this.sheet.style.width = `${p.width}pt`;
     const state = createState(doc, () => this.ctx, { onLayout: (layout) => this.drawPages(layout), noteHeight: (id) => this.footnotes.height(id) });
@@ -152,9 +167,21 @@ class App {
     this.pageCount.textContent = `${layout.count} ${layout.count === 1 ? "page" : "pages"}`;
     this.headers.render(layout.count);
     this.footnotes.render(layout);
+    // After this layout, so the table of contents gets the page numbers just worked out.
+    queueMicrotask(() => updateTocs(this.body, this.ctx, layout));
+  }
+
+  /** The CSS for the document's styles; again whenever a style was added or changed. */
+  private refreshStyles() {
+    const key = `${this.ctx.styles.byId.size}|${this.ctx.addedStyles.length}|${this.ctx.styleNumbering.size}`;
+    if (this.styleEl.dataset.key === key && this.styleEl.dataset.doc === this.name) return;
+    this.styleEl.dataset.key = key;
+    this.styleEl.dataset.doc = this.name;
+    this.styleEl.textContent = `${stylesheetFor(this.ctx, ".sheet .doc")}\n${stylesheetFor(this.ctx, ".hf-doc")}`;
   }
 
   private changed(docChanged: boolean) {
+    this.refreshStyles();
     this.toolbar.update();
     setTitle(`${this.dirty ? "• " : ""}${this.name} – DuckWriter`);
     if (docChanged) {

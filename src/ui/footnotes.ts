@@ -25,7 +25,7 @@ export class Footnotes {
   readonly layer = h("div", { class: "fn-layer" });
   private measurer = h("div", { class: "fn-measure", "aria-hidden": "true" });
   private heights = new WeakMap<Node, number>();
-  private layout: PageLayout = { count: 1, notes: [[]] };
+  private layout: PageLayout = { count: 1, notes: [[]], pageOfBlock: new Map() };
   private editing: { id: string; view: EditorView } | null = null;
 
   constructor(private host: FootnoteHost) {

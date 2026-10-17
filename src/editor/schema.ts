@@ -75,6 +75,33 @@ export const schema = new Schema({
       },
     },
 
+    /**
+     * A table of contents, made from the headings. Its entries (text and page)
+     * are kept up to date as the text and the pages change.
+     */
+    toc: {
+      group: "block",
+      atom: true,
+      selectable: true,
+      attrs: { title: { default: "Contents" }, entries: { default: [] } },
+      toDOM(node): DOMOutputSpec {
+        const entries = node.attrs.entries as { level: number; text: string; page: number; pos: number }[];
+        return [
+          "div",
+          { class: "toc", title: "Table of contents — it updates by itself" },
+          ["div", { class: "toc-title" }, node.attrs.title],
+          ...entries.map((e): DOMOutputSpec => [
+            "div",
+            { class: `toc-entry level-${e.level}`, "data-pos": String(e.pos) },
+            ["span", { class: "toc-text" }, e.text],
+            ["span", { class: "toc-dots" }],
+            ["span", { class: "toc-page" }, String(e.page)],
+          ]),
+          ...(entries.length ? [] : [["div", { class: "toc-empty" }, "Headings will be listed here."] as DOMOutputSpec]),
+        ];
+      },
+    },
+
     text: { group: "inline" },
 
     hard_break: {

@@ -62,9 +62,27 @@ export async function readDocx(bytes: Uint8Array): Promise<OpenedDocument> {
   const reader = new BodyReader(prefixes, rels, themeFonts);
   const blocks: Node[] = [];
   let sectPr = "";
-  for (const el of children(body)) {
-    if (isW(el, "sectPr")) sectPr = rawXml(el, prefixes);
-    else blocks.push(...reader.block(el));
+  const bodyChildren = children(body);
+  for (let i = 0; i < bodyChildren.length; i++) {
+    const el = bodyChildren[i];
+    if (isW(el, "sectPr")) {
+      sectPr = rawXml(el, prefixes);
+      continue;
+    }
+    // A table of contents becomes one that keeps itself up to date.
+    const toc = tableOfContents(bodyChildren, i);
+    if (toc) {
+      let title = toc.title;
+      const last = blocks[blocks.length - 1];
+      if (!title && last?.type === schema.nodes.paragraph && /^TOCHeading$/i.test(last.attrs.style ?? "")) {
+        title = last.textContent;
+        blocks.pop();
+      }
+      blocks.push(schema.nodes.toc.create({ title: title || "Contents", entries: toc.entries }));
+      i = toc.end;
+      continue;
+    }
+    blocks.push(...reader.block(el));
   }
   if (!blocks.some((b) => b.type === schema.nodes.paragraph)) blocks.push(schema.nodes.paragraph.create());
 
@@ -132,6 +150,7 @@ export async function readDocx(bytes: Uint8Array): Promise<OpenedDocument> {
     titlePage: !!toggle(finalSectPr, "titlePg"),
     footnotes,
     addedStyles: [],
+    styleNumbering: new Map(),
   };
   return { doc: schema.nodes.doc.create(null, blocks), context };
 }
@@ -253,6 +272,8 @@ export function readParaProps(pPr: Element | null): ParaProps {
   if (keepNext !== null) out.keepNext = keepNext;
   const pageBreakBefore = toggle(pPr, "pageBreakBefore");
   if (pageBreakBefore !== null) out.pageBreakBefore = pageBreakBefore;
+  const outline = numAttr(child(pPr, "outlineLvl"), "val");
+  if (outline !== null) out.outline = outline;
   const numPr = child(pPr, "numPr");
   if (numPr) {
     const numId = attr(child(numPr, "numId"), "val");
@@ -606,6 +627,64 @@ class BodyReader {
     if (extra.length) add(schema.marks.runExtra.create({ xml: extra.map(this.raw).join("") }));
     return marks;
   }
+}
+
+interface TocFound {
+  /** Index of its last element among the body's children. */
+  end: number;
+  title: string;
+  entries: { level: number; text: string; page: number; pos: number }[];
+}
+
+/** A table of contents starting at body child `i`: Word's content control, or a TOC field across paragraphs. */
+function tableOfContents(siblings: Element[], i: number): TocFound | null {
+  const el = siblings[i];
+  const entriesOf = (paras: Element[]) =>
+    paras
+      .map((p) => {
+        const style = attr(child(child(p, "pPr"), "pStyle"), "val") ?? "";
+        const level = Number(/^TOC([1-9])$/i.exec(style)?.[1] ?? 0);
+        const text = tocText(p);
+        const tab = text.lastIndexOf("\t");
+        return { level, text: (tab >= 0 ? text.slice(0, tab) : text).trim(), page: Number(text.slice(tab + 1).trim()) || 0, pos: 0 };
+      })
+      .filter((e) => e.level && e.text);
+  if (isW(el, "sdt")) {
+    const gallery = el.getElementsByTagNameNS(NS.w, "docPartGallery")[0];
+    if (attr(gallery, "val") !== "Table of Contents") return null;
+    const paras = childrenNamed(child(el, "sdtContent"), "p");
+    const heading = paras.find((p) => /^TOCHeading$/i.test(attr(child(child(p, "pPr"), "pStyle"), "val") ?? ""));
+    return { end: i, title: heading ? tocText(heading).trim() : "Contents", entries: entriesOf(paras) };
+  }
+  if (!isW(el, "p")) return null;
+  const instr = Array.from(el.getElementsByTagNameNS(NS.w, "instrText")).map((t) => t.textContent ?? "").join("");
+  if (!/^\s*TOC\b/.test(instr)) return null;
+  // The field ends in this paragraph or a later one.
+  for (let j = i; j < siblings.length; j++) {
+    if (!isW(siblings[j], "p")) return null;
+    const ends = Array.from(siblings[j].getElementsByTagNameNS(NS.w, "fldChar")).some((f) => attr(f, "fldCharType") === "end");
+    if (ends) return { end: j, title: "", entries: entriesOf(siblings.slice(i, j + 1)) };
+  }
+  return null;
+}
+
+/** The visible text of a contents entry: field instructions left out, tabs kept. */
+function tocText(p: Element): string {
+  let out = "";
+  let inInstr = 0;
+  const walk = (node: Element) => {
+    for (const c of children(node)) {
+      if (isW(c, "fldChar")) {
+        const type = attr(c, "fldCharType");
+        if (type === "begin") inInstr++;
+        else if (type === "separate" || type === "end") inInstr = Math.max(0, inInstr - (type === "separate" ? 1 : 0));
+      } else if (isW(c, "t") && !inInstr) out += c.textContent ?? "";
+      else if (isW(c, "tab") && !inInstr) out += "\t";
+      else if (!isW(c, "instrText")) walk(c);
+    }
+  };
+  walk(p);
+  return out;
 }
 
 /** Joins neighbouring text with the same formatting into one text node. */

@@ -23,6 +23,7 @@ import {
 import { changeListLevel, kindOf, listOf, toggleList } from "../editor/lists";
 import { schema } from "../editor/schema";
 import { insertEquation } from "./equation";
+import { captionDialog, headingsNumbered, insertReference, insertToc, referenceTargets, toggleHeadingNumbers } from "./references";
 import { icon, type IconName } from "./icons";
 
 export interface ToolbarHost {
@@ -138,6 +139,7 @@ export class Toolbar {
         this.button("pageBreak", "Page break (Ctrl+Enter)", () => this.run(insertPageBreak())),
         this.button("header", "Header and footer", () => this.host.editHeader()),
         this.button("footnote", "Footnote (Ctrl+Alt+F)", () => this.host.insertFootnote()),
+        this.splitButton("references", "References", null, () => this.referencesMenu(), () => this.referencesMenu()),
       ),
       fonts,
       sizes,
@@ -244,6 +246,32 @@ export class Toolbar {
       this.run(setMark(schema.marks.highlight, { color: name }));
     };
     return h("div", { class: "menu" }, this.swatches(HIGHLIGHT_CHOICES, (c) => HIGHLIGHTS[c], pick, (c) => c.replace(/([A-Z])/g, " $1").toLowerCase()), none);
+  }
+
+  /** Captions, cross-references, numbered headings and the table of contents. */
+  private referencesMenu(): HTMLElement {
+    const { ctx } = this.host;
+    const body = this.host.view;
+    const item = (label: string, onClick: () => void, checked = false) => {
+      const b = h("button", { type: "button", class: `menu-item${checked ? " checked" : ""}` }, label);
+      b.addEventListener("click", () => {
+        this.closeMenu();
+        onClick();
+      });
+      return b;
+    };
+    const targets = referenceTargets(ctx, body.state.doc);
+    return h(
+      "div",
+      { class: "menu references-menu" },
+      item("Insert caption…", () => captionDialog(body, ctx)),
+      item("Table of contents", () => insertToc(body, ctx)),
+      item(headingsNumbered(ctx) ? "✓ Numbered headings" : "Numbered headings (1, 1.1, 1.1.1)", () => toggleHeadingNumbers(body, ctx)),
+      item("Footnote (Ctrl+Alt+F)", () => this.host.insertFootnote()),
+      h("div", { class: "menu-separator" }),
+      h("div", { class: "menu-heading" }, targets.length ? "Refer to…" : "Refer to… (add a caption or heading first)"),
+      ...targets.map((t) => item(t.label.length > 60 ? `${t.label.slice(0, 57)}…` : t.label, () => insertReference(body, t))),
+    );
   }
 
   private symbolMenu(): HTMLElement {
