@@ -36,7 +36,13 @@ fn open_url(url: String) -> Result<(), String> {
 /// be created off-screen, so it's created hidden, moved, then shown without focus.
 fn build_window(builder: tauri::WebviewWindowBuilder<'_, tauri::Wry, tauri::AppHandle>) -> tauri::Result<()> {
     if std::env::var_os("DUCKWRITER_TEST_OFFSCREEN").is_some() {
-        let window = builder.visible(false).focused(false).skip_taskbar(true).build()?;
+        // The page knows it is being tested, so it never goes full screen (onto the real screen).
+        let window = builder
+            .visible(false)
+            .focused(false)
+            .skip_taskbar(true)
+            .initialization_script("window.__DUCKWRITER_TEST = true;")
+            .build()?;
         window.set_position(tauri::PhysicalPosition::new(-20000, -20000))?;
         window.show()?;
     } else {

@@ -2295,3 +2295,40 @@ kbd {
 .ribbon-panel [data-tab][hidden] {
   display: none;
 }
+
+/* ---- focus mode and the dark page ---------------------------------------------------------- */
+
+.focus-mode .toolbar,
+.focus-mode .statusbar,
+.focus-mode .nav-pane,
+.focus-mode .comments-pane {
+  display: none !important;
+}
+
+.focus-mode .workspace {
+  padding-top: 40px;
+}
+
+/* The page turned dark by inverting it; pictures are turned back, so they look as they are. */
+.sheet.dark-page .pages,
+.sheet.dark-page .doc,
+.sheet.dark-page .hf-layer,
+.sheet.dark-page .line-numbers {
+  filter: invert(0.92) hue-rotate(180deg);
+}
+
+.sheet.dark-page .doc img,
+.sheet.dark-page .hf-layer img {
+  filter: invert(1) hue-rotate(180deg);
+}
+
+@media print {
+  .sheet.dark-page .pages,
+  .sheet.dark-page .doc,
+  .sheet.dark-page .hf-layer,
+  .sheet.dark-page .line-numbers,
+  .sheet.dark-page .doc img,
+  .sheet.dark-page .hf-layer img {
+    filter: none !important;
+  }
+}

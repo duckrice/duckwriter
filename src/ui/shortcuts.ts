@@ -54,6 +54,10 @@ export interface ShortcutHost {
   toggleSpelling(): void;
   newComment(): void;
   cycleMarkup(): void;
+  exportAs(format: "markdown" | "html" | "text"): void;
+  sortRows(): void;
+  toggleFocus(): void;
+  toggleDarkPage(): void;
   versions(): void;
   styleChanged(id: string): void;
   cycleLineNumbers(): void;
@@ -109,6 +113,10 @@ export const SHORTCUTS: Shortcut[] = [
   { group: "Documents", label: "Page setup: paper size, orientation, margins", keys: ["Alt+P"], run: (x) => x.pageSetup() },
   { group: "Documents", label: "Word count (of the selection too)", keys: ["Ctrl+Shift+G"], run: (x) => x.wordCount(), everywhere: true },
   { group: "Documents", label: "Go to page", keys: ["Ctrl+G"], run: (x) => x.goToPage() },
+  { group: "Documents", label: "Save a copy as a web page (HTML)", keys: ["Ctrl+Alt+Shift+W"], run: (x) => x.exportAs("html"), everywhere: true },
+  { group: "Documents", label: "Save a copy as Markdown", keys: ["Ctrl+Alt+Shift+K"], run: (x) => x.exportAs("markdown"), everywhere: true },
+  { group: "Documents", label: "Focus mode: only the page, full screen (Esc to leave)", keys: ["F11"], run: (x) => x.toggleFocus(), everywhere: true },
+  { group: "Documents", label: "Dark page, for writing at night", keys: ["Alt+Shift+D"], run: (x) => x.toggleDarkPage(), everywhere: true },
   { group: "Documents", label: "Earlier versions of this document (kept on this computer)", keys: ["Alt+Shift+V"], run: (x) => x.versions(), everywhere: true },
   { group: "Documents", label: "Line numbers: through the document, from 1 on each page, or none", keys: ["Alt+Shift+L"], run: (x) => x.cycleLineNumbers() },
   { group: "Documents", label: "Headings beside the page (the navigation pane); arrows and Enter go to one", keys: ["Alt+Shift+N"], run: (x) => x.toggleNavigation(), everywhere: true },
@@ -241,6 +249,7 @@ export const SHORTCUTS: Shortcut[] = [
   { group: "Tables", label: "Split a merged cell", keys: ["Ctrl+Alt+Shift+N"], run: plain(TABLE_COMMANDS.split) },
   { group: "Tables", label: "Header row, on or off", keys: ["Ctrl+Alt+Shift+R"], run: plain(TABLE_COMMANDS.headerRow) },
   { group: "Tables", label: "Lines around the cells, on or off", keys: ["Ctrl+Alt+Shift+L"], run: (x) => x.toggleTableLines() },
+  { group: "Tables", label: "Sort the rows by the cursor's column (again: the other way)", keys: ["Alt+Shift+O"], run: (x) => x.sortRows() },
 
   // ---- equations, headers, notes
   { group: "Equations, headers and notes", label: "Finish the equation", keys: ["Enter"] },

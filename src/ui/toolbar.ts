@@ -32,7 +32,7 @@ import { changeListLevel, kindOf, listOf, toggleList } from "../editor/lists";
 import { schema } from "../editor/schema";
 import { insertEquation, insertNumberedEquation } from "./equation";
 import { choosePicture, setSnap, snapOn } from "./pictures";
-import { TABLE_COMMANDS, insertTable, isInTable, setTableLines, tableGrid } from "./tables";
+import { TABLE_COMMANDS, insertTable, isInTable, setTableLines, tableGrid, sortTable, textToTable } from "./tables";
 import { captionDialog, headingsNumbered, insertReference, insertToc, referenceTargets, toggleHeadingNumbers } from "./references";
 import { icon, type IconName } from "./icons";
 
@@ -40,6 +40,8 @@ export interface ToolbarHost {
   readonly view: EditorView;
   readonly body: EditorView;
   cycleLineNumbers(): void;
+  toggleFocus(): void;
+  toggleDarkPage(): void;
   readonly ctx: DocContext;
   /** Switches the line grid on or off. */
   setLineGrid(on: boolean): void;
@@ -61,6 +63,7 @@ export interface ToolbarHost {
   share(): void;
   openRecent(path: string): void;
   versions(): void;
+  exportAs(format: "markdown" | "html" | "text"): void;
   newFromTemplate(kind: import("../templates").TemplateKind): void;
   pageSetup(): void;
   toggleTracking(): void;
@@ -157,6 +160,7 @@ export class Toolbar {
       textButton("Merge", "Merge the selected cells (Ctrl+Alt+Shift+M)", () => this.run(t.merge)),
       textButton("Split", "Split the cell (Ctrl+Alt+Shift+N)", () => this.run(t.split)),
       textButton("Header row", "First row as a header, repeated on each page in Word (Ctrl+Alt+Shift+R)", () => this.run(t.headerRow)),
+      textButton("Sort", "Sort the rows by this column: A to Z, again for Z to A (Alt+Shift+O)", () => this.sortRows()),
       textButton("Lines", "Lines around the cells, on or off (Ctrl+Alt+Shift+L)", () => this.toggleTableLines()),
       this.splitButton("shading", "Cell shading", null, () => this.shadingMenu(), () => this.shadingMenu()),
       textButton("Delete table", "Delete the whole table", () => this.run(t.deleteTable)),
@@ -170,7 +174,7 @@ export class Toolbar {
       this.button("redo", "Redo (Ctrl+Y)", () => this.run(redo)),
       this.button("find", "Find and replace (Ctrl+F, Ctrl+H)", () => this.host.find(false)),
       this.button("print", "Print (Ctrl+P)", () => this.host.print()),
-      this.button("pdf", "Save as PDF (Ctrl+Alt+Shift+P)", () => this.host.savePdf()),
+      this.splitButton("pdf", "Save as PDF (Ctrl+Alt+Shift+P)", null, () => this.host.savePdf(), () => this.exportMenu()),
       this.button("keyboard", "Keyboard shortcuts (F1)", () => this.host.showShortcuts()),
     );
     quick.classList.add("ribbon-quick");
@@ -279,6 +283,8 @@ export class Toolbar {
           group(
             textButton("Page setup…", "Paper size, orientation, margins (Alt+P)", () => this.host.pageSetup()),
             textButton("Line numbers", "Line numbers: through the document, from 1 on each page, or none (Alt+Shift+L)", () => this.host.cycleLineNumbers()),
+            textButton("Focus mode", "Only the page, full screen (F11; Esc to leave)", () => this.host.toggleFocus()),
+            textButton("Dark page", "A dark page for writing at night; printing is unchanged (Alt+Shift+D)", () => this.host.toggleDarkPage()),
             this.splitButton("layout", "Layout", null, () => this.layoutMenu(), () => this.layoutMenu()),
           ),
         ],
@@ -495,10 +501,29 @@ export class Toolbar {
   }
 
   private tableMenu(): HTMLElement {
-    return tableGrid((rows, cols) => {
+    const grid = tableGrid((rows, cols) => {
       this.closeMenu();
       insertTable(this.host.view, this.host.ctx, rows, cols);
     });
+    grid.append(
+      h("div", { class: "menu-separator" }),
+      this.simpleItem("Convert text to a table (lines with tabs or commas)", () => {
+        if (!textToTable(this.host.ctx)(this.host.view.state, this.host.view.dispatch)) this.toastHere("Select the lines to make into a table first.");
+        this.host.view.focus();
+      }),
+    );
+    return grid;
+  }
+
+  /** Sorts the rows of the table the cursor is in, saying why not when it can't. */
+  sortRows() {
+    const { view } = this.host;
+    if (!sortTable()(view.state, view.dispatch)) this.toastHere("Put the cursor in the column to sort by. (A table with merged cells can't be sorted.)");
+    view.focus();
+  }
+
+  private toastHere(text: string) {
+    this.el.dispatchEvent(new CustomEvent("duckwriter-toast", { bubbles: true, detail: text }));
   }
 
   private shadingMenu(): HTMLElement {
@@ -555,7 +580,7 @@ export class Toolbar {
       h("div", { class: "menu-hint" }, "Paper size, upright or sideways, and margins."),
       h("div", { class: "menu-separator" }),
       auto,
-      h("div", { class: "menu-hint" }, "Web and e-mail addresses become links; \"1. \" or \"- \" at the start of a paragraph starts a list."),
+      h("div", { class: "menu-hint" }, "Web and e-mail addresses become links; \"1. \" or \"- \" at the start of a paragraph starts a list; \\alpha becomes α and -> becomes →."),
       h("div", { class: "menu-separator" }),
       h("div", { class: "menu-title" }, "Line numbers (Alt+Shift+L)"),
       this.simpleItem("None", () => this.host.setLineNumbers(null), !this.host.ctx.page.lineNumbers),
@@ -567,6 +592,18 @@ export class Toolbar {
       h("div", { class: "menu-separator" }),
       lines,
       h("div", { class: "menu-hint" }, "Every line of text sits on the same evenly spaced lines, on every page, as in Word's document grid."),
+    );
+  }
+
+  /** Saving a copy in another format. */
+  private exportMenu(): HTMLElement {
+    return h(
+      "div",
+      { class: "menu" },
+      this.simpleItem("PDF (Ctrl+Alt+Shift+P)", () => this.host.savePdf()),
+      this.simpleItem("Web page (.html), with equations", () => this.host.exportAs("html")),
+      this.simpleItem("Markdown (.md)", () => this.host.exportAs("markdown")),
+      this.simpleItem("Plain text (.txt)", () => this.host.exportAs("text")),
     );
   }
 

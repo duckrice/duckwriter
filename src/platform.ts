@@ -17,6 +17,11 @@ export interface OpenedFile {
 }
 
 const DOCX_FILTER = [{ name: "Word document", extensions: ["docx"] }];
+const OPEN_FILTERS = [
+  { name: "Documents", extensions: ["docx", "md", "markdown", "html", "htm", "txt"] },
+  { name: "Word document", extensions: ["docx"] },
+  { name: "Markdown, web page or text", extensions: ["md", "markdown", "html", "htm", "txt"] },
+];
 export const DOCX_MIME = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
 
 export function baseName(path: string): string {
@@ -37,13 +42,13 @@ export async function readPath(path: string): Promise<OpenedFile> {
 
 export async function pickDocument(): Promise<OpenedFile | null> {
   if (isDesktop) {
-    const path = await open({ multiple: false, directory: false, filters: DOCX_FILTER });
+    const path = await open({ multiple: false, directory: false, filters: OPEN_FILTERS });
     return path ? readPath(path) : null;
   }
   return new Promise((resolve) => {
     const input = document.createElement("input");
     input.type = "file";
-    input.accept = `${DOCX_MIME},.docx`;
+    input.accept = `${DOCX_MIME},.docx,.md,.markdown,.html,.htm,.txt`;
     input.onchange = async () => {
       const file = input.files?.[0];
       resolve(file ? { name: file.name, path: null, bytes: new Uint8Array(await file.arrayBuffer()) } : null);
@@ -83,6 +88,14 @@ export async function pickPdfPath(suggested: string): Promise<string | null> {
   return /\.pdf$/i.test(path) ? path : `${path}.pdf`;
 }
 
+/** Asks where to save a copy in another format; returns null if cancelled. */
+export async function pickExportPath(suggested: string, name: string, ext: string): Promise<string | null> {
+  if (!isDesktop) return suggested;
+  const path = await save({ defaultPath: suggested, filters: [{ name, extensions: [ext] }] });
+  if (!path) return null;
+  return path.toLowerCase().endsWith(`.${ext}`) ? path : `${path}.${ext}`;
+}
+
 /** Asks where to save; returns null if cancelled. In the browser there is nothing to ask. */
 export async function pickSavePath(suggested: string): Promise<string | null> {
   if (!isDesktop) return suggested;
@@ -118,6 +131,19 @@ export function windowOpening(): string | undefined {
 
 export async function startupFiles(): Promise<string[]> {
   return isDesktop ? invoke<string[]>("startup_files") : [];
+}
+
+/** Full screen for focus mode (in a browser: the page's own full screen). */
+export async function setFullscreen(on: boolean) {
+  // A test window stays off-screen.
+  if ((window as { __DUCKWRITER_TEST?: boolean }).__DUCKWRITER_TEST) return;
+  try {
+    if (isDesktop) await getCurrentWindow().setFullscreen(on);
+    else if (on) await document.documentElement.requestFullscreen();
+    else if (document.fullscreenElement) await document.exitFullscreen();
+  } catch {
+    // Without full screen, focus mode still hides the rest.
+  }
 }
 
 export function setTitle(title: string) {

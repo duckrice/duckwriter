@@ -1257,6 +1257,64 @@ await session(null, 9591, async (app) => {
 }, { profileDir: round3Profile });
 removeFolder(round3Profile);
 
+// ---- round 4: ribbon, maths shorthand, focus mode, tables, Markdown and HTML -----------------------
+
+const markdownIn = join(tmpdir(), "duckwriter-smoke-notes.md");
+const htmlOut = join(tmpdir(), "duckwriter-smoke-notes.html");
+writeFileSync(markdownIn, "# Lab notes\n\n## Results\n\nThe angle was measured.\n\n- first\n- second\n\n| Run | Rate |\n| --- | --- |\n| 2 | 0.7 |\n| 1 | 0.5 |\n");
+rmSync(htmlOut, { force: true });
+
+await session(markdownIn, 9592, async (app) => {
+  await app.debugHandle();
+  const styles = () => app.evaluate(`[...document.querySelectorAll(".doc > p")].map((p) => p.dataset.style ?? "").join(",")`);
+  check("a Markdown file opens as a document, with its title, headings, list and table", await app.waitFor(`document.querySelector('.doc p[data-style="Title"]')?.textContent === "Lab notes" && !!document.querySelector(".doc table") && document.querySelectorAll(".doc .list-label").length === 2`, 5000), await styles());
+  check("and is a new Word document", await app.evaluate(`document.title.includes("duckwriter-smoke-notes.docx")`));
+
+  // Maths shorthand while typing.
+  await app.clickText(".doc p", "The angle");
+  await app.key("End", 35);
+  await app.type(" It was \\alpha");
+  await app.type(" ");
+  await app.type("->");
+  await app.type(" ");
+  await app.type("done ");
+  const sentence = () => app.evaluate(`[...document.querySelectorAll(".doc p")].find((p) => p.textContent.startsWith("The angle")).textContent`);
+  check("\\alpha and -> become α and → as you type", (await sentence()) === "The angle was measured. It was α → done ", await sentence());
+
+  // Sorting the table by its first column.
+  // The cursor in the first column's "2".
+  await app.evaluate(`(() => { const v = window.__dw.body; let at = -1; v.state.doc.descendants((n, p) => { if (at < 0 && n.isText && n.text === "2") at = p; }); v.dispatch(v.state.tr.setSelection(v.state.selection.constructor.create(v.state.doc, at))); v.focus(); })()`);
+  await app.key("O", 79, ALT | SHIFT);
+  const runs = () => app.evaluate(`[...document.querySelectorAll(".doc table tr")].map((r) => r.cells[0].textContent).join(",")`);
+  check("Alt+Shift+O sorts the table by the cursor's column", (await runs()) === "Run,1,2", await runs());
+
+  // The ribbon: Alt+3 shows References.
+  await app.key("3", 51, ALT);
+  check("Alt+3 shows the References tab", await app.evaluate(`document.querySelector(".ribbon-tab.active").textContent === "References" && !!document.querySelector('.ribbon-panel [data-tab="references"]:not([hidden]) .tb-text')`));
+  await app.key("1", 49, ALT);
+
+  // Focus mode and the dark page.
+  await app.key("F11", 122);
+  check("F11: focus mode hides everything but the page", await app.evaluate(`getComputedStyle(document.querySelector(".toolbar")).display === "none" && getComputedStyle(document.querySelector(".statusbar")).display === "none"`));
+  await app.key("Escape", 27);
+  check("Esc leaves it", await app.evaluate(`getComputedStyle(document.querySelector(".toolbar")).display !== "none"`));
+  await app.key("D", 68, ALT | SHIFT);
+  check("Alt+Shift+D: a dark page", await app.evaluate(`document.querySelector(".sheet").classList.contains("dark-page") && getComputedStyle(document.querySelector(".doc")).filter.includes("invert")`));
+  await app.shoot("dark-page");
+  await app.key("D", 68, ALT | SHIFT);
+
+  // A copy as a web page.
+  await app.evaluate(`window.__dw.exportTo("html", ${JSON.stringify(htmlOut)})`);
+  check("saving a copy as a web page", await app.waitFor(`/Saved duckwriter-smoke-notes.html/.test(document.querySelector(".toasts").textContent)`, 5000));
+  check("no errors in the app", app.errors.length === 0, app.errors.join("; "));
+});
+{
+  const html = readFileSync(htmlOut, "utf8");
+  check("the web page has the title, the list and the table", html.includes("<h1>Lab notes</h1>") && html.includes("<li>first</li>") && /<table><tr><th>.*Run/.test(html));
+}
+rmSync(markdownIn, { force: true });
+rmSync(htmlOut, { force: true });
+
 // ---- writing together: two DuckWriters, three ways of connecting --------------------------------
 
 const relayPort = 8799;

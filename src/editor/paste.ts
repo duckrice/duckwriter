@@ -51,7 +51,7 @@ export function flattenPastedLists(html: string): string {
 }
 
 /** Pasted list paragraphs join one new list of each kind in the document. */
-function realLists(fragment: Fragment, ctx: DocContext, made: Record<string, string>): Fragment {
+export function realLists(fragment: Fragment, ctx: DocContext, made: Record<string, string>): Fragment {
   const out: Node[] = [];
   fragment.forEach((node) => {
     const numId = node.type === schema.nodes.paragraph ? (node.attrs.numId as string | null) : null;

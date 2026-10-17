@@ -9,6 +9,7 @@ import type { DocContext } from "../docx/model";
 import { listOf, toggleList } from "./lists";
 import { withoutLink } from "./commands";
 import { schema } from "./schema";
+import { SYMBOLS } from "../math/ast";
 
 const KEY = "duckwriter.autoformat";
 
@@ -49,6 +50,41 @@ export function linkTypedAddress(state: EditorState, ctx: DocContext): Transacti
   return state.tr.addMark(start, end, schema.marks.link.create({ href })).addMark(start, end, schema.marks.charStyle.create({ id: "Hyperlink" }));
 }
 
+/** Arrows and signs typed with ordinary keys. */
+const SHORTHAND: [string, string][] = [
+  ["<->", "↔"],
+  ["<=>", "⇔"],
+  ["->", "→"],
+  ["<-", "←"],
+  ["=>", "⇒"],
+  ["<=", "≤"],
+  [">=", "≥"],
+  ["!=", "≠"],
+  ["+-", "±"],
+  ["~=", "≈"],
+];
+
+/**
+ * Maths shorthand in the text, as typed is finished (a space or punctuation
+ * after it): \alpha → α, \infty → ∞, -> → →, <= → ≤, +- → ±.
+ */
+export function mathShorthand(state: EditorState, typed: string): Transaction | null {
+  const { $from, empty } = state.selection;
+  if (!empty || !$from.parent.isTextblock || !/^[\s.,;:!?)\]]$/.test(typed)) return null;
+  // Not inside an equation's own text or code-like runs; only plain text before the cursor.
+  const before = $from.parent.textBetween(0, $from.parentOffset, undefined, "\uFFFC");
+  const named = /\\([A-Za-z]+)$/.exec(before);
+  if (named && SYMBOLS[named[1]]) return state.tr.insertText(SYMBOLS[named[1]], $from.pos - named[0].length, $from.pos);
+  for (const [from, to] of SHORTHAND) {
+    if (!before.endsWith(from)) continue;
+    // Only between words or numbers, not as part of something longer ("-->" or "<!--").
+    const prev = before[before.length - from.length - 1];
+    if (prev && !/[\s\p{L}\p{N})]/u.test(prev)) return null;
+    return state.tr.insertText(to, $from.pos - from.length, $from.pos);
+  }
+  return null;
+}
+
 /** "1." or "-" typed at the start of a paragraph, then a space: a list. */
 function startList(view: EditorView, ctx: DocContext): boolean {
   const { state } = view;
@@ -66,6 +102,14 @@ export function autoFormatPlugin(ctx: () => DocContext) {
   return new Plugin({
     props: {
       handleTextInput(view, from, to, text) {
+        if (autoFormatOn()) {
+          const math = mathShorthand(view.state, text);
+          if (math) {
+            const at = math.mapping.map(from);
+            view.dispatch(math.insertText(text, at, at + (to - from)));
+            return true;
+          }
+        }
         if (autoFormatOn() && text === " ") {
           if (startList(view, ctx())) return true;
           const link = linkTypedAddress(view.state, ctx());

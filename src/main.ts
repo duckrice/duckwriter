@@ -25,6 +25,9 @@ import { schema } from "./editor/schema";
 import { PAGE_GAP, relayout, setPageGap, type PageLayout } from "./editor/pagination";
 import { invoke } from "@tauri-apps/api/core";
 import { stylesheetFor } from "./editor/stylesheet";
+import { pickExportPath, setFullscreen } from "./platform";
+import { toHtml, toMarkdown, toText } from "./convert/export";
+import { htmlToDoc, markdownToHtml, textFormat, textToHtml } from "./convert/import";
 import { baseName, isDesktop, onCloseRequested, openWindow, pickDocument, pickPdfPath, pickSavePath, readPath, setTitle, startupFiles, windowOpening, windowsSpelling, writePath } from "./platform";
 import { Footnotes } from "./ui/footnotes";
 import { updateTocs } from "./ui/references";
@@ -164,22 +167,45 @@ class App {
       this.goTo(this.body.state.doc.resolve(pos).before());
     });
     window.addEventListener("resize", () => this.placeSheet());
-    this.workspace.addEventListener("duckwriter-toast", (event) => this.toast((event as CustomEvent<string>).detail));
-    // A Word document dropped on the window opens; pictures dropped in the text are the editor's.
-    const wordFile = (event: DragEvent) => [...(event.dataTransfer?.items ?? [])].some((i) => i.kind === "file" && /wordprocessingml|msword/.test(i.type));
+    try {
+      if (localStorage.getItem("duckwriter.darkPage") === "on") this.sheet.classList.add("dark-page");
+    } catch {
+      // Light, then.
+    }
+    // Esc leaves focus mode (when nothing else wants it: a menu, a dialog, the find bar).
+    window.addEventListener(
+      "keydown",
+      (event) => {
+        if (event.key !== "Escape" || document.querySelector("dialog[open], .menu") || (event.target as HTMLElement).closest?.(".find-bar, .comments-pane")) return;
+        if (this.leaveFocus()) {
+          event.preventDefault();
+          event.stopPropagation();
+        }
+      },
+      true,
+    );
+    document.addEventListener("duckwriter-toast", (event) => this.toast((event as CustomEvent<string>).detail));
+    // A document dropped on the window opens (Word, Markdown, a web page, text); pictures dropped in the text are the editor's.
+    const documentFile = (f: File) => /\.(docx?|md|markdown|html?|txt)$/i.test(f.name);
+    const hasFiles = (event: DragEvent) => [...(event.dataTransfer?.items ?? [])].some((i) => i.kind === "file");
     window.addEventListener("dragover", (event) => {
-      if (wordFile(event)) {
-        event.preventDefault();
-        event.dataTransfer!.dropEffect = "copy";
-      }
-    }, true);
+      if (!hasFiles(event)) return;
+      event.preventDefault();
+      if (event.dataTransfer) event.dataTransfer.dropEffect = "copy";
+    });
     window.addEventListener("drop", (event) => {
-      const file = [...(event.dataTransfer?.files ?? [])].find((f) => /\.docx?$/i.test(f.name));
+      const file = [...(event.dataTransfer?.files ?? [])].find(documentFile);
       if (!file) return;
       event.preventDefault();
       event.stopPropagation();
       void this.openDropped(file);
     }, true);
+    // Anything else dropped outside the text mustn't open in the window in place of the document.
+    window.addEventListener("drop", (event) => {
+      if (event.defaultPrevented || !event.dataTransfer?.files.length) return;
+      event.preventDefault();
+      this.toast("Drop documents on the window to open them, and pictures into the text");
+    });
     this.workspace.prepend(this.findBar.el);
     this.footnotes = new Footnotes(this);
     this.sheet.append(this.headers.layer, this.footnotes.layer);
@@ -423,6 +449,49 @@ class App {
     this.show(doc, context, TEMPLATES.find((t) => t.kind === kind)?.file ?? "Document1.docx", null);
   }
 
+  /** Markdown, a web page or text, opened as a new Word document (saving asks where). */
+  private async importText(bytes: Uint8Array, name: string, format: "markdown" | "html" | "text") {
+    try {
+      const text = new TextDecoder().decode(bytes);
+      const blank = await blankDocx();
+      const { context } = await readDocx(blank);
+      const html = format === "markdown" ? markdownToHtml(text) : format === "html" ? text : textToHtml(text);
+      const doc = htmlToDoc(html, context);
+      this.leaveSharing();
+      this.base = blank;
+      this.show(doc, context, name.replace(/\.[^.]+$/, ".docx"), null);
+      // Not saved as a Word document yet.
+      this.savedDoc = schema.nodes.doc.create(null, schema.nodes.paragraph.create());
+      this.changed(true);
+      this.toast(`Opened ${name} as a new Word document`);
+    } catch (error) {
+      this.toast(`Couldn't open ${name}: ${message(error)}`, "error");
+    }
+  }
+
+  /** Saves a copy as Markdown, a web page or text; the document stays as it is. */
+  async exportAs(format: "markdown" | "html" | "text") {
+    const info = { markdown: { ext: "md", name: "Markdown" }, html: { ext: "html", name: "Web page" }, text: { ext: "txt", name: "Plain text" } }[format];
+    const base = this.name.replace(/\.docx$/i, "");
+    const path = await pickExportPath(`${base}.${info.ext}`, info.name, info.ext);
+    if (path) await this.exportTo(format, path);
+  }
+
+  /** Writes the copy (exportAs, once it knows where; tests call it directly). */
+  async exportTo(format: "markdown" | "html" | "text", path: string) {
+    const base = this.name.replace(/\.docx$/i, "");
+    try {
+      const doc = this.body.state.doc;
+      const content = format === "markdown" ? await toMarkdown(doc, this.ctx) : format === "html" ? await toHtml(doc, this.ctx, base) : toText(doc, this.ctx);
+      // Text files start with a byte-order mark so Windows programs read æ, ø and å right.
+      const bytes = new TextEncoder().encode(format === "text" ? `\ufeff${content}` : content);
+      await writePath(path, bytes);
+      this.toast(`Saved ${baseName(path)}`);
+    } catch (error) {
+      this.toast(`Couldn't save it: ${message(error)}`, "error");
+    }
+  }
+
   /** Earlier versions of this document (Alt+Shift+V). */
   versions() {
     void showVersions(this);
@@ -454,8 +523,40 @@ class App {
     this.toast(`Style "${name}" changed`);
   }
 
+  sortRows() {
+    this.toolbar.sortRows();
+  }
+
   selectTab(n: number) {
     this.toolbar.selectTab(n);
+  }
+
+  // ---- focus mode, dark page ---------------------------------------------------------
+
+  /** Only the page, full screen (F11; Esc or F11 to leave). */
+  toggleFocus() {
+    const on = !document.documentElement.classList.contains("focus-mode");
+    document.documentElement.classList.toggle("focus-mode", on);
+    void setFullscreen(on);
+    this.placeSheet();
+    if (on) this.toast("Focus mode: Esc or F11 to leave");
+    this.view.focus();
+  }
+
+  leaveFocus(): boolean {
+    if (!document.documentElement.classList.contains("focus-mode")) return false;
+    this.toggleFocus();
+    return true;
+  }
+
+  /** The page dark, for writing at night (Alt+Shift+D). Only on screen: printing and the file are as they were. */
+  toggleDarkPage(on = !this.sheet.classList.contains("dark-page")) {
+    this.sheet.classList.toggle("dark-page", on);
+    try {
+      localStorage.setItem("duckwriter.darkPage", on ? "on" : "off");
+    } catch {
+      // For now only.
+    }
   }
 
   /** Shows or hides the headings beside the page (Alt+Shift+N). */
@@ -725,6 +826,8 @@ class App {
   }
 
   private async load(bytes: Uint8Array, name: string, path: string | null) {
+    const format = textFormat(name);
+    if (format) return this.importText(bytes, name, format);
     if (!/\.docx$/i.test(name)) {
       this.toast(/\.doc$/i.test(name) ? `${name} is an old Word file (.doc). Open it in Word and save it as .docx first.` : `${name} isn't a Word document (.docx).`, "error");
       return;
