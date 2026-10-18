@@ -157,3 +157,61 @@ export function editEndnote(view: EditorView, ctx: DocContext, id: string) {
   editor.focus();
   editor.dispatch(editor.state.tr.setSelection(TextSelection.atEnd(editor.state.doc)));
 }
+
+/**
+ * Turns every footnote into an endnote, or every endnote into a footnote, as
+ * journals often ask. The notes keep their text; their numbers follow from
+ * their new places. Undo puts them back (the old notes are kept until saving,
+ * which writes only the ones the text refers to).
+ */
+export function convertNotes(view: EditorView, ctx: DocContext, to: "endnote" | "footnote"): number {
+  const fromType = to === "endnote" ? schema.nodes.footnote : schema.nodes.endnote;
+  const toType = to === "endnote" ? schema.nodes.endnote : schema.nodes.footnote;
+  const from = to === "endnote" ? ctx.footnotes : ctx.endnotes;
+  const into = to === "endnote" ? ctx.endnotes : ctx.footnotes;
+  const [oldText, newText, oldRef, newRef] = to === "endnote"
+    ? ["FootnoteText", "EndnoteText", "FootnoteReference", "EndnoteReference"]
+    : ["EndnoteText", "FootnoteText", "EndnoteReference", "FootnoteReference"];
+  ensureStyles(ctx, newText, newRef);
+  const marks: { pos: number; node: Node }[] = [];
+  view.state.doc.descendants((node, pos) => {
+    if (node.type === fromType) marks.push({ pos, node });
+    return !node.isInline;
+  });
+  if (!marks.length) return 0;
+  let next = Math.max(0, ...[...into.notes.keys()].map(Number).filter(Number.isFinite)) + 1;
+  const newIds = new Map<string, string>();
+  const restyle = (doc: Node): Node => {
+    const content: Node[] = [];
+    doc.forEach((block) => {
+      content.push(block.type === schema.nodes.paragraph && block.attrs.style === oldText ? block.type.create({ ...block.attrs, style: newText }, block.content, block.marks) : block);
+    });
+    return doc.type.create(doc.attrs, content);
+  };
+  for (const { node } of marks) {
+    const id = node.attrs.id as string;
+    if (newIds.has(id)) continue;
+    const newId = String(next++);
+    newIds.set(id, newId);
+    const note = from.notes.get(id);
+    into.notes.set(newId, note ? restyle(note) : schema.nodes.doc.create(null, schema.nodes.paragraph.create({ style: newText })));
+  }
+  // Links and pictures in the notes keep their relationships.
+  for (const [rid, rel] of from.rels) if (!into.rels.has(rid)) into.rels.set(rid, rel);
+  const tr = view.state.tr;
+  for (const { pos, node } of marks.reverse()) {
+    let kept = node.marks.filter((m) => !(m.type === schema.marks.charStyle && m.attrs.id === oldRef));
+    if (to === "footnote") kept = [...schema.marks.charStyle.create({ id: newRef }).addToSet(kept)];
+    tr.replaceWith(pos, pos + node.nodeSize, toType.create({ id: newIds.get(node.attrs.id) }, null, kept));
+  }
+  // The list of endnotes at the end: added for the first endnotes, gone with the last.
+  let list = -1;
+  tr.doc.forEach((n, pos) => {
+    if (n.type === schema.nodes.endnotes) list = pos;
+  });
+  if (to === "endnote" && list < 0) tr.insert(tr.doc.content.size, schema.nodes.endnotes.create());
+  if (to === "footnote" && list >= 0) tr.delete(list, list + tr.doc.nodeAt(list)!.nodeSize);
+  view.dispatch(tr.setMeta("noTrack", true));
+  refresh(view);
+  return newIds.size;
+}

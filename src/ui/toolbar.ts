@@ -1,6 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { showInspection } from "./inspect";
-import { insertEndnote } from "./endnotes";
+import { convertNotes, insertEndnote } from "./endnotes";
 import { TEMPLATES } from "../templates";
 import { modifyStyle, updateStyleToMatch } from "./styles";
 import { insertBibliography, insertCitation, manageSources } from "./sources";
@@ -45,6 +45,7 @@ export interface ToolbarHost {
   cycleLineNumbers(): void;
   toggleFocus(): void;
   cycleZoomFit(): void;
+  toast(text: string): void;
   toggleDarkPage(): void;
   readonly ctx: DocContext;
   /** Switches the line grid on or off. */
@@ -771,6 +772,25 @@ export class Toolbar {
   }
 
   /** Captions, cross-references, numbered headings and the table of contents. */
+  /** "All footnotes to endnotes" and back, when there are any. */
+  private noteConversions(body: EditorView, ctx: DocContext, item: (label: string, onClick: () => void) => HTMLElement): HTMLElement[] {
+    let footnotes = 0;
+    let endnotes = 0;
+    body.state.doc.descendants((n) => {
+      if (n.type === schema.nodes.footnote) footnotes++;
+      else if (n.type === schema.nodes.endnote) endnotes++;
+      return !n.isInline;
+    });
+    const convert = (to: "endnote" | "footnote") => {
+      const n = convertNotes(body, ctx, to);
+      this.host.toast(`${n} ${to === "endnote" ? "footnote" : "endnote"}${n === 1 ? "" : "s"} made into ${to}s`);
+    };
+    return [
+      ...(footnotes ? [item("Make all footnotes endnotes", () => convert("endnote"))] : []),
+      ...(endnotes ? [item("Make all endnotes footnotes", () => convert("footnote"))] : []),
+    ];
+  }
+
   private referencesMenu(): HTMLElement {
     const { ctx } = this.host;
     const body = this.host.view;
@@ -792,6 +812,7 @@ export class Toolbar {
       item("List of tables", () => insertToc(body, ctx, "Table")),
       item(headingsNumbered(ctx) ? "✓ Numbered headings" : "Numbered headings (1, 1.1, 1.1.1)", () => toggleHeadingNumbers(body, ctx)),
       item("Footnote (Ctrl+Alt+F)", () => this.host.insertFootnote()),
+      ...this.noteConversions(body, ctx, item),
       h("div", { class: "menu-separator" }),
       item("Cite a source… (Alt+Shift+C)", () => insertCitation(body, ctx)),
       item("Reference list (Alt+Shift+B)", () => insertBibliography(body, ctx)),

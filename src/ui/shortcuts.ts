@@ -102,6 +102,10 @@ const cmd = (make: (ctx: DocContext) => Command) => (host: ShortcutHost) => {
   view.focus();
 };
 const plain = (command: Command) => cmd(() => command);
+const typeChar = (char: string): Command => (state, dispatch) => {
+  dispatch?.(state.tr.insertText(char).scrollIntoView());
+  return true;
+};
 
 /** Heading 1–3, if the document has that style. */
 const heading = (level: number) =>
@@ -157,6 +161,8 @@ export const SHORTCUTS: Shortcut[] = [
   { group: "Editing", label: "Spell checking on or off", keys: ["Ctrl+F7"], run: (x) => x.toggleSpelling(), everywhere: true },
   { group: "Editing", label: "New line in the same paragraph", keys: ["Shift+Enter"] },
   { group: "Editing", label: "Page break", keys: ["Ctrl+Enter"], run: plain(insertPageBreak()) },
+  { group: "Editing", label: "Non-breaking space (keeps “10 kg” on one line)", keys: ["Ctrl+Shift+Space"], run: plain(typeChar(String.fromCharCode(0xa0))) },
+  { group: "Editing", label: "Non-breaking hyphen", keys: ["Ctrl+Shift+-", "Ctrl+_"], run: plain(typeChar(String.fromCharCode(0x2011))) },
 
   // ---- text
   { group: "Text", label: "Bold", keys: ["Ctrl+B"], run: cmd((c) => toggleFormat(c, "bold")) },
