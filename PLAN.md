@@ -100,7 +100,7 @@ written back unchanged.
 
 ### Round 4
 - **Ribbon tabs**: Home, Insert, References, Review, Layout (Alt+1 to Alt+5).
-- **Maths shorthand** in the text: alpha → α, -> → →, <= → ≤.
+- **Maths shorthand** in the text: \alpha → α, -> → →, <= → ≤.
 - **Focus mode** (F11) and a **dark page** for night writing (Alt+Shift+D).
 - **Tables**: sort rows (Alt+Shift+O), convert text to a table.
 - **Markdown, HTML and text**: open them as Word documents, save copies as them.
