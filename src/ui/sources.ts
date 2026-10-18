@@ -6,6 +6,8 @@ import { TextSelection } from "prosemirror-state";
 import type { EditorView } from "prosemirror-view";
 import { CITATION_STYLES, SOURCE_TYPES, emptySource, makeTag, parseBibtex, type CitationStyle, type Source, type SourceType } from "../docx/bibliography";
 import { ensureStyles } from "../docx/builtins";
+import { isRis, parseRis, toBibtex } from "../docx/ris";
+import { pickExportPath, writePath } from "../platform";
 import type { DocContext } from "../docx/model";
 import { h } from "../dom";
 import { citationInstr, citationsKey, formatCitation, citedOrder } from "../editor/citations";
@@ -167,13 +169,13 @@ export function manageSources(view: EditorView, ctx: DocContext, afterwards?: ()
   const add = h("button", { type: "button", class: "btn" }, "Add a source…");
   add.addEventListener("click", () => editSource(emptySource(), true));
 
-  const importBox = h("textarea", { class: "tb-input dialog-input wide", rows: 3, placeholder: "Paste BibTeX here (@article{…})" }) as HTMLTextAreaElement;
-  const importButton = h("button", { type: "button", class: "btn" }, "Import BibTeX");
+  const importBox = h("textarea", { class: "tb-input dialog-input wide", rows: 3, placeholder: "Paste BibTeX (@article{…}) or RIS (TY  - JOUR …) here" }) as HTMLTextAreaElement;
+  const importButton = h("button", { type: "button", class: "btn" }, "Import");
   const status = h("p", { class: "dialog-error", role: "status" });
   importButton.addEventListener("click", () => {
-    const found = parseBibtex(importBox.value);
+    const found = isRis(importBox.value) ? parseRis(importBox.value) : parseBibtex(importBox.value);
     if (!found.length) {
-      status.textContent = "No BibTeX entries found there.";
+      status.textContent = "No BibTeX or RIS entries found there.";
       return;
     }
     for (const s of found) {
@@ -212,13 +214,28 @@ export function manageSources(view: EditorView, ctx: DocContext, afterwards?: ()
     }
   });
 
+  const exportBib = h("button", { type: "button", class: "btn", title: "For LaTeX or another reference manager" }, "Save as BibTeX…");
+  exportBib.addEventListener("click", async () => {
+    if (!bib.sources.length) {
+      status.textContent = "There are no sources to save yet.";
+      return;
+    }
+    try {
+      const path = await pickExportPath("sources.bib", "BibTeX", "bib");
+      if (path) await writePath(path, new TextEncoder().encode(toBibtex(bib.sources)));
+      status.textContent = "";
+    } catch (error) {
+      status.textContent = `Couldn't save it: ${(error as Error).message ?? error}`;
+    }
+  });
+
   render();
   const dialog = modal(
     "Sources",
     h("div", { class: "dialog-form" }, h("label", {}, "Citation style", style)),
     list,
     h("div", { class: "source-actions" }, add, h("span", { class: "dialog-spacer" }), doi, lookUp),
-    h("div", { class: "source-actions" }, importBox, importButton),
+    h("div", { class: "source-actions" }, importBox, importButton, exportBib),
     status,
     h("div", { class: "dialog-footer" }, h("button", { type: "button", class: "btn primary", onclick: () => dialog.close() }, "Done")),
   );

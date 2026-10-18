@@ -58,7 +58,7 @@ export interface ShortcutHost {
   cycleMarkup(): void;
   cycleZoomFit(): void;
   compareWithFile(): void;
-  exportAs(format: "markdown" | "html" | "text"): void;
+  exportAs(format: "markdown" | "html" | "text" | "latex"): void;
   sortRows(): void;
   toggleFocus(): void;
   toggleDarkPage(): void;
@@ -123,6 +123,7 @@ export const SHORTCUTS: Shortcut[] = [
   { group: "Documents", label: "Go to page", keys: ["Ctrl+G"], run: (x) => x.goToPage() },
   { group: "Documents", label: "Save a copy as a web page (HTML)", keys: ["Ctrl+Alt+Shift+W"], run: (x) => x.exportAs("html"), everywhere: true },
   { group: "Documents", label: "Save a copy as Markdown", keys: ["Ctrl+Alt+Shift+K"], run: (x) => x.exportAs("markdown"), everywhere: true },
+  { group: "Documents", label: "Save a copy as LaTeX (.tex, with the sources as .bib)", keys: ["Ctrl+Alt+Shift+X"], run: (x) => x.exportAs("latex"), everywhere: true },
   { group: "Documents", label: "Focus mode: only the page, full screen (Esc to leave)", keys: ["F11"], run: (x) => x.toggleFocus(), everywhere: true },
   { group: "Documents", label: "Dark page, for writing at night", keys: ["Alt+Shift+D"], run: (x) => x.toggleDarkPage(), everywhere: true },
   { group: "Documents", label: "Earlier versions of this document (kept on this computer)", keys: ["Alt+Shift+V"], run: (x) => x.versions(), everywhere: true },

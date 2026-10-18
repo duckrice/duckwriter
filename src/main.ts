@@ -29,6 +29,7 @@ import { pickExportPath, setFullscreen } from "./platform";
 import { compareDocs, countChanges } from "./editor/compare";
 import { newAnnotationId } from "./docx/model";
 import { toHtml, toMarkdown, toText } from "./convert/export";
+import { toLatex } from "./convert/latex";
 import { htmlToDoc, markdownToHtml, textFormat, textToHtml } from "./convert/import";
 import { baseName, isDesktop, onCloseRequested, openWindow, pickDocument, pickPdfPath, pickSavePath, readPath, setTitle, startupFiles, windowOpening, windowsSpelling, writePath } from "./platform";
 import { Footnotes } from "./ui/footnotes";
@@ -475,18 +476,19 @@ class App {
   }
 
   /** Saves a copy as Markdown, a web page or text; the document stays as it is. */
-  async exportAs(format: "markdown" | "html" | "text") {
-    const info = { markdown: { ext: "md", name: "Markdown" }, html: { ext: "html", name: "Web page" }, text: { ext: "txt", name: "Plain text" } }[format];
+  async exportAs(format: "markdown" | "html" | "text" | "latex") {
+    const info = { markdown: { ext: "md", name: "Markdown" }, html: { ext: "html", name: "Web page" }, text: { ext: "txt", name: "Plain text" }, latex: { ext: "tex", name: "LaTeX" } }[format];
     const base = this.name.replace(/\.docx$/i, "");
     const path = await pickExportPath(`${base}.${info.ext}`, info.name, info.ext);
     if (path) await this.exportTo(format, path);
   }
 
   /** Writes the copy (exportAs, once it knows where; tests call it directly). */
-  async exportTo(format: "markdown" | "html" | "text", path: string) {
+  async exportTo(format: "markdown" | "html" | "text" | "latex", path: string) {
     const base = this.name.replace(/\.docx$/i, "");
     try {
       const doc = this.body.state.doc;
+      if (format === "latex") return await this.exportLatex(path);
       const content = format === "markdown" ? await toMarkdown(doc, this.ctx) : format === "html" ? await toHtml(doc, this.ctx, base) : toText(doc, this.ctx);
       // Text files start with a byte-order mark so Windows programs read æ, ø and å right.
       const bytes = new TextEncoder().encode(format === "text" ? `\ufeff${content}` : content);
@@ -495,6 +497,21 @@ class App {
     } catch (error) {
       this.toast(`Couldn't save it: ${message(error)}`, "error");
     }
+  }
+
+  /** The .tex file, with the sources (.bib) and pictures beside it, named after it. */
+  private async exportLatex(path: string) {
+    const dir = path.slice(0, Math.max(path.lastIndexOf(String.fromCharCode(92)), path.lastIndexOf("/")) + 1);
+    const name = baseName(path).replace(/[.]tex$/i, "");
+    // LaTeX can't take spaces in the names of the files it reads.
+    const base = [...name].map((c) => (c === "_" || c === "-" || (c >= "0" && c <= "9") || c.toLowerCase() !== c.toUpperCase() ? c : "-")).join("");
+    const { tex, bib, pictures } = await toLatex(this.body.state.doc, this.ctx, base);
+    const encode = (s: string) => new TextEncoder().encode(s);
+    await writePath(path, encode(tex));
+    if (bib) await writePath(`${dir}${base}.bib`, encode(bib));
+    for (const p of pictures) await writePath(dir + p.name, p.bytes);
+    const extra = [bib ? "the sources" : "", pictures.length ? `${pictures.length} picture${pictures.length === 1 ? "" : "s"}` : ""].filter(Boolean).join(" and ");
+    this.toast(`Saved ${baseName(path)}${extra ? `, with ${extra} beside it` : ""}`);
   }
 
   /** Compares this document with another version of it, chosen from a file (Ctrl+Alt+Shift+C). */

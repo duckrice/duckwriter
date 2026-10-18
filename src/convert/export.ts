@@ -15,6 +15,17 @@ const deleted = (n: Node) => n.marks.some((m) => m.type === schema.marks.deletio
 
 /** A picture's bytes as a data: URL, from the file or from DuckWriter. */
 async function pictureUrl(ctx: DocContext, attrs: Node["attrs"]): Promise<string> {
+  const picture = await pictureFile(ctx, attrs);
+  if (!picture) return "";
+  const { bytes, ext } = picture;
+  let s = "";
+  for (let i = 0; i < bytes.length; i += 0x8000) s += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+  const type = ext === "jpg" || ext === "jpeg" ? "image/jpeg" : ext === "svg" ? "image/svg+xml" : `image/${ext}`;
+  return `data:${type};base64,${btoa(s)}`;
+}
+
+/** A picture's bytes and file extension, from the file or from DuckWriter. */
+export async function pictureFile(ctx: DocContext, attrs: Node["attrs"]): Promise<{ bytes: Uint8Array; ext: string } | null> {
   let bytes: Uint8Array | undefined;
   let ext = "png";
   if (attrs.media) {
@@ -30,11 +41,7 @@ async function pictureUrl(ctx: DocContext, attrs: Node["attrs"]): Promise<string
       ext = rel.target.split(".").pop() ?? ext;
     }
   }
-  if (!bytes) return "";
-  let s = "";
-  for (let i = 0; i < bytes.length; i += 0x8000) s += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
-  const type = ext === "jpg" || ext === "jpeg" ? "image/jpeg" : ext === "svg" ? "image/svg+xml" : `image/${ext}`;
-  return `data:${type};base64,${btoa(s)}`;
+  return bytes ? { bytes, ext: ext.toLowerCase() } : null;
 }
 
 /** What a paragraph is: a heading (and its level), a list item, the title, or plain. */

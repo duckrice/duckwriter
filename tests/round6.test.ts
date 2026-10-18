@@ -8,6 +8,91 @@ import { writeDocx } from "../src/docx/write";
 import { createState } from "../src/editor/editor";
 import { schema } from "../src/editor/schema";
 import { convertNotes } from "../src/ui/endnotes";
+import { isRis, parseRis, toBibtex } from "../src/docx/ris";
+import { parseBibtex } from "../src/docx/bibliography";
+import { texEscape, toLatex } from "../src/convert/latex";
+import { citationInstr } from "../src/editor/citations";
+
+describe("RIS and BibTeX", () => {
+  const ris = [
+    "TY  - JOUR",
+    "AU  - Smith, Anna",
+    "AU  - Jones, Bob",
+    "TI  - Rates of things",
+    "T2  - Journal of Ducks",
+    "PY  - 2020/05/01",
+    "VL  - 3",
+    "IS  - 2",
+    "SP  - 1",
+    "EP  - 10",
+    "DO  - https://doi.org/10.1/x",
+    "ER  - ",
+    "TY  - BOOK",
+    "AU  - Hansen, Kari",
+    "TI  - A book",
+    "PY  - 2019",
+    "PB  - Duck Press",
+    "CY  - Oslo",
+    "ER  - ",
+  ].join("\r\n");
+
+  it("reads RIS records", () => {
+    expect(isRis(ris)).toBe(true);
+    expect(isRis("@article{a, title={x}}")).toBe(false);
+    const [a, b] = parseRis(ris);
+    expect(a).toMatchObject({ type: "JournalArticle", title: "Rates of things", container: "Journal of Ducks", year: "2020", volume: "3", issue: "2", pages: "1–10", doi: "10.1/x" });
+    expect(a.authors).toEqual([{ last: "Smith", first: "Anna" }, { last: "Jones", first: "Bob" }]);
+    expect(b).toMatchObject({ type: "Book", publisher: "Duck Press", city: "Oslo", year: "2019" });
+  });
+
+  it("writes BibTeX that reads back the same", () => {
+    const sources = parseRis(ris).map((s, i) => ({ ...s, tag: ["Smi20", "Han19"][i], title: i ? "Ducks & DNA" : s.title }));
+    const bib = toBibtex(sources);
+    expect(bib).toContain("@article{Smi20,");
+    expect(bib).toContain("pages = {1--10}");
+    expect(bib).toContain("title = {{Ducks \\& DNA}}");
+    const back = parseBibtex(bib);
+    expect(back.map((s) => s.tag)).toEqual(["Smi20", "Han19"]);
+    expect(back[0]).toMatchObject({ title: "Rates of things", container: "Journal of Ducks", pages: "1–10", doi: "10.1/x" });
+    expect(back[1]).toMatchObject({ type: "Book", title: "Ducks & DNA", publisher: "Duck Press" });
+  });
+});
+
+describe("LaTeX", () => {
+  it("escapes what TeX treats specially", () => {
+    expect(texEscape("50% of $5 & #1_a {x} ~ ^ \\")).toBe("50\\% of \\$5 \\& \\#1\\_a \\{x\\} \\textasciitilde{} \\textasciicircum{} \\textbackslash{}");
+  });
+
+  it("makes sections, lists, tables, equations, footnotes and citations", async () => {
+    const { context: ctx } = await readDocx(await blankDocx());
+    ctx.bibliography.sources.push(...parseRis("TY  - JOUR\nAU  - Smith, Anna\nTI  - Rates\nPY  - 2020\nER  - ").map((s) => ({ ...s, tag: "Smi20" })));
+    ctx.footnotes.notes.set("1", note("A note.", "FootnoteText"));
+    const bold = schema.marks.bold.create({ on: true });
+    const cite = schema.nodes.field.create({ instr: citationInstr({ tags: ["Smi20"], page: "" }), result: "(Smith, 2020)" });
+    const p = (content: Parameters<typeof schema.nodes.paragraph.create>[1], style: string | null = null) => schema.nodes.paragraph.create({ style }, content);
+    const cell = (t: string) => schema.nodes.table_cell.create(null, p(schema.text(t)));
+    const doc = schema.nodes.doc.create(null, [
+      p(schema.text("My paper"), "Title"),
+      p(schema.text("Introduction"), "Heading1"),
+      p([schema.text("Rates rise "), schema.text("fast", [bold]), schema.text(" "), cite, schema.text(" at 50%."), schema.nodes.footnote.create({ id: "1" })]),
+      p([schema.text("So "), schema.nodes.math.create({ latex: "E = mc^2", display: false })]),
+      p(schema.text("Methods"), "Heading2"),
+      schema.nodes.table.create(null, [schema.nodes.table_row.create(null, [cell("a"), cell("b")]), schema.nodes.table_row.create(null, [cell("1"), cell("2")])]),
+    ]);
+    const { tex, bib } = await toLatex(doc, ctx, "paper");
+    expect(tex).toContain("\\title{My paper}");
+    expect(tex).toContain("\\maketitle");
+    expect(tex).toContain("\\section{Introduction}");
+    expect(tex).toContain("\\subsection{Methods}");
+    expect(tex).toContain("Rates rise \\textbf{fast} \\cite{Smi20} at 50\\%.\\footnote{A note.}");
+    expect(tex).toContain("So $E = mc^2$");
+    expect(tex).toContain("\\begin{tabular}{|l|l|}");
+    expect(tex).toContain("a & b \\\\ \\hline");
+    expect(tex).toContain("\\bibliography{paper}");
+    expect(tex.trim().endsWith("\\end{document}")).toBe(true);
+    expect(bib).toContain("@article{Smi20,");
+  });
+});
 
 const part = async (bytes: Uint8Array, path: string) => (await JSZip.loadAsync(bytes)).file(path)?.async("string");
 

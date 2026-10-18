@@ -71,7 +71,7 @@ export interface ToolbarHost {
   saveAsTemplate(): void;
   newFromMyTemplate(name: string): void;
   compareWithFile(): void;
-  exportAs(format: "markdown" | "html" | "text"): void;
+  exportAs(format: "markdown" | "html" | "text" | "latex"): void;
   newFromTemplate(kind: import("../templates").TemplateKind): void;
   pageSetup(): void;
   toggleTracking(): void;
@@ -618,6 +618,7 @@ export class Toolbar {
       this.simpleItem("PDF (Ctrl+Alt+Shift+P)", () => this.host.savePdf()),
       this.simpleItem("Web page (.html), with equations", () => this.host.exportAs("html")),
       this.simpleItem("Markdown (.md)", () => this.host.exportAs("markdown")),
+      this.simpleItem("LaTeX (.tex), with the sources as .bib", () => this.host.exportAs("latex")),
       this.simpleItem("Plain text (.txt)", () => this.host.exportAs("text")),
     );
   }
