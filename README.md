@@ -46,6 +46,11 @@ npm run samples
 npm run smoke
 ```
 
-`npm test` checks reading, editing and saving documents. `npm run smoke` drives
-the built app (off-screen) and checks typing, the toolbar, opening and saving;
-add `-- --screenshots` for pictures of each step.
+`npm test` checks reading, editing and saving documents, including garbled
+files and a check of every saved file the way Word would look at it.
+`npm run smoke` drives the built app (off-screen) and checks typing, the
+toolbar, opening and saving; add `-- --screenshots` for pictures of each step.
+
+For speed on long documents, `node scripts/perf.mjs [size]` times opening,
+typing and saving, and `node scripts/profile.mjs [size]` shows where the time
+goes (`REVIEW=1` fills the document with tracked changes and comments).
