@@ -22,6 +22,8 @@ export interface Finding {
   places: number[];
   /** Pictures are selected whole; text gets the cursor. */
   select?: "node";
+  /** Something to do about it there and then, such as "Leave out". */
+  action?: { label: string; run: () => void };
 }
 
 const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
@@ -70,6 +72,25 @@ export function inspect(doc: Node, ctx: DocContext, spellingMistakes: number[] =
   for (const c of ctx.comments.items.values()) if (c.author) names.add(c.author);
   for (const c of open) if (c.author) names.add(c.author);
   if (names.size) out.push({ kind: "info", text: `Names in the document (comments and changes): ${[...names].sort().join(", ")}.`, places: [] });
+
+  // And in its properties: the author, and who saved it last.
+  const p = ctx.properties;
+  const own = [...new Set([p.creator, p.lastModifiedBy].filter(Boolean))];
+  if (own.length && !p.anonymous) {
+    out.push({
+      kind: "info",
+      text: `Names in the document's properties (author, last saved by): ${own.join(", ")}.`,
+      places: [],
+      action: {
+        label: "Leave out",
+        run: () => {
+          p.anonymous = true;
+          p.creator = "";
+          p.lastModifiedBy = "";
+        },
+      },
+    });
+  }
   return out;
 }
 
@@ -92,7 +113,18 @@ export function showInspection(view: EditorView, ctx: DocContext) {
       next = (next + 1) % f.places.length;
       show.textContent = f.places.length > 1 ? `Show (${next + 1} of ${f.places.length})` : "Show";
     });
-    return h("div", { class: `inspect-item ${f.kind}` }, h("span", { class: "inspect-mark" }, f.kind === "warning" ? "!" : "i"), h("span", { class: "source-label inspect-text" }, f.text), f.places.length ? show : null);
+    let act: HTMLElement | null = null;
+    if (f.action) {
+      const { label, run } = f.action;
+      act = h("button", { type: "button", class: "btn small" }, label);
+      act.addEventListener("click", () => {
+        run();
+        // Counts as a change, to be saved.
+        view.dispatch(view.state.tr);
+        act!.replaceWith(h("span", { class: "inspect-done" }, "Done; they go when you save"));
+      });
+    }
+    return h("div", { class: `inspect-item ${f.kind}` }, h("span", { class: "inspect-mark" }, f.kind === "warning" ? "!" : "i"), h("span", { class: "source-label inspect-text" }, f.text), f.places.length ? show : null, act);
   });
   const dialog = h(
     "dialog",

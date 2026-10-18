@@ -68,6 +68,7 @@ export interface ToolbarHost {
   share(): void;
   openRecent(path: string): void;
   versions(): void;
+  properties(): void;
   saveAsTemplate(): void;
   newFromMyTemplate(name: string): void;
   compareWithFile(): void;
@@ -679,6 +680,7 @@ export class Toolbar {
       ...(items.length ? items : [h("div", { class: "menu-hint" }, "Documents you open or save are listed here.")]),
       h("div", { class: "menu-separator" }),
       this.simpleItem("Earlier versions of this document… (Alt+Shift+V)", () => this.host.versions()),
+      this.simpleItem("Document properties… (Alt+Shift+P)", () => this.host.properties()),
     );
   }
 

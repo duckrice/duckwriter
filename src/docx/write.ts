@@ -11,6 +11,7 @@ import { TableMap } from "prosemirror-tables";
 import { TWIPS_PER_POINT, originalXml, type CommentData, type DocContext, type Relationship } from "./model";
 import { escapeAttr, escapeText, tag } from "./xml";
 import { writeBibliography } from "./bibliography";
+import { writeProperties } from "./properties";
 
 /** The order Word requires for the elements of a paragraph's properties. */
 const PPR_ORDER = [
@@ -78,6 +79,7 @@ export async function writeDocx(doc: Node, ctx: DocContext): Promise<Uint8Array>
   await writeEndnotes(doc, ctx);
   await writeComments(doc, ctx);
   await writeTrackSetting(ctx);
+  if (ctx.properties) await writeProperties(ctx.zip, ctx.properties, ctx.savedBy ?? null);
   await writeBibliography(
     ctx.zip,
     ctx.bibliography,

@@ -131,7 +131,8 @@ describe("saving a .docx", () => {
     const saved = await JSZip.loadAsync(await writeDocx(doc, context));
     const before = await JSZip.loadAsync(original);
     for (const name of Object.keys(before.files)) {
-      if (name === "word/document.xml" || before.files[name].dir) continue;
+      // The properties get the save date and revision, as Word does (tested in round7).
+      if (name === "word/document.xml" || name === "docProps/core.xml" || before.files[name].dir) continue;
       expect(await saved.file(name)?.async("string"), name).toBe(await before.file(name)!.async("string"));
     }
   });

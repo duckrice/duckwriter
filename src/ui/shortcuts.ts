@@ -64,6 +64,7 @@ export interface ShortcutHost {
   toggleFocus(): void;
   toggleDarkPage(): void;
   versions(): void;
+  properties(): void;
   styleChanged(id: string): void;
   cycleLineNumbers(): void;
   goToPage(): void;
@@ -128,6 +129,7 @@ export const SHORTCUTS: Shortcut[] = [
   { group: "Documents", label: "Focus mode: only the page, full screen (Esc to leave)", keys: ["F11"], run: (x) => x.toggleFocus(), everywhere: true },
   { group: "Documents", label: "Dark page, for writing at night", keys: ["Alt+Shift+D"], run: (x) => x.toggleDarkPage(), everywhere: true },
   { group: "Documents", label: "Earlier versions of this document (kept on this computer)", keys: ["Alt+Shift+V"], run: (x) => x.versions(), everywhere: true },
+  { group: "Documents", label: "Document properties: title, author, keywords", keys: ["Alt+Shift+P"], run: (x) => x.properties(), everywhere: true },
   { group: "Documents", label: "Line numbers: through the document, from 1 on each page, or none", keys: ["Alt+Shift+L"], run: (x) => x.cycleLineNumbers() },
   { group: "Documents", label: "Headings beside the page (the navigation pane); arrows and Enter go to one", keys: ["Alt+Shift+N"], run: (x) => x.toggleNavigation(), everywhere: true },
   { group: "Documents", label: "Open a document by dropping it on the window", keys: ["Drag and drop"] },

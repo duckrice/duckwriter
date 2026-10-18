@@ -30,6 +30,9 @@ import { compareDocs, countChanges } from "./editor/compare";
 import { newAnnotationId } from "./docx/model";
 import { toHtml, toMarkdown, toText } from "./convert/export";
 import { toLatex } from "./convert/latex";
+import { authorName } from "./author";
+import { showProperties } from "./ui/properties";
+import { stamped } from "./docx/properties";
 import { htmlToDoc, markdownToHtml, textFormat, textToHtml } from "./convert/import";
 import { baseName, isDesktop, onCloseRequested, openWindow, pickDocument, pickPdfPath, pickSavePath, readPath, setTitle, startupFiles, windowOpening, windowsSpelling, writePath } from "./platform";
 import { Footnotes } from "./ui/footnotes";
@@ -271,7 +274,7 @@ class App {
     if (this.ctx.stories.some((s) => !s.saved || !s.doc.eq(s.saved))) return true;
     if (this.ctx.comments.version !== this.ctx.comments.savedVersion || this.ctx.trackChanges !== this.ctx.trackChangesSaved) return true;
     if (this.ctx.bibliography.version !== this.ctx.bibliography.savedVersion) return true;
-    if (this.ctx.styleChanges.size) return true;
+    if (this.ctx.styleChanges.size || JSON.stringify(this.ctx.properties) !== this.savedProperties) return true;
     const en = this.ctx.endnotes;
     if ([...en.notes].some(([id, doc]) => !en.saved.get(id)?.eq(doc))) return true;
     const fn = this.ctx.footnotes;
@@ -622,6 +625,18 @@ class App {
     void showVersions(this);
   }
 
+  /** Title, author, keywords… (Alt+Shift+P). */
+  properties() {
+    showProperties(
+      this.ctx,
+      () => this.changed(false, true),
+      () => this.body.focus(),
+    );
+  }
+
+  /** The properties as last saved (they aren't in the text), to tell whether they were edited. */
+  private savedProperties = "";
+
   /** Shows an earlier version as the document; saving keeps it, closing without saving goes back. */
   async restoreVersion(version: Version) {
     if (!(await this.confirmDiscard())) return;
@@ -742,6 +757,7 @@ class App {
     this.savedDoc = doc;
     this.savedTitlePage = ctx.titlePage;
     this.lineGridSaved = true;
+    this.savedProperties = JSON.stringify(ctx.properties);
     delete this.styleEl.dataset.key;
     this.refreshStyles();
     this.sheet.style.width = `${ctx.page.width}pt`;
@@ -1033,6 +1049,8 @@ class App {
 
   /** The document as .docx bytes. */
   async build(): Promise<Uint8Array> {
+    // "Last saved by" in the properties: the name your comments and changes carry, if given.
+    this.ctx.savedBy = authorName() || null;
     return writeDocx(this.body.state.doc, this.ctx);
   }
 
@@ -1088,6 +1106,9 @@ class App {
     this.savedDoc = doc;
     this.savedTitlePage = titlePage;
     this.lineGridSaved = true;
+    // As written: last saved by, now, the next revision.
+    this.ctx.properties = stamped(this.ctx.properties, this.ctx.savedBy ?? null);
+    this.savedProperties = JSON.stringify(this.ctx.properties);
     this.autosave.saved();
     this.changed(false);
     return true;

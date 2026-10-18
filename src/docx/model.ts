@@ -240,6 +240,10 @@ export interface DocContext {
   trackChanges: boolean;
   /** As the settings say now, to tell when they need updating. */
   trackChangesSaved: boolean;
+  /** Title, author, keywords… (docProps/core.xml). */
+  properties: import("./properties").DocProperties;
+  /** Who is saving, for "last saved by"; null leaves it as it was. */
+  savedBy?: string | null;
 }
 
 /** A new id for a comment or tracked change: Word wants them different from all others in the document. */

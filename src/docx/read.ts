@@ -8,6 +8,7 @@ import { toLatex } from "../math/ast";
 import { MATH_NS, fromOmml } from "../math/omml";
 import { imageType, readPicture } from "./drawing";
 import { readBibliography } from "./bibliography";
+import { readProperties } from "./properties";
 import {
   DEFAULT_PAGE,
   originalXml,
@@ -216,6 +217,7 @@ export async function readDocx(bytes: Uint8Array): Promise<OpenedDocument> {
     styleChanges: new Map(),
     trackChanges,
     trackChangesSaved: trackChanges,
+    properties: await readProperties(zip),
   };
   return { doc: schema.nodes.doc.create(null, blocks), context };
 }
