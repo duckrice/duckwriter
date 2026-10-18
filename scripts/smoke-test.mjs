@@ -1142,7 +1142,7 @@ await session(null, 9574, async (app) => {
     const box = document.querySelector('dialog[open] textarea[placeholder^="Paste BibTeX"]');
     box.value = "@article{s, author={Smith, Anna and Jones, Bob}, title={Rates of things}, journal={Journal of Ducks}, year=2020, volume={3}, pages={1--10}}";
   })()`);
-  await app.clickText("dialog[open] .btn", "Import BibTeX");
+  await app.clickText("dialog[open] .btn", "Import");
   check("BibTeX is imported", (await app.count("dialog[open] .source-item")) === 1);
   await app.clickText("dialog[open] .btn", "Done");
   await app.key("S", 83, ALT | SHIFT);
@@ -1414,6 +1414,85 @@ await session(sample("review.docx"), 9596, async (app) => {
   await app.clickText("dialog[open] .btn", "Close");
   check("no errors in the app", app.errors.length === 0, app.errors.join("; "));
 });
+
+// ---- round 6: sections, notes, word goal, LaTeX -----------------------------------------------
+
+const paperIn = join(tmpdir(), "duckwriter-smoke-paper.md");
+const texOut = join(tmpdir(), "duckwriter-smoke-paper.tex");
+writeFileSync(paperIn, "# A paper\n\n## Intro\n\nIntro text.\n\n## Methods\n\nMethods text.\n\n## Results\n\nResults text at 10 kg.\n");
+rmSync(texOut, { force: true });
+const round6Profile = join(tmpdir(), "duckwriter-smoke-round6-profile");
+removeFolder(round6Profile);
+
+await session(paperIn, 9597, async (app) => {
+  await app.debugHandle();
+  await app.waitFor(`[...document.querySelectorAll(".doc p")].some((p) => p.textContent === "Results")`, 5000);
+  const headings = () => app.evaluate(`[...document.querySelectorAll('.doc > p[data-style^="Heading"]')].map((p) => p.textContent + ":" + p.dataset.style).join(",")`);
+  const order = () => app.evaluate(`[...document.querySelectorAll(".doc > p")].map((p) => p.textContent).filter((t) => t).join("|")`);
+
+  await app.clickText(".doc p", "Results text");
+  // The editor takes the click's cursor a moment later.
+  await app.waitFor(`window.__dw.body.state.selection.$from.parent.textContent.startsWith("Results text")`, 3000);
+  await app.key("ArrowUp", 38, ALT | SHIFT);
+  check("Alt+Shift+Up moves the section (heading and text) above the one before", (await order()) === "A paper|Intro|Intro text.|Results|Results text at 10 kg.|Methods|Methods text.", await order());
+  await app.key("ArrowRight", 39, ALT | SHIFT);
+  check("Alt+Shift+Right takes its heading a level down", (await headings()).includes("Results:Heading2"), await headings());
+  await app.key("ArrowLeft", 37, ALT | SHIFT);
+  check("and Alt+Shift+Left back up", (await headings()).includes("Results:Heading1"), await headings());
+
+  // Dragging Methods before Intro in the headings pane.
+  await app.key("N", 78, ALT | SHIFT);
+  await app.waitFor(`document.querySelectorAll(".nav-item").length >= 3`, 3000);
+  await app.evaluate(`(() => {
+    const items = [...document.querySelectorAll(".nav-item")];
+    const from = items.find((i) => i.textContent === "Methods");
+    const to = items.find((i) => i.textContent === "Intro");
+    const data = new DataTransfer();
+    const r = to.getBoundingClientRect();
+    from.dispatchEvent(new DragEvent("dragstart", { bubbles: true, dataTransfer: data }));
+    to.dispatchEvent(new DragEvent("dragover", { bubbles: true, cancelable: true, dataTransfer: data, clientY: r.top + 2 }));
+    to.dispatchEvent(new DragEvent("drop", { bubbles: true, cancelable: true, dataTransfer: data, clientY: r.top + 2 }));
+  })()`);
+  check("dragging a heading in the headings pane moves its section", (await order()).startsWith("A paper|Methods|Methods text.|Intro"), await order());
+  await app.shoot("headings-pane");
+  await app.key("N", 78, ALT | SHIFT);
+
+  // A non-breaking space.
+  await app.clickText(".doc p", "Results text");
+  await app.evaluate(`(() => { const v = window.__dw.body; let at = -1; v.state.doc.descendants((n, p) => { if (at < 0 && n.isText && n.text.includes("10 kg")) at = p + n.text.indexOf("10 kg") + 2; }); v.dispatch(v.state.tr.setSelection(v.state.selection.constructor.create(v.state.doc, at, at + 1))); v.focus(); })()`);
+  await app.key(" ", 32, CTRL | SHIFT, "Space");
+  check("Ctrl+Shift+Space puts a non-breaking space", await app.evaluate(`window.__dw.body.state.doc.textContent.includes("10" + String.fromCharCode(160) + "kg")`));
+
+  // A footnote, then all footnotes made endnotes.
+  await app.key("End", 35);
+  await app.key("F", 70, CTRL | ALT);
+  await app.waitFor(`!!document.activeElement?.closest(".fn-note")`, 3000);
+  await app.type("Weighed twice.");
+  await app.key("Escape", 27);
+  await app.evaluate(`window.__dw.openMenu("references")`);
+  await app.clickText(".menu-item", "Make all footnotes endnotes");
+  check("all footnotes become endnotes, listed at the end", await app.waitFor(`/^i ?Weighed twice[.]$/.test(document.querySelector(".doc .endnote-item")?.textContent ?? "") && !document.querySelector(".doc .footnote-ref")`, 3000), await app.evaluate(`document.querySelector(".doc .endnotes")?.textContent ?? ""`));
+
+  // A word goal.
+  await app.key("G", 71, CTRL | SHIFT);
+  await app.waitFor(`!!document.querySelector("dialog[open] .goal-input")`, 3000);
+  await app.evaluate(`(() => { const box = document.querySelector("dialog[open] .goal-input"); box.value = "1000"; box.dispatchEvent(new Event("input")); })()`);
+  await app.shoot("word-goal");
+  await app.clickText("dialog[open] .btn", "Close");
+  check("a word goal shows in the status bar, with how far along it is", await app.waitFor(`document.querySelector(".status-button.words").classList.contains("has-goal") && / of 1[,.\\s ]?000 words/.test(document.querySelector(".status-button.words").textContent)`, 3000), await app.evaluate(`document.querySelector(".status-button.words").textContent`));
+
+  // A copy as LaTeX.
+  await app.evaluate(`window.__dw.exportTo("latex", ${JSON.stringify(texOut)})`);
+  check("saving a copy as LaTeX", await app.waitFor(`/Saved duckwriter-smoke-paper.tex/.test(document.querySelector(".toasts").textContent)`, 5000));
+  check("no errors in the app", app.errors.length === 0, app.errors.join("; "));
+}, { profileDir: round6Profile });
+removeFolder(round6Profile);
+{
+  const tex = readFileSync(texOut, "utf8");
+  check("the LaTeX has the title, the sections in their new order and the endnote", tex.includes("\\title{A paper}") && tex.indexOf("\\section{Methods}") < tex.indexOf("\\section{Intro}") && tex.includes("\\endnote{Weighed twice.}") && tex.includes("10~kg"));
+}
+rmSync(paperIn, { force: true });
+rmSync(texOut, { force: true });
 
 // ---- links ----------------------------------------------------------------------------------------
 

@@ -38,8 +38,15 @@ export function count(doc: Node, from = 0, to = doc.content.size): Counts {
   return out;
 }
 
-/** The counts, for the document and (if any) the selection. */
-export function showCounts(doc: Node, selection: { from: number; to: number; empty: boolean }, pages: number) {
+export interface Progress {
+  /** The words the document should reach, if set. */
+  goal: number | null;
+  /** Words written today. */
+  today: number;
+}
+
+/** The counts, for the document and (if any) the selection, and the goal to set. */
+export function showCounts(doc: Node, selection: { from: number; to: number; empty: boolean }, pages: number, progress?: Progress, setGoal?: (goal: number | null) => void) {
   const all = count(doc);
   const sel = selection.empty ? null : count(doc, selection.from, selection.to);
   const n = (v: number) => v.toLocaleString();
@@ -63,10 +70,37 @@ export function showCounts(doc: Node, selection: { from: number; to: number; emp
       ),
     ),
     h("p", { class: "dialog-hint" }, "Footnotes, headers and footers aren't counted, and deleted text (tracked changes) isn't either."),
+    ...(progress && setGoal ? [goalForm(all.words, progress, setGoal)] : []),
     h("div", { class: "dialog-footer" }, h("button", { type: "button", class: "btn primary", onclick: () => dialog.close() }, "Close")),
   );
-  dialog.addEventListener("close", () => dialog.remove());
+  dialog.addEventListener("close", () => {
+    const box = dialog.querySelector<HTMLInputElement>(".goal-input");
+    if (box && setGoal) setGoal(Number(box.value) > 0 ? Number(box.value) : null);
+    dialog.remove();
+  });
   document.body.append(dialog);
   dialog.showModal();
   (dialog.querySelector(".btn.primary") as HTMLElement).focus();
+}
+
+/** "Goal: [5000] words", with how far along it is and today's words. */
+function goalForm(words: number, progress: Progress, setGoal: (goal: number | null) => void): HTMLElement {
+  const box = h("input", { class: "tb-input dialog-input number goal-input", type: "number", min: "0", step: "100", placeholder: "none", "aria-label": "Word goal" }) as HTMLInputElement;
+  if (progress.goal) box.value = String(progress.goal);
+  const note = h("span", { class: "goal-note" });
+  const describe = () => {
+    const goal = Number(box.value);
+    const parts = [goal > 0 ? `${Math.min(100, Math.round((words / goal) * 100))}% there` : "", progress.today > 0 ? `${progress.today.toLocaleString()} written today` : ""].filter(Boolean);
+    note.textContent = parts.join(" · ");
+  };
+  box.addEventListener("input", describe);
+  box.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      setGoal(Number(box.value) > 0 ? Number(box.value) : null);
+      box.closest("dialog")?.close();
+    }
+  });
+  describe();
+  return h("label", { class: "goal-form" }, "Goal for this document: ", box, " words ", note);
 }

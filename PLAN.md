@@ -118,7 +118,7 @@ written back unchanged.
 - **Long documents**: 250 pages open in under 2 s, typing stays at about
   20 ms a key (it used to hang); scripts/perf.mjs measures it.
 
-### Round 6 (in progress)
+### Round 6
 - **LaTeX**: save a copy as .tex, with the sources as .bib, for journals
   that want LaTeX.
 - **RIS** sources (EndNote, Mendeley, Zotero), and the sources out as BibTeX.
@@ -126,8 +126,9 @@ written back unchanged.
   Alt+Shift+Up/Down; promote and demote with Alt+Shift+Left/Right.
 - **Footnotes to endnotes** and back, all at once.
 - **A word goal**, with words written today, in the status bar.
-- **Paste as plain text** (Ctrl+Alt+V), **non-breaking space**
-  (Ctrl+Shift+Space) and **non-breaking hyphen** (Ctrl+Shift+-).
+- **Non-breaking space**
+  (Ctrl+Shift+Space) and **non-breaking hyphen** (Ctrl+Shift+-); paste as
+  plain text was already there (Ctrl+Alt+V).
 
 ## Next
 

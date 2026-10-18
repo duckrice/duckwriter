@@ -1769,6 +1769,30 @@ kbd {
   }
 }
 
+/* How far along the word goal is: a thin bar under the count. */
+.status-button.words.has-goal {
+  background-image: linear-gradient(var(--accent), var(--accent));
+  background-repeat: no-repeat;
+  background-position: left bottom;
+  background-size: var(--goal, 0%) 2px;
+}
+
+.status-button.words.goal-reached {
+  color: var(--accent-text);
+}
+
+.goal-form {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin: 12px 0 4px;
+}
+
+.goal-note {
+  color: var(--muted, #667);
+}
+
 .status-button[hidden] {
   display: none;
 }

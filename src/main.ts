@@ -818,21 +818,82 @@ class App {
     } else this.showWords();
   }
 
-  /** The word count, with the selection's (Ctrl+Shift+G). */
+  /** The word count, with the selection's, and the goal (Ctrl+Shift+G). */
   wordCount() {
     const { selection, doc } = this.body.state;
-    showCounts(doc, selection, this.pages);
+    showCounts(doc, selection, this.pages, { goal: this.wordGoal, today: this.wordsToday() }, (goal) => {
+      this.wordGoal = goal;
+      this.showWords();
+    });
   }
 
-  /** "340 words", or "12 of 340 words" with text selected. */
+  /** Remembered on this computer, for each document. */
+  private get progressKey(): string {
+    return this.path ?? `unsaved:${this.name}`;
+  }
+
+  /** The number of words this document should reach, if one was set. */
+  get wordGoal(): number | null {
+    try {
+      const goal = Number(localStorage.getItem(`duckwriter.goal:${this.progressKey}`));
+      return goal > 0 ? goal : null;
+    } catch {
+      return null;
+    }
+  }
+
+  set wordGoal(goal: number | null) {
+    try {
+      if (goal && goal > 0) localStorage.setItem(`duckwriter.goal:${this.progressKey}`, String(Math.round(goal)));
+      else localStorage.removeItem(`duckwriter.goal:${this.progressKey}`);
+    } catch {
+      // Not remembered.
+    }
+  }
+
+  /** Words written today: the count now, less the count when the document was first opened today. */
+  private wordsToday(): number {
+    try {
+      const was = JSON.parse(localStorage.getItem(`duckwriter.today:${this.progressKey}`) ?? "null") as { day: string; start: number } | null;
+      return was?.day === new Date().toLocaleDateString("sv") ? this.totalWords - was.start : 0;
+    } catch {
+      return 0;
+    }
+  }
+
+  /** The first count of the day is where today's words start from. */
+  private startToday() {
+    const day = new Date().toLocaleDateString("sv");
+    const key = `duckwriter.today:${this.progressKey}`;
+    try {
+      const was = JSON.parse(localStorage.getItem(key) ?? "null") as { day: string } | null;
+      if (was?.day !== day) localStorage.setItem(key, JSON.stringify({ day, start: this.totalWords }));
+    } catch {
+      // Not remembered.
+    }
+  }
+
+  /** "340 words", "12 of 340 words" with text selected; with a goal, how far along, and today's words. */
   private showWords() {
     const { selection, doc } = this.body.state;
-    const total = `${this.totalWords.toLocaleString()} ${this.totalWords === 1 ? "word" : "words"}`;
-    this.words.textContent = selection.empty ? total : `${count(doc, selection.from, selection.to).words.toLocaleString()} of ${total}`;
+    const words = (n: number) => `${n.toLocaleString()} ${n === 1 ? "word" : "words"}`;
+    const goal = this.wordGoal;
+    const total = goal ? `${this.totalWords.toLocaleString()} of ${words(goal)}` : words(this.totalWords);
+    const today = this.wordsToday();
+    const progress = today > 0 ? ` · ${today.toLocaleString()} today` : "";
+    this.words.textContent = selection.empty ? `${total}${progress}` : `${count(doc, selection.from, selection.to).words.toLocaleString()} of ${total}`;
+    const share = goal ? Math.min(1, this.totalWords / goal) : 0;
+    this.words.classList.toggle("has-goal", !!goal);
+    this.words.classList.toggle("goal-reached", !!goal && share >= 1);
+    this.words.style.setProperty("--goal", `${Math.round(share * 100)}%`);
+    this.words.title = goal
+      ? `${Math.round(share * 100)}% of the goal of ${words(goal)}${today > 0 ? `; ${words(today)} written today` : ""}. Ctrl+Shift+G for the word count and the goal.`
+      : "Ctrl+Shift+G for the word count, and to set a goal";
   }
 
   private countWords() {
     this.totalWords = count(this.body.state.doc).words;
+    this.startToday();
     this.showWords();
   }
 
@@ -1005,8 +1066,23 @@ class App {
       if (!quiet) this.toast(`Couldn't save: ${message(error)}`, "error");
       return false;
     }
+    // The goal and today's words go along to the new name.
+    const goal = this.wordGoal;
+    const today = (() => {
+      try {
+        return localStorage.getItem(`duckwriter.today:${this.progressKey}`);
+      } catch {
+        return null;
+      }
+    })();
     if (isDesktop) this.path = path;
     this.name = baseName(path);
+    if (goal && !this.wordGoal) this.wordGoal = goal;
+    try {
+      if (today && !localStorage.getItem(`duckwriter.today:${this.progressKey}`)) localStorage.setItem(`duckwriter.today:${this.progressKey}`, today);
+    } catch {
+      // Not remembered.
+    }
     if (isDesktop && !quiet) addRecent(path);
     // What was written; changes made while saving still count as unsaved.
     this.savedDoc = doc;
