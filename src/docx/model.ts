@@ -242,6 +242,8 @@ export interface DocContext {
   trackChangesSaved: boolean;
   /** Title, author, keywords… (docProps/core.xml). */
   properties: import("./properties").DocProperties;
+  /** Picture ids given out while saving (kept apart: Word wants them unique). */
+  drawingIds?: { used: Set<number>; next: number };
   /** Who is saving, for "last saved by"; null leaves it as it was. */
   savedBy?: string | null;
 }

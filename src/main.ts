@@ -34,6 +34,7 @@ import { authorName } from "./author";
 import { showProperties } from "./ui/properties";
 import { isReading, toggleReadAloud } from "./ui/readaloud";
 import { stamped } from "./docx/properties";
+import { checkPackage } from "./docx/check";
 import { htmlToDoc, markdownToHtml, textFormat, textToHtml } from "./convert/import";
 import { baseName, isDesktop, onCloseRequested, openWindow, pickDocument, pickPdfPath, pickSavePath, readPath, setTitle, startupFiles, windowOpening, windowsSpelling, writePath } from "./platform";
 import { Footnotes } from "./ui/footnotes";
@@ -1061,7 +1062,12 @@ class App {
   async build(): Promise<Uint8Array> {
     // "Last saved by" in the properties: the name your comments and changes carry, if given.
     this.ctx.savedBy = authorName() || null;
-    return writeDocx(this.body.state.doc, this.ctx);
+    const bytes = await writeDocx(this.body.state.doc, this.ctx);
+    // While the app checks itself: anything Word would call damage is an error.
+    if ((window as { __DUCKWRITER_TEST?: boolean }).__DUCKWRITER_TEST) {
+      for (const problem of await checkPackage(bytes)) console.error(`Saved file: ${problem}`);
+    }
+    return bytes;
   }
 
   /** Saves; resolves to false if cancelled or failed. */

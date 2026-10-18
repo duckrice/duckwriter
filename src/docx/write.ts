@@ -73,6 +73,14 @@ function ordered(elements: string[], order: string[]): string {
 const twips = (points: number) => Math.round(points * TWIPS_PER_POINT);
 
 export async function writeDocx(doc: Node, ctx: DocContext): Promise<Uint8Array> {
+  // New picture ids come after every id in the file, in any part.
+  let highest = 0;
+  for (const name of Object.keys(ctx.zip.files)) {
+    if (!/^word\/[^/]+\.xml$/.test(name) || name === ctx.documentPath) continue;
+    for (const m of (await ctx.zip.file(name)!.async("string")).matchAll(/<wp:docPr\b[^>]*?\bid="(\d+)"/g)) highest = Math.max(highest, Number(m[1]));
+  }
+  for (const m of ctx.documentXml.matchAll(/<wp:docPr\b[^>]*?\bid="(\d+)"/g)) highest = Math.max(highest, Number(m[1]));
+  ctx.drawingIds = { used: new Set(), next: highest + 1 };
   // Headers and footers first: new ones change the section properties.
   await writeStories(ctx);
   await writeFootnotes(doc, ctx);
@@ -358,7 +366,21 @@ class BodyWriter {
 
   /** File extensions of pictures added in this save, for the content types. */
   readonly mediaExtensions = new Set<string>();
-  private drawingId = 0;
+
+  /** The ids pictures have in this save: a copied picture gets a new one (Word wants them all different). */
+  private get drawingIds() {
+    return (this.ctx.drawingIds ??= { used: new Set(), next: 1 });
+  }
+
+  private uniqueDrawing(xml: string): string {
+    const ids = this.drawingIds;
+    return xml.replace(/(<wp:docPr\b[^>]*?\bid=")(\d+)(")/, (_m, start: string, id: string, end: string) => {
+      let n = Number(id);
+      if (ids.used.has(n)) n = ids.next++;
+      ids.used.add(n);
+      return `${start}${n}${end}`;
+    });
+  }
 
   private image(node: Node): string {
     const a = node.attrs;
@@ -367,14 +389,16 @@ class BodyWriter {
       // A new description is put in the picture as read.
       const xml = a.alt !== a.altRead ? withDescription(a.xml, a.alt) : a.xml;
       const before = JSON.parse(a.original) as PictureLayout;
-      if (JSON.stringify(before) === JSON.stringify(layout)) return xml;
+      if (JSON.stringify(before) === JSON.stringify(layout)) return this.uniqueDrawing(xml);
       const adjusted = adjustPictureXml(xml, before, layout);
-      if (adjusted) return adjusted;
+      if (adjusted) return this.uniqueDrawing(adjusted);
     }
     const rid = a.rid ?? this.addMedia(a.media);
     if (!rid) return "";
-    if (!this.drawingId) this.drawingId = Math.max(0, ...[...this.ctx.documentXml.matchAll(/docPr id="(\d+)"/g)].map((m) => Number(m[1]))) + 1;
-    const picture = pictureXml(rid, layout, this.drawingId++, !this.ctx.prefixes.has("r"));
+    const ids = this.drawingIds;
+    const id = ids.next++;
+    ids.used.add(id);
+    const picture = pictureXml(rid, layout, id, !this.ctx.prefixes.has("r"));
     return `<w:r>${this.runProps(node.marks)}${a.alt ? withDescription(picture, a.alt) : picture}</w:r>`;
   }
 
