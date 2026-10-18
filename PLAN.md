@@ -98,8 +98,16 @@ written back unchanged.
 - **Each document in its own window**; pictures and links in headers.
 - **Installer and auto-update**, ready to publish.
 
+### Round 4
+- **Ribbon tabs**: Home, Insert, References, Review, Layout (Alt+1 to Alt+5).
+- **Maths shorthand** in the text: alpha → α, -> → →, <= → ≤.
+- **Focus mode** (F11) and a **dark page** for night writing (Alt+Shift+D).
+- **Tables**: sort rows (Alt+Shift+O), convert text to a table.
+- **Markdown, HTML and text**: open them as Word documents, save copies as them.
+- **Endnotes** (Ctrl+Alt+D), numbered i, ii, iii.
+- **Track changes** covers paragraph formatting and table rows too.
+
 ## Next
 
 - Text wrapping on both sides of a picture (the browser engine can't do this).
-- Tracking table rows and paragraph formatting.
 - Publishing: the GitHub repository, the first release.

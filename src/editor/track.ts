@@ -4,8 +4,8 @@
 
 import { Fragment, Slice, type Mark, type Node } from "prosemirror-model";
 import { Plugin, PluginKey, TextSelection, type Transaction } from "prosemirror-state";
-import { AddMarkStep, Mapping, RemoveMarkStep, ReplaceStep, type Step } from "prosemirror-transform";
-import { runPropsXml } from "../docx/write";
+import { AddMarkStep, Mapping, RemoveMarkStep, ReplaceAroundStep, ReplaceStep, type Step } from "prosemirror-transform";
+import { paraPropsXml, runPropsXml } from "../docx/write";
 import { newAnnotationId, type DocContext } from "../docx/model";
 import { schema } from "./schema";
 
@@ -71,6 +71,12 @@ function hasText(fragment: Fragment): boolean {
   return found;
 }
 
+/** Word's mark on a table row inserted or deleted while changes were tracked. */
+function rowMark(kind: "ins" | "del", opts: TrackOptions): string {
+  const esc = (s: string) => s.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;");
+  return `<w:${kind} w:id="${newAnnotationId(opts.context())}" w:author="${esc(opts.author())}" w:date="${nowIso()}"/>`;
+}
+
 export function trackPlugin(opts: TrackOptions) {
   return new Plugin({
     key: trackKey,
@@ -90,6 +96,19 @@ export function trackPlugin(opts: TrackOptions) {
       const author = opts.author();
       let selection: number | null = null;
       for (const { step, before, rest } of steps) {
+        // A paragraph's formatting (alignment, spacing, style…): what it was is kept, as Word's pPrChange.
+        if (step instanceof ReplaceAroundStep) {
+          const { from } = step as unknown as { from: number };
+          const old = before.nodeAt(from);
+          const at = out.mapping.map(rest.map(from, 1), 1);
+          const now = out.doc.nodeAt(at);
+          if (old?.type !== schema.nodes.paragraph || now?.type !== schema.nodes.paragraph || now.attrs.propsChange) continue;
+          if (now.attrs.change?.kind === "ins" && now.attrs.change.author === author) continue;
+          const fields = ["style", "align", "spaceBefore", "spaceAfter", "lineSpacing", "lineHeight", "lineRule", "indentLeft", "indentRight", "indentFirst", "numId", "ilvl"];
+          if (fields.every((f) => old.attrs[f] === now.attrs[f])) continue;
+          out.setNodeMarkup(at, null, { ...now.attrs, propsChange: { id: newAnnotationId(opts.context()), author, date: nowIso(), before: paraPropsXml(old.attrs, opts.context()) } });
+          continue;
+        }
         if (step instanceof AddMarkStep || step instanceof RemoveMarkStep) {
           // Formatting: what it was before is kept, so the change can be rejected.
           const { from, to, mark } = step as unknown as { from: number; to: number; mark: Mark };
@@ -119,15 +138,30 @@ export function trackPlugin(opts: TrackOptions) {
           out.removeMark(a, b, schema.marks.deletion);
           out.addMark(a, b, mark);
           out.doc.nodesBetween(a, b, (node, pos) => {
+            if (node.type === schema.nodes.table_row) {
+              if (pos >= a && pos + node.nodeSize <= b && !/<w:(ins|del)\b/.test(node.attrs.trPr)) out.setNodeMarkup(pos, null, { ...node.attrs, trPr: node.attrs.trPr + rowMark("ins", opts) });
+              return true;
+            }
             if (!node.isTextblock) return true;
             const end = pos + node.nodeSize - 1;
-            if (end >= a && end < b && !node.attrs.change) out.setNodeMarkup(pos, null, { ...node.attrs, change: { kind: "ins", id: newAnnotationId(opts.context()), author, date: nowIso() } });
+            if (end >= a && end < b && !node.attrs.change && !node.attrs.propsChange) out.setNodeMarkup(pos, null, { ...node.attrs, change: { kind: "ins", id: newAnnotationId(opts.context()), author, date: nowIso() } });
             return false;
           });
         }
         // What was taken out: put back, marked as deleted.
         if (to > from) {
           const removed = before.slice(from, to);
+          // Whole table rows: they stay, marked as deleted (unless they were your own new rows).
+          if (removed.openStart === 0 && removed.content.childCount && removed.content.content.every((n) => n.type === schema.nodes.table_row)) {
+            const rows = removed.content.content.filter((row) => !new RegExp(`<w:ins\\b[^>]*w:author="${author.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}"`).test(row.attrs.trPr));
+            if (!rows.length) continue;
+            let deletion: Mark | null = null;
+            const mark = () => (deletion ??= changeMark("deletion", undefined, opts));
+            const kept = rows.map((row) => row.type.create({ ...row.attrs, trPr: /<w:del\b/.test(row.attrs.trPr) ? row.attrs.trPr : row.attrs.trPr + rowMark("del", opts) }, markDeleted(row.content, mark, author)));
+            const at = out.mapping.map(rest.map(from, -1), -1);
+            out.replace(at, at, new Slice(Fragment.from(kept), 0, 0));
+            continue;
+          }
           if (!onlyText(removed.content)) continue;
           // Joining a paragraph you added yourself to the next one just joins them.
           const $from = before.resolve(from);

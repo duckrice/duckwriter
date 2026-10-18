@@ -102,6 +102,8 @@ export const schema = new Schema(clipboardReady({
         extra: { default: "" },
         /** A tracked change to the paragraph mark: { kind: "ins" | "del", id, author, date }, or null. */
         change: { default: null },
+        /** Its formatting changed while changes were tracked (w:pPrChange): { id, author, date, before } (before: the old pPr, as XML). */
+        propsChange: { default: null },
       },
       parseDOM: [
         { tag: "p", getAttrs: (el) => pastedParagraph(el as HTMLElement) },

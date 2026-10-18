@@ -8,7 +8,7 @@ import { Plugin, PluginKey, TextSelection, type EditorState, type Transaction } 
 import { Decoration, DecorationSet } from "prosemirror-view";
 import { ensureStyles } from "../docx/builtins";
 import { newAnnotationId, type CommentData, type DocContext } from "../docx/model";
-import { marksFromRunProps } from "../docx/read";
+import { marksFromRunProps, paraAttrsFromPPr } from "../docx/read";
 import { authorClass, schema } from "./schema";
 
 /** One change as a reader sees it: neighbouring text with the same kind of change by the same person. */
@@ -21,13 +21,32 @@ export interface Change {
   date: string | null;
   /** A change to a paragraph mark (a paragraph added or joined to the next), at the end of the paragraph. */
   paragraph?: boolean;
+  /** A change to a paragraph's formatting (from is the paragraph's position). */
+  props?: boolean;
+  /** A table row inserted or deleted (from and to span the row). */
+  row?: boolean;
+}
+
+/** A row's tracked change, from its properties. */
+function rowChange(trPr: string): { kind: "ins" | "del"; author: string; date: string | null } | null {
+  const m = /<w:(ins|del)\b([^>]*)\/?>/.exec(trPr);
+  if (!m) return null;
+  const attr = (name: string) => new RegExp(`w:${name}="([^"]*)"`).exec(m[2])?.[1] ?? null;
+  return { kind: m[1] as "ins" | "del", author: (attr("author") ?? "").replace(/&quot;/g, '"').replace(/&lt;/g, "<").replace(/&amp;/g, "&"), date: attr("date") };
 }
 
 /** Every change in the document, in order. */
 export function changes(doc: Node): Change[] {
   const out: Change[] = [];
   doc.descendants((block, blockPos) => {
+    if (block.type === schema.nodes.table_row) {
+      const c = rowChange(block.attrs.trPr);
+      if (c) out.push({ kind: c.kind, from: blockPos, to: blockPos + block.nodeSize, author: c.author, date: c.date, row: true });
+      return true;
+    }
     if (!block.isTextblock) return true;
+    const props = block.attrs.propsChange as { author: string; date: string | null } | null;
+    if (props) out.push({ kind: "fmt", from: blockPos + 1, to: blockPos + 1, author: props.author, date: props.date, props: true });
     const open: Partial<Record<"ins" | "del" | "fmt", Change>> = {};
     const types = { ins: schema.marks.insertion, del: schema.marks.deletion, fmt: schema.marks.formatChange };
     block.forEach((child, offset) => {
@@ -66,7 +85,11 @@ export function changesAt(state: EditorState): Change[] {
   const inside = all.filter((c) => (c.paragraph ? c.from === from : c.from < from && c.to > from));
   if (inside.length) return inside;
   // At the very start or end of a change.
-  return all.filter((c) => !c.paragraph && (c.from === from || c.to === from)).slice(0, 1);
+  const around = all.filter((c) => !c.paragraph && !c.row && !c.props && (c.from === from || c.to === from)).slice(0, 1);
+  if (around.length) return around;
+  // In a paragraph whose formatting changed, or a row that was inserted or deleted.
+  const $from = state.selection.$from;
+  return all.filter((c) => (c.props && $from.depth > 0 && c.from === $from.start()) || (c.row && c.from < from && c.to > from)).slice(0, 1);
 }
 
 /** Accepts (true) or rejects (false) the given changes. Rejecting formatting needs the document, for its styles. */
@@ -77,6 +100,27 @@ export function decide(state: EditorState, list: Change[], accept: boolean, ctx?
   for (const c of [...list].sort((a, b) => b.from - a.from || b.to - a.to)) {
     const from = tr.mapping.map(c.from);
     const to = tr.mapping.map(c.to);
+    if (c.props) {
+      const $para = tr.doc.resolve(from);
+      const para = $para.parent;
+      const pos = $para.before();
+      if (!para.attrs.propsChange) continue;
+      const before = !accept && ctx ? paraAttrsFromPPr(para.attrs.propsChange.before, ctx) : {};
+      tr.setNodeMarkup(pos, null, { ...para.attrs, ...before, change: para.attrs.change, propsChange: null });
+      continue;
+    }
+    if (c.row) {
+      const row = tr.doc.nodeAt(from);
+      if (!row || row.type !== schema.nodes.table_row) continue;
+      if ((c.kind === "ins") === accept) tr.setNodeMarkup(from, null, { ...row.attrs, trPr: row.attrs.trPr.replace(/<w:(ins|del)\b[^>]*\/>/g, "") });
+      else {
+        const $row = tr.doc.resolve(from);
+        // The table's last row goes with the table.
+        if ($row.parent.childCount === 1) tr.delete($row.before(), $row.after());
+        else tr.delete(from, from + row.nodeSize);
+      }
+      continue;
+    }
     if (c.kind === "fmt") {
       if (!accept && ctx) {
         // Back to the formatting before, piece by piece.
@@ -289,7 +333,14 @@ function decorate(doc: Node, active: string | null, ctx: DocContext | null): Dec
     if (a.to > a.from) decos.push(Decoration.inline(a.from, a.to, { class: cls, "data-comment": a.id }));
   }
   doc.descendants((node, pos) => {
+    if (node.type === schema.nodes.table_row) {
+      const rc = rowChange(node.attrs.trPr);
+      if (rc) decos.push(Decoration.node(pos, pos + node.nodeSize, { class: `tc-row tc-row-${rc.kind} ${authorClass(rc.author)}`, title: `Row ${rc.kind === "ins" ? "inserted" : "deleted"} by ${rc.author || "someone"}` }));
+      return true;
+    }
     if (!node.isTextblock) return true;
+    const pc = node.attrs.propsChange as { author: string } | null;
+    if (pc) decos.push(Decoration.node(pos, pos + node.nodeSize, { class: `tc-props ${authorClass(pc.author)}`, title: `Formatting changed by ${pc.author || "someone"}` }));
     const c = node.attrs.change as { kind: string; author: string } | null;
     if (c) {
       const end = pos + node.nodeSize - 1;

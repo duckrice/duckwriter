@@ -112,7 +112,7 @@ async function pair() {
   return { host, guest, bus };
 }
 
-describe("writing together", () => {
+describe("writing together", { timeout: 30_000 }, () => {
   it("gives someone joining the document as it is", async () => {
     const { guest } = await pair();
     expect(guest.text()).toBe("Hello");

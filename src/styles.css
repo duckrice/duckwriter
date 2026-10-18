@@ -2391,3 +2391,35 @@ kbd {
   background: #ffffff;
   color: #000000;
 }
+
+/* Paragraph formatting changed while tracked: a bar in the margin, as in Word. */
+.doc .tc-props {
+  box-shadow: -8px 0 0 -6px var(--rev);
+}
+
+.doc tr.tc-row-ins > td,
+.doc tr.tc-row-ins > th {
+  background: rgb(from var(--rev) r g b / 0.1);
+}
+
+.doc tr.tc-row-del > td,
+.doc tr.tc-row-del > th {
+  background: rgb(from var(--rev) r g b / 0.08);
+  text-decoration: line-through;
+}
+
+.sheet[data-markup="final"] .doc tr.tc-row-del,
+.sheet[data-markup="original"] .doc tr.tc-row-ins {
+  display: none;
+}
+
+.sheet[data-markup="final"] .doc .tc-props,
+.sheet[data-markup="original"] .doc .tc-props {
+  box-shadow: none;
+}
+
+@media print {
+  .doc .tc-props {
+    box-shadow: none;
+  }
+}

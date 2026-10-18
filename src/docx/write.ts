@@ -292,6 +292,10 @@ class BodyWriter {
       else extras[i] = extras[i].replace(/^<w:rPr\b([^>]*?)\/>$/, "<w:rPr$1></w:rPr>").replace(/^<w:rPr\b[^>]*>/, (open) => open + record);
     }
     props.push(...extras);
+    if (a.propsChange) {
+      const c = a.propsChange as { id: string; author: string; date: string | null; before: string };
+      props.push(`<w:pPrChange w:id="${escapeAttr(c.id)}" w:author="${escapeAttr(c.author)}"${c.date ? ` w:date="${escapeAttr(c.date)}"` : ""}><w:pPr>${c.before}</w:pPr></w:pPrChange>`);
+    }
     const pPr = props.length ? `<w:pPr>${ordered(props, PPR_ORDER)}</w:pPr>` : "";
     return `<w:p>${pPr}${lead}${this.inlines(node)}</w:p>`;
   }
@@ -484,6 +488,14 @@ class BodyWriter {
     }
     return props.length ? `<w:rPr>${ordered(props, RPR_ORDER)}</w:rPr>` : "";
   }
+}
+
+/** A paragraph's properties as the inside of a w:pPr (without its mark's formatting or tracked changes). */
+export function paraPropsXml(attrs: Node["attrs"], ctx: DocContext): string {
+  const node = schema.nodes.paragraph.create({ ...attrs, change: null, propsChange: null });
+  const xml = new BodyWriter(ctx).paragraph(node);
+  const inner = /^<w:p><w:pPr>([\s\S]*)<\/w:pPr>/.exec(xml)?.[1] ?? "";
+  return inner.replace(/<w:rPr>[\s\S]*?<\/w:rPr>|<w:rPr\/>/g, "");
 }
 
 /** Formatting (editor marks) as the inside of a w:rPr. */

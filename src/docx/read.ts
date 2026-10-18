@@ -550,7 +550,7 @@ function lineGridOf(grid: Element | null): number | null {
 // ---- the body -------------------------------------------------------------------
 
 /** The paragraph properties DuckWriter understands; the rest are kept as XML. */
-const KNOWN_PPR = new Set(["pStyle", "jc", "spacing", "ind", "numPr", "rPr"]);
+const KNOWN_PPR = new Set(["pStyle", "jc", "spacing", "ind", "numPr", "rPr", "pPrChange"]);
 /** The character properties DuckWriter understands; the rest are kept as XML. */
 const KNOWN_RPR = new Set(["rStyle", "rFonts", "b", "bCs", "i", "iCs", "strike", "u", "color", "sz", "szCs", "highlight", "vertAlign", "rPrChange"]);
 
@@ -697,6 +697,7 @@ class BodyReader {
       ilvl: props.ilvl ?? 0,
       extra: extra + (markRPr ? this.raw(markRPr) : ""),
       change,
+      propsChange: propsChangeOf(child(pPr, "pPrChange"), this.raw),
     };
     const content: Node[] = [];
     this.capture = null;
@@ -939,6 +940,22 @@ class BodyReader {
     }
     return marks;
   }
+}
+
+/** A paragraph's tracked formatting change, with what its properties were. */
+function propsChangeOf(el: Element | null, raw: (el: Element) => string) {
+  if (!el) return null;
+  const old = child(el, "pPr");
+  return { id: attr(el, "id") ?? "", author: attr(el, "author") ?? "", date: attr(el, "date"), before: old ? children(old).map(raw).join("") : "" };
+}
+
+/** Paragraph properties written as XML (the inside of a w:pPr) as a paragraph's attributes. */
+export function paraAttrsFromPPr(xml: string, ctx: DocContext): Record<string, unknown> {
+  const root = parseXml(`<w:p xmlns:w="${NS.w}"><w:pPr>${xml}</w:pPr></w:p>`).documentElement;
+  const { change, propsChange, ...attrs } = new BodyReader(new Set(["w"]), ctx.rels, ctx.themeFonts).paragraph(root).attrs;
+  void change;
+  void propsChange;
+  return attrs;
 }
 
 /** Formatting written as run properties (the inside of a w:rPr) as editor marks. */
