@@ -243,12 +243,14 @@ class BodyWriter {
     const instr = label ? ` TOC \\h \\z \\c "${escapeText(label)}" ` : ' TOC \\o "1-3" \\h \\z \\u ';
     const begin = `<w:r><w:fldChar w:fldCharType="begin"/></w:r><w:r><w:instrText xml:space="preserve">${instr}</w:instrText></w:r><w:r><w:fldChar w:fldCharType="separate"/></w:r>`;
     const end = '<w:r><w:fldChar w:fldCharType="end"/></w:r>';
-    if (!entries.length) return `${out}<w:p>${begin}<w:r><w:t>${label ? "No captions yet." : "No headings yet."}</w:t></w:r>${end}</w:p>`;
+    if (!entries.length) out += `<w:p>${begin}<w:r><w:t>${label ? "No captions yet." : "No headings yet."}</w:t></w:r>${end}</w:p>`;
     entries.forEach((e, i) => {
       const pPr = `<w:pPr><w:pStyle w:val="${label ? "TableofFigures" : `TOC${Math.min(e.level, 3)}`}"/><w:tabs><w:tab w:val="right" w:leader="dot" w:pos="${tab}"/></w:tabs></w:pPr>`;
       out += `<w:p>${pPr}${i === 0 ? begin : ""}<w:r><w:t xml:space="preserve">${escapeText(e.text)}</w:t></w:r><w:r><w:tab/></w:r><w:r><w:t>${e.page}</w:t></w:r>${i === entries.length - 1 ? end : ""}</w:p>`;
     });
-    return out;
+    // A table of contents goes in Word's content control for it (its Update table frame); a list of figures doesn't.
+    if (label) return out;
+    return `<w:sdt><w:sdtPr><w:docPartObj><w:docPartGallery w:val="Table of Contents"/><w:docPartUnique/></w:docPartObj></w:sdtPr><w:sdtContent>${out}</w:sdtContent></w:sdt>`;
   }
 
   /** A reference list as Word writes one: a Bibliographies content control around a BIBLIOGRAPHY field. */
@@ -322,7 +324,7 @@ class BodyWriter {
   }
 
   private wrapped(nodes: Node[], level: number): string {
-    const type = [schema.marks.link, schema.marks.insertion, schema.marks.deletion][level];
+    const type = [schema.marks.contentControl, schema.marks.link, schema.marks.insertion, schema.marks.deletion][level];
     if (!type) return nodes.map((n) => this.inline(n)).join("");
     let out = "";
     for (let i = 0; i < nodes.length; ) {
@@ -330,14 +332,20 @@ class BodyWriter {
       let j = i + 1;
       while (j < nodes.length && sameMark(type.isInSet(nodes[j].marks) ?? null, mark)) j++;
       const inner = this.wrapped(nodes.slice(i, j), level + 1);
-      out += mark ? this.wrap(mark, inner) : inner;
+      out += mark ? this.wrap(mark, inner, nodes.slice(i, j)) : inner;
       i = j;
     }
     return out;
   }
 
-  private wrap(mark: Mark, content: string): string {
+  private wrap(mark: Mark, content: string, nodes: Node[]): string {
     if (mark.type === schema.marks.link) return this.hyperlink(mark, content);
+    if (mark.type === schema.marks.contentControl) {
+      // Text typed over the placeholder isn't the placeholder any more.
+      const text = nodes.map((n) => n.textContent).join("");
+      const pr = mark.attrs.placeholder !== null && text !== mark.attrs.placeholder ? mark.attrs.pr.replace(/<w:showingPlcHdr\s*\/>/, "") : mark.attrs.pr;
+      return `<w:sdt>${pr}<w:sdtContent>${content}</w:sdtContent></w:sdt>`;
+    }
     const a = mark.attrs;
     const name = mark.type === schema.marks.insertion ? (a.move ? "w:moveTo" : "w:ins") : a.move ? "w:moveFrom" : "w:del";
     return `<${name} w:id="${escapeAttr(a.id)}" w:author="${escapeAttr(a.author)}"${a.date ? ` w:date="${escapeAttr(a.date)}"` : ""}>${content}</${name}>`;

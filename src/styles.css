@@ -287,6 +287,13 @@ body {
   text-decoration-line: line-through;
 }
 
+/* A content control (a template's Title or Author box): a light frame, as Word shows one. */
+.doc .content-control {
+  background: color-mix(in srgb, var(--accent) 7%, transparent);
+  box-shadow: inset 0 -1px 0 color-mix(in srgb, var(--accent) 45%, transparent);
+  border-radius: 2px;
+}
+
 .doc a {
   color: inherit;
   text-decoration: inherit;
@@ -1361,6 +1368,11 @@ kbd {
   .sheet {
     margin: 0 !important;
     overflow: hidden;
+  }
+
+  .doc .content-control {
+    background: none;
+    box-shadow: none;
   }
 
   .workspace > :not(.sheet),

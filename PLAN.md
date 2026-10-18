@@ -152,6 +152,15 @@ written back unchanged.
   changes in 124 pages, 22 ms a key (was 205).
 - **Every button has a name** for screen readers (checked in the app test).
 
+### Round 9: what Word 365 writes
+- **Text boxes and shapes** (mc:AlternateContent) are kept and shown as
+  "Text box: …"; they used to be lost on saving.
+- **Content controls** (a template's Title or Author box) stay around their
+  text while it is edited, and lose the placeholder look once typed in.
+- **The table of contents** is written in Word's content control for it.
+- A test with a body as Word 365 writes it (paragraph ids, smart tags,
+  proofing marks, simple fields), opened, edited and saved.
+
 ## Next
 
 - Text wrapping on both sides of a picture (the browser engine can't do this).

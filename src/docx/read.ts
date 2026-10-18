@@ -763,9 +763,23 @@ class BodyReader {
           // Wrappers: their runs are ordinary text.
           this.inlines(el, marks, out);
           break;
-        case "sdt":
-          this.inlines(child(el, "sdtContent") ?? el, marks, out);
+        case "sdt": {
+          // A content control (a template's "Title" or "Author" box): its text is edited as any
+          // other, and the control is kept around it.
+          const pr = child(el, "sdtPr");
+          const endPr = child(el, "sdtEndPr");
+          const content = child(el, "sdtContent") ?? el;
+          if (!pr) {
+            this.inlines(content, marks, out);
+            break;
+          }
+          const control = schema.marks.contentControl.create({
+            pr: this.raw(pr) + (endPr ? this.raw(endPr) : ""),
+            placeholder: child(pr, "showingPlcHdr") ? textOf(content) : null,
+          });
+          this.inlines(content, control.addToSet(marks), out);
           break;
+        }
         case "fldSimple": {
           const firstRun = childrenNamed(el, "r")[0];
           const fieldMarks = this.runMarks(child(firstRun, "rPr"), marks);
@@ -805,7 +819,16 @@ class BodyReader {
       text = "";
     };
     for (const el of children(r)) {
-      if (el.namespaceURI !== NS.w || isW(el, "rPr") || isW(el, "lastRenderedPageBreak")) continue;
+      if (el.namespaceURI !== NS.w) {
+        // Text boxes, shapes and newer pictures (mc:AlternateContent), and anything else from
+        // outside Word's own namespace: kept as they are, shown as what they are.
+        flush();
+        const box = el.getElementsByTagNameNS(NS.w, "txbxContent")[0];
+        const label = el.localName !== "AlternateContent" ? "" : box ? `Text box${box.textContent?.trim() ? `: ${box.textContent.trim().slice(0, 60)}` : ""}` : el.getElementsByTagNameNS(NS.w, "drawing")[0] || el.getElementsByTagNameNS(NS.w, "pict")[0] ? "Picture" : "Shape";
+        out.push(this.runPiece(r, el, label, marks));
+        continue;
+      }
+      if (isW(el, "rPr") || isW(el, "lastRenderedPageBreak")) continue;
       // A field (begin, instruction, separate, result, end) may span several runs, or sit in one.
       const fieldChar = isW(el, "fldChar") ? attr(el, "fldCharType") : null;
       if (this.capture || fieldChar === "begin") {

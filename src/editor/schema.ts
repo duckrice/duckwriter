@@ -375,6 +375,15 @@ export const schema = new Schema(clipboardReady({
       parseDOM: [{ tag: "a[href]", getAttrs: (el) => (/^(https?:|mailto:)/i.test((el as HTMLElement).getAttribute("href") ?? "") ? { href: (el as HTMLElement).getAttribute("href") } : false) }],
       toDOM: (mark) => ["a", { href: mark.attrs.href || `#${mark.attrs.anchor ?? ""}`, title: `${mark.attrs.href.replace(/^mailto:/, "") || "A place in this document"}\nCtrl+click to follow the link` }, 0],
     },
+    /**
+     * A content control around text (Word's w:sdt: a template's "Title" or
+     * "Author" box). `pr` is its properties as read; `placeholder` its
+     * placeholder text, while it shows one.
+     */
+    contentControl: {
+      attrs: { pr: {}, placeholder: { default: null } },
+      toDOM: (mark) => ["span", { class: "content-control", title: /w:alias w:val="([^"]*)"/.exec(mark.attrs.pr)?.[1] ?? /w:tag w:val="([^"]*)"/.exec(mark.attrs.pr)?.[1] ?? "Content control" }, 0],
+    },
     /** A character style (Word's "rStyle"). */
     charStyle: {
       attrs: { id: {} },
@@ -453,7 +462,9 @@ function clipboardReady(spec: { nodes: Record<string, NodeSpec>; marks: Record<s
     if (!mark.toDOM) continue;
     const toDOM = mark.toDOM;
     mark.toDOM = (m, inline) => withData(toDOM(m, inline), "data-pm-mark", name, m.attrs);
-    mark.parseDOM = [{ tag: `[data-pm-mark="${name}"]`, getAttrs: read, priority: 100 } as TagParseRule, ...((mark.parseDOM ?? []) as (TagParseRule | StyleParseRule)[])];
+    // A content control isn't copied along with its text: there would be two with one id.
+    const getAttrs = name === "contentControl" ? () => false as const : read;
+    mark.parseDOM = [{ tag: `[data-pm-mark="${name}"]`, getAttrs, priority: 100 } as TagParseRule, ...((mark.parseDOM ?? []) as (TagParseRule | StyleParseRule)[])];
   }
   return spec;
 }
