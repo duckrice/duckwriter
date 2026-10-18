@@ -28,6 +28,7 @@ import { MathView } from "./mathview";
 import { paginationPlugin, type PaginationHooks } from "./pagination";
 import { schema } from "./schema";
 import { editEquation } from "../ui/equation";
+import { EndnotesView, editEndnote } from "../ui/endnotes";
 
 export interface EditorHooks {
   /** Called after every change to the document or the selection. */
@@ -36,6 +37,8 @@ export interface EditorHooks {
   pictures?: PictureHooks;
   /** Picture files pasted or dropped into the text. */
   onImageFiles?(files: File[], view: EditorView, pos: number | null): void;
+  /** Given for the main text, where the endnotes are listed at the end. */
+  context?: () => DocContext;
 }
 
 let linkOpener: ((href: string, anchor: string | null) => void) | null = null;
@@ -105,6 +108,11 @@ export function createState(doc: Node, ctx: () => DocContext, pages?: Omit<Pagin
           handleDOMEvents: {
             // Links are followed only with Ctrl held, as in Word, and never inside the app's own window.
             click(view, event) {
+              const endnote = (event.target as HTMLElement).closest<HTMLElement>(".endnote-ref");
+              if (endnote?.dataset.id) {
+                editEndnote(view, ctx(), endnote.dataset.id);
+                return true;
+              }
               const a = (event.target as HTMLElement).closest("a");
               if (!a) return false;
               event.preventDefault();
@@ -129,6 +137,7 @@ export function createView(host: HTMLElement, state: EditorState, hooks: EditorH
     attributes: { spellcheck: "false", class: className },
     nodeViews: {
       math: (node, v, getPos) => new MathView(node, v, getPos, (pos) => editEquation(v, pos)),
+      ...(hooks.context ? { endnotes: (node: Node, v: EditorView) => new EndnotesView(node, v, hooks.context!) } : {}),
       ...(hooks.pictures ? { image: (node: Node, v: EditorView, getPos: () => number | undefined) => new ImageView(node, v, getPos, hooks.pictures!) } : {}),
     },
     handlePaste(v, event) {

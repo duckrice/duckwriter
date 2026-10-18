@@ -125,6 +125,42 @@ export async function readDocx(bytes: Uint8Array): Promise<OpenedDocument> {
     stories.push({ kind, type, path, rid, rootStart: /<w:(?:hdr|ftr)\b[^>]*>/.exec(partXml)?.[0] ?? null, prefixes: partPrefixes, rels: partRels, doc, saved: doc });
   }
 
+  // Endnotes are kept the same way as footnotes, in their own part.
+  const endnotes: Footnotes = { path: null, rootStart: null, prefixes: new Set(), rels: new Map(), special: [], notes: new Map(), saved: new Map() };
+  const endnotesPath = partFor("endnotes");
+  const endnotesXml = await text(endnotesPath);
+  if (endnotesPath && endnotesXml) {
+    const partDir = endnotesPath.slice(0, endnotesPath.lastIndexOf("/") + 1);
+    const partRoot = parseXml(endnotesXml).documentElement;
+    endnotes.path = endnotesPath;
+    endnotes.rootStart = /<w:endnotes\b[^>]*>/.exec(endnotesXml)?.[0] ?? null;
+    endnotes.prefixes = declaredPrefixes(partRoot);
+    endnotes.rels = await readRels(zip, `${partDir}_rels/${endnotesPath.slice(partDir.length)}.rels`);
+    const noteReader = new BodyReader(endnotes.prefixes, endnotes.rels, themeFonts);
+    for (const note of childrenNamed(partRoot, "endnote")) {
+      const id = attr(note, "id") ?? "";
+      const type = attr(note, "type");
+      if (type && type !== "normal") {
+        endnotes.special.push(rawXml(note, endnotes.prefixes));
+        continue;
+      }
+      const content = children(note).flatMap((el) => noteReader.block(el));
+      if (!content.length) content.push(schema.nodes.paragraph.create());
+      const doc = schema.nodes.doc.create(null, content);
+      endnotes.notes.set(id, doc);
+      endnotes.saved.set(id, doc);
+    }
+  }
+  // The list of endnotes goes at the end of the text, where Word prints them.
+  let hasEndnotes = false;
+  for (const b of blocks) {
+    b.descendants((n) => {
+      if (n.type === schema.nodes.endnote) hasEndnotes = true;
+      return !hasEndnotes;
+    });
+  }
+  if (hasEndnotes) blocks.push(schema.nodes.endnotes.create());
+
   const footnotes: Footnotes = { path: null, rootStart: null, prefixes: new Set(), rels: new Map(), special: [], notes: new Map(), saved: new Map() };
   const footnotesPath = partFor("footnotes");
   const footnotesXml = await text(footnotesPath);
@@ -170,6 +206,7 @@ export async function readDocx(bytes: Uint8Array): Promise<OpenedDocument> {
     stories,
     titlePage: !!toggle(finalSectPr, "titlePg"),
     footnotes,
+    endnotes,
     addedStyles: [],
     styleNumbering: new Map(),
     media: new Map(),
@@ -818,9 +855,16 @@ class BodyReader {
           out.push(this.runPiece(r, el, "Picture", marks));
           break;
         }
+        case "endnoteRef":
         case "footnoteRef":
           // The note's own number; written again when the note is saved.
           break;
+        case "endnoteReference": {
+          flush();
+          const xml = `${startTag(r)}>${rPr ? this.raw(rPr) : ""}${this.raw(el)}</${r.tagName}>`;
+          out.push(schema.nodes.endnote.create({ id: attr(el, "id") ?? "", xml }, null, marks));
+          break;
+        }
         case "footnoteReference": {
           flush();
           const xml = `${startTag(r)}>${rPr ? this.raw(rPr) : ""}${this.raw(el)}</${r.tagName}>`;

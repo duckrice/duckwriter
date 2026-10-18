@@ -137,3 +137,25 @@ $$\\frac{a}{b}$$
     expect(text).toContain("Run\tRate");
   });
 });
+
+describe("endnotes", () => {
+  it("are saved in Word's endnotes part and read back, listed at the end", async () => {
+    const JSZip = (await import("jszip")).default;
+    const { writeDocx } = await import("../src/docx/write");
+    const { doc: blank, context } = await readDocx(await blankDocx());
+    void blank;
+    context.endnotes.notes.set("1", schema.nodes.doc.create(null, schema.nodes.paragraph.create(null, schema.text("A note at the end."))));
+    const doc = schema.nodes.doc.create(null, [schema.nodes.paragraph.create(null, [schema.text("Text"), schema.nodes.endnote.create({ id: "1" })]), schema.nodes.endnotes.create()]);
+    const saved = await writeDocx(doc, context);
+    const zip = await JSZip.loadAsync(saved);
+    const endnotes = await zip.file("word/endnotes.xml")!.async("string");
+    expect(endnotes).toContain('<w:endnote w:id="1">');
+    expect(endnotes).toContain("<w:endnoteRef/>");
+    expect(endnotes).toContain("A note at the end.");
+    expect(await zip.file("word/document.xml")!.async("string")).toContain('<w:endnoteReference w:id="1"/>');
+    expect(await zip.file("word/settings.xml")!.async("string")).toContain("<w:endnotePr>");
+    const again = await readDocx(saved);
+    expect(again.context.endnotes.notes.get("1")?.textContent).toBe("A note at the end.");
+    expect(again.doc.lastChild!.type).toBe(schema.nodes.endnotes);
+  });
+});

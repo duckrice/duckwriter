@@ -10,6 +10,9 @@ const para = (id: string, name: string, pPr: string, rPr: string, extra = "") =>
 
 const BUILTINS: Record<string, string> = {
   FootnoteText: para("FootnoteText", "footnote text", '<w:spacing w:after="0" w:line="240" w:lineRule="auto"/>', '<w:sz w:val="20"/><w:szCs w:val="20"/>', '<w:uiPriority w:val="99"/><w:semiHidden/><w:unhideWhenUsed/>'),
+  EndnoteText: para("EndnoteText", "endnote text", '<w:spacing w:after="0" w:line="240" w:lineRule="auto"/>', '<w:sz w:val="20"/><w:szCs w:val="20"/>', '<w:uiPriority w:val="99"/><w:semiHidden/><w:unhideWhenUsed/>'),
+  EndnoteReference:
+    '<w:style w:type="character" w:styleId="EndnoteReference"><w:name w:val="endnote reference"/><w:basedOn w:val="DefaultParagraphFont"/><w:uiPriority w:val="99"/><w:semiHidden/><w:unhideWhenUsed/><w:rPr><w:vertAlign w:val="superscript"/></w:rPr></w:style>',
   FootnoteReference:
     '<w:style w:type="character" w:styleId="FootnoteReference"><w:name w:val="footnote reference"/><w:basedOn w:val="DefaultParagraphFont"/><w:uiPriority w:val="99"/><w:semiHidden/><w:unhideWhenUsed/><w:rPr><w:vertAlign w:val="superscript"/></w:rPr></w:style>',
   Caption: para("Caption", "caption", '<w:spacing w:after="200" w:line="240" w:lineRule="auto"/>', '<w:i/><w:iCs/><w:color w:val="44546A"/><w:sz w:val="18"/><w:szCs w:val="18"/>', '<w:uiPriority w:val="35"/><w:unhideWhenUsed/><w:qFormat/>'),

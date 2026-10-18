@@ -1,3 +1,4 @@
+import { insertEndnote } from "./endnotes";
 import { TEMPLATES } from "../templates";
 import { modifyStyle, updateStyleToMatch } from "./styles";
 import { insertBibliography, insertCitation, manageSources } from "./sources";
@@ -255,6 +256,7 @@ export class Toolbar {
             textButton("Caption…", "Insert a caption (Ctrl+Alt+C)", () => captionDialog(this.host.body, this.host.ctx)),
             textButton("Contents", "Table of contents (Ctrl+Alt+T)", () => insertToc(this.host.body, this.host.ctx)),
             textButton("Footnote", "Footnote (Ctrl+Alt+F)", () => this.host.insertFootnote()),
+            textButton("Endnote", "Endnote, at the end of the document (Ctrl+Alt+D)", () => insertEndnote(this.host.body, this.host.ctx)),
             this.splitButton("references", "References: cross-references, lists of figures, numbered headings (Ctrl+Alt+R)", null, () => this.referencesMenu(), () => this.referencesMenu()),
           ),
         ],

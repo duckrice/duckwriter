@@ -282,6 +282,24 @@ export const schema = new Schema(clipboardReady({
       toDOM: (node) => ["span", { class: `comment-anchor comment-${node.attrs.kind}`, "data-id": node.attrs.id }],
     },
 
+    /** The mark of an endnote in the text; numbered i, ii, iii by its place. */
+    endnote: {
+      group: "inline",
+      inline: true,
+      atom: true,
+      attrs: { id: {}, xml: { default: null } },
+      toDOM: (node) => ["span", { class: "endnote-ref", "data-id": node.attrs.id, title: "Endnote: click to edit" }],
+    },
+
+    /** The list of endnotes at the end of the document (drawn by its node view; not part of the file's text). */
+    endnotes: {
+      group: "block",
+      atom: true,
+      selectable: false,
+      attrs: { version: { default: 0 } },
+      toDOM: () => ["div", { class: "endnotes" }],
+    },
+
     /** A part of a paragraph DuckWriter can't edit yet (a picture, a field, a bookmark…), kept as is. */
     raw_inline: {
       group: "inline",
@@ -421,7 +439,7 @@ function clipboardReady(spec: { nodes: Record<string, NodeSpec>; marks: Record<s
     node.toDOM = (n) => withData(toDOM(n), "data-pm-node", name, n.attrs);
     // Comment anchors and footnote marks would be doubled; a bookmark would have its name twice.
     const own: TagParseRule =
-      name === "comment" || name === "footnote"
+      name === "comment" || name === "footnote" || name === "endnote" || name === "endnotes"
         ? { tag: `[data-pm-node="${name}"]`, ignore: true }
         : { tag: `[data-pm-node="${name}"]`, getAttrs: (el) => (name === "raw_inline" && /^<w:bookmark/.test(read(el).xml ?? "") ? false : read(el)), priority: 100 };
     node.parseDOM = [own, ...(node.parseDOM ?? [])];

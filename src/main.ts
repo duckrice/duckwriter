@@ -267,6 +267,8 @@ class App {
     if (this.ctx.comments.version !== this.ctx.comments.savedVersion || this.ctx.trackChanges !== this.ctx.trackChangesSaved) return true;
     if (this.ctx.bibliography.version !== this.ctx.bibliography.savedVersion) return true;
     if (this.ctx.styleChanges.size) return true;
+    const en = this.ctx.endnotes;
+    if ([...en.notes].some(([id, doc]) => !en.saved.get(id)?.eq(doc))) return true;
     const fn = this.ctx.footnotes;
     return [...fn.notes].some(([id, doc]) => {
       const saved = fn.saved.get(id);
@@ -626,6 +628,7 @@ class App {
       this.body = createView(this.sheet, state, {
         onChange: (_view, docChanged) => this.changed(docChanged),
         pictures: { context: () => this.ctx, snap: snapOn },
+        context: () => this.ctx,
         onImageFiles: (files, view, pos) => void insertPictureFiles(files, view, this.ctx, pos).catch((error) => this.toast(message(error), "error")),
       });
     }

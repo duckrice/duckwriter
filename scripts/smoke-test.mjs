@@ -1303,6 +1303,16 @@ await session(markdownIn, 9592, async (app) => {
   await app.shoot("dark-page");
   await app.key("D", 68, ALT | SHIFT);
 
+  // An endnote.
+  await app.clickText(".doc p", "The angle");
+  await app.key("End", 35);
+  await app.key("D", 68, CTRL | ALT);
+  check("Ctrl+Alt+D adds an endnote and opens it", await app.waitFor(`document.querySelector("dialog[open] h2")?.textContent === "Endnote i" && !!document.activeElement?.closest(".endnote-editor")`, 3000));
+  await app.type("Measured twice.");
+  await app.key("Escape", 27);
+  check("the endnote is listed at the end, numbered i", await app.waitFor(`document.querySelector(".doc .endnote-item")?.textContent === "iMeasured twice."`, 3000), await app.evaluate(`document.querySelector(".doc .endnotes")?.textContent ?? ""`));
+  await app.shoot("endnote");
+
   // A copy as a web page.
   await app.evaluate(`window.__dw.exportTo("html", ${JSON.stringify(htmlOut)})`);
   check("saving a copy as a web page", await app.waitFor(`/Saved duckwriter-smoke-notes.html/.test(document.querySelector(".toasts").textContent)`, 5000));

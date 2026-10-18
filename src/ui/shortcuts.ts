@@ -1,3 +1,4 @@
+import { insertEndnote } from "./endnotes";
 import { modifyStyle } from "./styles";
 import { insertBibliography, insertCitation, manageSources } from "./sources";
 import { copyFormatting, pasteFormatting, pastePlain } from "./painter";
@@ -214,6 +215,7 @@ export const SHORTCUTS: Shortcut[] = [
 
   // ---- inserting
   { group: "Insert", label: "Equation", keys: ["Alt+="], run: (x) => insertEquation(x.view) },
+  { group: "Insert", label: "Endnote (at the end of the document)", keys: ["Ctrl+Alt+D"], run: (x) => insertEndnote(x.body, x.ctx) },
   { group: "Insert", label: "Numbered equation, (1) on the right", keys: ["Alt+Shift+E"], run: (x) => insertNumberedEquation(x.body, x.ctx) },
   { group: "Insert", label: "Link, or change the link at the cursor", keys: ["Ctrl+K"], run: (x) => editLink(x.view, x.ctx) },
   { group: "Insert", label: "Cite a source", keys: ["Alt+Shift+C"], run: (x) => insertCitation(x.body, x.ctx) },

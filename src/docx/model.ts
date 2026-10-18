@@ -217,6 +217,8 @@ export interface DocContext {
   /** The paper size or margins were changed, so the section properties need updating. */
   pageChanged?: boolean;
   footnotes: Footnotes;
+  /** The endnotes, kept the same way as the footnotes (in endnotes.xml). */
+  endnotes: Footnotes;
   /** Style definitions (XML) to add to the document's styles when it is saved. */
   addedStyles: string[];
   /** Pictures added in DuckWriter, by key, until saved into the file's media folder. */

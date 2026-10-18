@@ -69,8 +69,9 @@ export async function toHtml(doc: Node, ctx: DocContext, title: string): Promise
           html = esc(n.attrs.latex);
         }
       } else if (n.type === schema.nodes.field) html = esc(n.attrs.result);
-      else if (n.type === schema.nodes.footnote) {
-        const note = ctx.footnotes.notes.get(n.attrs.id);
+      else if (n.type === schema.nodes.footnote || n.type === schema.nodes.endnote) {
+        // Footnotes and endnotes alike become notes at the end.
+        const note = (n.type === schema.nodes.endnote ? ctx.endnotes : ctx.footnotes).notes.get(n.attrs.id);
         notes.push(note ? (await Promise.all(note.content.content.map(inline))).join(" ") : "");
         const k = notes.length;
         html = `<sup><a href="#note-${k}" id="ref-${k}">${k}</a></sup>`;
@@ -216,8 +217,9 @@ export async function toMarkdown(doc: Node, ctx: DocContext): Promise<string> {
       else if (n.type === schema.nodes.hard_break) md = inTable ? " " : "  \n";
       else if (n.type === schema.nodes.math) md = n.attrs.display ? `\n$$${n.attrs.latex}$$\n` : `$${n.attrs.latex}$`;
       else if (n.type === schema.nodes.field) md = mdEscape(n.attrs.result);
-      else if (n.type === schema.nodes.footnote) {
-        const note = ctx.footnotes.notes.get(n.attrs.id);
+      else if (n.type === schema.nodes.footnote || n.type === schema.nodes.endnote) {
+        // Footnotes and endnotes alike become notes at the end.
+        const note = (n.type === schema.nodes.endnote ? ctx.endnotes : ctx.footnotes).notes.get(n.attrs.id);
         notes.push(note ? (await Promise.all(note.content.content.map((p) => inline(p)))).join(" ") : "");
         md = `[^${notes.length}]`;
       } else if (n.type === schema.nodes.image) {

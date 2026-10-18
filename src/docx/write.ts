@@ -75,6 +75,7 @@ export async function writeDocx(doc: Node, ctx: DocContext): Promise<Uint8Array>
   // Headers and footers first: new ones change the section properties.
   await writeStories(ctx);
   await writeFootnotes(doc, ctx);
+  await writeEndnotes(doc, ctx);
   await writeComments(doc, ctx);
   await writeTrackSetting(ctx);
   await writeBibliography(
@@ -137,6 +138,7 @@ class BodyWriter {
       else if (node.type === schema.nodes.raw_block) out += node.attrs.xml;
       else if (node.type === schema.nodes.toc) out += this.toc(node);
       else if (node.type === schema.nodes.bibliography) out += this.bibliography(node);
+      // The endnotes list is only shown; the notes themselves go in endnotes.xml.
       else if (node.type === schema.nodes.table) out += this.table(node);
     });
     return out;
@@ -339,6 +341,9 @@ class BodyWriter {
     if (node.type === schema.nodes.math) return this.equation(node);
     if (node.type === schema.nodes.field) return this.field(node);
     if (node.type === schema.nodes.image) return this.image(node);
+    if (node.type === schema.nodes.endnote) {
+      return node.attrs.xml ?? `<w:r>${this.runProps(node.marks) || '<w:rPr><w:rStyle w:val="EndnoteReference"/></w:rPr>'}<w:endnoteReference w:id="${escapeAttr(node.attrs.id)}"/></w:r>`;
+    }
     if (node.type === schema.nodes.footnote) {
       return node.attrs.xml ?? `<w:r>${this.runProps(node.marks) || '<w:rPr><w:rStyle w:val="FootnoteReference"/></w:rPr>'}<w:footnoteReference w:id="${escapeAttr(node.attrs.id)}"/></w:r>`;
     }
@@ -712,6 +717,50 @@ async function writeTrackSetting(ctx: DocContext) {
   }
   ctx.zip.file(path, out);
   ctx.trackChangesSaved = ctx.trackChanges;
+}
+
+// ---- endnotes -------------------------------------------------------------------------
+
+async function writeEndnotes(doc: Node, ctx: DocContext) {
+  const en = ctx.endnotes;
+  const ids: string[] = [];
+  doc.descendants((n) => {
+    if (n.type === schema.nodes.endnote && en.notes.has(n.attrs.id) && !ids.includes(n.attrs.id)) ids.push(n.attrs.id);
+  });
+  const unchanged = ids.length === en.saved.size && ids.every((id) => en.saved.get(id) && en.notes.get(id)!.eq(en.saved.get(id)!));
+  if (unchanged && (en.path || !ids.length)) return;
+  if (!en.path) {
+    en.path = `${documentDir(ctx)}endnotes.xml`;
+    ctx.addedRels.set(newRelId(ctx), { type: "http://schemas.openxmlformats.org/officeDocument/2006/relationships/endnotes", target: "endnotes.xml", external: false });
+    await addContentType(ctx, `/${en.path}`, "application/vnd.openxmlformats-officedocument.wordprocessingml.endnotes+xml");
+    await addNoteSettings(ctx, "endnotePr", '<w:endnotePr><w:endnote w:id="-1"/><w:endnote w:id="0"/></w:endnotePr>');
+  }
+  const special = en.special.length
+    ? en.special
+    : [
+        '<w:endnote w:type="separator" w:id="-1"><w:p><w:pPr><w:spacing w:after="0" w:line="240" w:lineRule="auto"/></w:pPr><w:r><w:separator/></w:r></w:p></w:endnote>',
+        '<w:endnote w:type="continuationSeparator" w:id="0"><w:p><w:pPr><w:spacing w:after="0" w:line="240" w:lineRule="auto"/></w:pPr><w:r><w:continuationSeparator/></w:r></w:p></w:endnote>',
+      ];
+  const writer = new BodyWriter(ctx, en);
+  const number = '<w:r><w:rPr><w:rStyle w:val="EndnoteReference"/></w:rPr><w:endnoteRef/></w:r>';
+  const notes = ids.map((id) => `<w:endnote w:id="${escapeAttr(id)}">${writer.blocks(en.notes.get(id)!, number)}</w:endnote>`);
+  const start = en.rootStart ?? NEW_ROOT("w:endnotes");
+  ctx.zip.file(en.path, `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n${start}${special.join("")}${notes.join("")}</w:endnotes>`);
+  await writePartRels(ctx, en.path, writer.storyRels);
+  await writeMediaTypes(ctx, writer.mediaExtensions);
+  en.rootStart = start;
+  en.special = special;
+  en.saved = new Map(ids.map((id) => [id, en.notes.get(id)!]));
+}
+
+/** Adds the notes' separators to the settings (Word lists them there). */
+async function addNoteSettings(ctx: DocContext, name: string, props: string) {
+  const path = `${documentDir(ctx)}settings.xml`;
+  const xml = await ctx.zip.file(path)?.async("string");
+  if (!xml || xml.includes(`<w:${name}`)) return;
+  const at = xml.search(/<w:(compat|docVars|rsids|mathPr|attachedSchema|themeFontLang|clrSchemeMapping|doNotIncludeSubdocsInStats|doNotAutoCompressPictures|forceUpgrade|captions|readModeInkLockDown|smartTagType|schemaLibrary|shapeDefaults|doNotEmbedSmartTags|decimalSymbol|listSeparator)\b/);
+  const end = xml.lastIndexOf("</w:settings>");
+  ctx.zip.file(path, at >= 0 ? xml.slice(0, at) + props + xml.slice(at) : xml.slice(0, end) + props + xml.slice(end));
 }
 
 /** Word lists the separator notes in the settings. */

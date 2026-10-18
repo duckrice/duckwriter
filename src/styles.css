@@ -2332,3 +2332,62 @@ kbd {
     filter: none !important;
   }
 }
+
+/* ---- endnotes -------------------------------------------------------------------------------- */
+
+.doc {
+  counter-reset: footnote endnote;
+}
+
+.endnote-ref {
+  cursor: pointer;
+  text-indent: 0;
+}
+
+.endnote-ref::after {
+  counter-increment: endnote;
+  content: counter(endnote, lower-roman);
+  vertical-align: super;
+  font-size: 0.7em;
+}
+
+.doc .endnotes {
+  margin-top: 18pt;
+  font-size: 10pt;
+  cursor: pointer;
+}
+
+.endnotes-rule {
+  width: 2in;
+  margin-bottom: 6pt;
+  border-top: 1px solid #000000;
+}
+
+.endnote-item {
+  display: flex;
+  gap: 6pt;
+  margin-bottom: 3pt;
+}
+
+.endnote-item:hover {
+  background: rgb(15 118 110 / 0.06);
+}
+
+.endnote-number {
+  min-width: 1.5em;
+  font-size: 0.8em;
+  vertical-align: super;
+}
+
+.endnote-text p {
+  margin: 0;
+}
+
+.endnote-editor {
+  min-height: 80px;
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: #ffffff;
+  color: #000000;
+}
