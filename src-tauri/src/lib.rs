@@ -200,7 +200,13 @@ fn write_atomically(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
     let mut name = path.file_name().unwrap_or_default().to_os_string();
     name.push(format!(".{}.tmp", std::process::id()));
     let tmp = path.with_file_name(name);
-    fs::write(&tmp, bytes)?;
+    {
+        // On the disk before it takes the document's place, so a power cut can't leave it empty.
+        use std::io::Write;
+        let mut file = fs::File::create(&tmp)?;
+        file.write_all(bytes)?;
+        file.sync_all()?;
+    }
     fs::rename(&tmp, path).inspect_err(|_| {
         let _ = fs::remove_file(&tmp);
     })

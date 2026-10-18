@@ -161,6 +161,14 @@ written back unchanged.
 - A test with a body as Word 365 writes it (paragraph ids, smart tags,
   proofing marks, simple fields), opened, edited and saved.
 
+### Round 10: odd files and safe saving
+- **A fuzz test**: the samples garbled 150 ways (elements left out,
+  attributes nonsense) must open or be refused plainly, and save soundly. It
+  found list levels and page sizes that crashed or broke the layout; they
+  are now kept within Word's limits.
+- **Saving flushes the file to disk** before it replaces the document, so a
+  power cut can't leave it empty (it was already written beside it first).
+
 ## Next
 
 - Text wrapping on both sides of a picture (the browser engine can't do this).
