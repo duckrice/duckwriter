@@ -209,7 +209,8 @@ function linesOf(el: HTMLElement, originTop: number, scale: number): Line[] {
 function layout(view: EditorView, hooks: PaginationHooks) {
   const ctx = hooks.context();
   const page = ctx.page;
-  const contentHeight = (page.height - page.marginTop - page.marginBottom) * PX;
+  // At least half an inch of text on a page, whatever the margins say.
+  const contentHeight = Math.max(36, page.height - page.marginTop - page.marginBottom) * PX;
   const pitch = page.height * PX + PAGE_GAP;
   // A little leeway: far down a long document, a line moved to the top of a
   // page can end up a rounding error above it, and would be moved again forever.

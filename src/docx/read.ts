@@ -37,6 +37,9 @@ export interface OpenedDocument {
 
 const twips = (value: number | null) => (value === null ? undefined : value / TWIPS_PER_POINT);
 
+/** A list level as Word has them, 0 to 8, whatever a damaged file says. */
+const listLevel = (n: number) => Math.min(8, Math.max(0, Math.trunc(n)));
+
 export async function readDocx(bytes: Uint8Array): Promise<OpenedDocument> {
   let zip: JSZip;
   try {
@@ -427,7 +430,7 @@ export function readParaProps(pPr: Element | null): ParaProps {
     const numId = attr(child(numPr, "numId"), "val");
     if (numId !== null) out.numId = numId;
     const ilvl = numAttr(child(numPr, "ilvl"), "val");
-    if (ilvl !== null) out.ilvl = ilvl;
+    if (ilvl !== null) out.ilvl = listLevel(ilvl);
   }
   return out;
 }
@@ -495,7 +498,8 @@ function readNumbering(text: string | null): Numbering {
     const levels: ListLevel[] = [];
     for (const lvl of childrenNamed(el, "lvl")) {
       const ind = child(child(lvl, "pPr"), "ind");
-      levels[numAttr(lvl, "ilvl") ?? levels.length] = {
+      const at = numAttr(lvl, "ilvl");
+      levels[at === null ? levels.length : listLevel(at)] = {
         format: attr(child(lvl, "numFmt"), "val") ?? "decimal",
         text: attr(child(lvl, "lvlText"), "val") ?? "",
         start: numAttr(child(lvl, "start"), "val") ?? 1,
@@ -510,7 +514,7 @@ function readNumbering(text: string | null): Numbering {
     const startOverrides = new Map<number, number>();
     for (const o of childrenNamed(el, "lvlOverride")) {
       const start = numAttr(child(o, "startOverride"), "val");
-      if (start !== null) startOverrides.set(numAttr(o, "ilvl") ?? 0, start);
+      if (start !== null) startOverrides.set(listLevel(numAttr(o, "ilvl") ?? 0), start);
     }
     numbering.nums.set(attr(el, "numId") ?? "", { abstractId: attr(child(el, "abstractNumId"), "val") ?? "", startOverrides });
   }
@@ -522,31 +526,38 @@ function readPage(sectPr: Element | null): PageSetup {
   const size = child(sectPr, "pgSz");
   const margin = child(sectPr, "pgMar");
   const get = (el: Element | null, name: string, fallback: number) => twips(numAttr(el, name)) ?? fallback;
-  return {
-    width: get(size, "w", DEFAULT_PAGE.width),
-    height: get(size, "h", DEFAULT_PAGE.height),
+  // Within what Word allows (1 to 22 inches), whatever a damaged file says.
+  const side = (value: number, fallback: number) => (value >= 72 && value <= 1584 ? value : fallback);
+  const page: PageSetup = {
+    width: side(get(size, "w", DEFAULT_PAGE.width), DEFAULT_PAGE.width),
+    height: side(get(size, "h", DEFAULT_PAGE.height), DEFAULT_PAGE.height),
     marginTop: Math.abs(get(margin, "top", DEFAULT_PAGE.marginTop)),
-    marginRight: get(margin, "right", DEFAULT_PAGE.marginRight),
+    marginRight: Math.max(0, get(margin, "right", DEFAULT_PAGE.marginRight)),
     marginBottom: Math.abs(get(margin, "bottom", DEFAULT_PAGE.marginBottom)),
-    marginLeft: get(margin, "left", DEFAULT_PAGE.marginLeft),
-    headerDistance: get(margin, "header", DEFAULT_PAGE.headerDistance),
-    footerDistance: get(margin, "footer", DEFAULT_PAGE.footerDistance),
+    marginLeft: Math.max(0, get(margin, "left", DEFAULT_PAGE.marginLeft)),
+    headerDistance: Math.max(0, get(margin, "header", DEFAULT_PAGE.headerDistance)),
+    footerDistance: Math.max(0, get(margin, "footer", DEFAULT_PAGE.footerDistance)),
     lineGrid: lineGridOf(child(sectPr, "docGrid")),
     lineNumbers: lineNumbersOf(child(sectPr, "lnNumType")),
   };
+  // Margins that leave no room for text: the usual ones instead.
+  if (page.marginTop + page.marginBottom > page.height - 36) Object.assign(page, { marginTop: Math.min(72, page.height / 4), marginBottom: Math.min(72, page.height / 4) });
+  if (page.marginLeft + page.marginRight > page.width - 36) Object.assign(page, { marginLeft: Math.min(72, page.width / 4), marginRight: Math.min(72, page.width / 4) });
+  return page;
 }
 
 function lineNumbersOf(el: Element | null): PageSetup["lineNumbers"] {
   if (!el) return null;
   const restart = attr(el, "restart");
-  return { countBy: Math.max(1, numAttr(el, "countBy") ?? 1), restart: restart === "continuous" ? "continuous" : "newPage" };
+  return { countBy: Math.min(100, Math.max(1, Math.trunc(numAttr(el, "countBy") ?? 1))), restart: restart === "continuous" ? "continuous" : "newPage" };
 }
 
 /** The line pitch of a document grid that lines snap to ("lines" or "linesAndChars"). */
 function lineGridOf(grid: Element | null): number | null {
   const type = attr(grid, "type");
   const pitch = numAttr(grid, "linePitch");
-  return (type === "lines" || type === "linesAndChars") && pitch ? pitch / TWIPS_PER_POINT : null;
+  // A pitch of a few points up to a few lines; anything else from a damaged file is no grid.
+  return (type === "lines" || type === "linesAndChars") && pitch && pitch >= 40 && pitch <= 4000 ? pitch / TWIPS_PER_POINT : null;
 }
 
 // ---- the body -------------------------------------------------------------------
