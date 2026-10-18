@@ -107,6 +107,28 @@ written back unchanged.
 - **Endnotes** (Ctrl+Alt+D), numbered i, ii, iii.
 - **Track changes** covers paragraph formatting and table rows too.
 
+### Round 5
+- **Compare** two documents, or this one with an earlier version: the
+  differences as tracked changes.
+- **Check before sending**: comments, tracked changes, hidden author names,
+  pictures without a description.
+- **Picture descriptions** (alt text), read aloud by screen readers.
+- **Own templates**: save a document as a template, start new ones from it.
+- **AutoCorrect** for common typos, and **fit zoom** (page width, whole page).
+- **Long documents**: 250 pages open in under 2 s, typing stays at about
+  20 ms a key (it used to hang); scripts/perf.mjs measures it.
+
+### Round 6 (in progress)
+- **LaTeX**: save a copy as .tex, with the sources as .bib, for journals
+  that want LaTeX.
+- **RIS** sources (EndNote, Mendeley, Zotero), and the sources out as BibTeX.
+- **Moving sections** in the headings pane: drag a heading, or
+  Alt+Shift+Up/Down; promote and demote with Alt+Shift+Left/Right.
+- **Footnotes to endnotes** and back, all at once.
+- **A word goal**, with words written today, in the status bar.
+- **Paste as plain text** (Ctrl+Alt+V), **non-breaking space**
+  (Ctrl+Shift+Space) and **non-breaking hyphen** (Ctrl+Shift+-).
+
 ## Next
 
 - Text wrapping on both sides of a picture (the browser engine can't do this).
