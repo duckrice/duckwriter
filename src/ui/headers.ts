@@ -74,17 +74,34 @@ export class HeadersAndFooters {
     return this.editing?.view ?? null;
   }
 
-  /** The story shown on a page: the first page may have its own. */
+  /** The story shown on a page: the first page may have its own; an earlier section may have its own. */
   private storyFor(kind: Kind, page: number): Story | undefined {
-    const { stories, titlePage } = this.host.ctx;
+    const { stories, titlePage, sectionStories } = this.host.ctx;
+    let s = this.sections.length - 1;
+    while (s > 0 && this.sections[s].firstPage > page) s--;
+    if (s >= 0 && s < this.sections.length - 1) {
+      // An earlier section: its own references, or else the section before's (as Word does).
+      const xml = this.sections[s].xml;
+      const first = /<w:titlePg[ />]/.test(xml) && !/<w:titlePg[^>]*w:val="(0|false)"/.test(xml) && page === this.sections[s].firstPage;
+      const type = first ? "first" : "default";
+      for (let j = s; j >= 0; j--) {
+        // The section's references of this kind: <w:headerReference w:type="default" r:id="rId8"/>.
+        const tags = this.sections[j].xml.split(`<w:${kind}Reference`).slice(1).map((t) => t.slice(0, t.indexOf(">")));
+        const tag = tags.find((t) => (/w:type="([^"]*)"/.exec(t)?.[1] ?? "default") === type);
+        const rid = tag && /r:id="([^"]*)"/.exec(tag)?.[1];
+        if (rid) return sectionStories?.get(rid) ?? stories.find((x) => x.rid === rid);
+      }
+      return undefined;
+    }
     const type = titlePage && page === 0 ? "first" : "default";
     return stories.find((s) => s.kind === kind && s.type === type);
   }
 
   /** Draws the headers and footers of `count` pages. */
-  render(count: number, labels: string[] = []) {
+  render(count: number, labels: string[] = [], sections: { firstPage: number; xml: string }[] = []) {
     this.pageCount = count;
     this.labels = labels;
+    this.sections = sections;
     const p = this.host.ctx.page;
     const pitch = p.height * PX + PAGE_GAP;
     const areas = [...this.layer.querySelectorAll<HTMLElement>(".hf")];
@@ -120,6 +137,8 @@ export class HeadersAndFooters {
   private shown = new WeakMap<HTMLElement, { doc: unknown; page: number; count: number; label?: string }>();
   /** Each page's number as shown (sections may restart it or show i, ii, iii). */
   private labels: string[] = [];
+  /** The sections, from the last layout. */
+  private sections: { firstPage: number; xml: string }[] = [];
 
   /** Shows a story's content with this page's number in it. */
   private fill(area: HTMLElement, story: Story | undefined, page: number) {
@@ -206,7 +225,7 @@ export class HeadersAndFooters {
     }
     this.layer.parentElement?.classList.remove("editing-hf");
     this.bar.hidden = true;
-    this.render(this.pageCount, this.labels);
+    this.render(this.pageCount, this.labels, this.sections);
     this.host.storiesChanged();
   }
 

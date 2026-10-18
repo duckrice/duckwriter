@@ -175,13 +175,13 @@ written back unchanged.
 
 ### Round 12: sections, first part
 - **Section breaks** start a new page (or the next odd or even one), as in Word.
+- **Each section its own headers and footers**, read, shown and saved.
 - **Page numbers by section**: front matter i, ii, iii, chapters from 1;
   in footers, headers and the table of contents.
 
 ## Next
 
 - Text wrapping on both sides of a picture (the browser engine can't do this).
-- Sections with their own page size or orientation (a landscape table), and
-  their own headers and footers: pages are still drawn at the last section's
-  size, with its headers.
+- Sections with their own page size or orientation (a landscape table):
+  pages are still drawn at the last section's size.
 - Publishing: the GitHub repository, the first release.

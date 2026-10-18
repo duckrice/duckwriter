@@ -7,11 +7,11 @@ import { formatPageNumber, pageLabels, sectionBreak } from "../src/editor/pagina
 
 /** A thesis in two sections: front matter numbered i, ii, then the chapters from 1. */
 async function thesis(): Promise<Uint8Array> {
-  const footer = () => new docx.Footer({ children: [new docx.Paragraph({ children: [new docx.TextRun({ children: [docx.PageNumber.CURRENT] })] })] });
+  const footer = (name: string) => new docx.Footer({ children: [new docx.Paragraph({ children: [new docx.TextRun({ children: [`${name} `, docx.PageNumber.CURRENT] })] })] });
   const file = new docx.Document({
     sections: [
-      { properties: { page: { pageNumbers: { start: 1, formatType: docx.NumberFormat.LOWER_ROMAN } } }, footers: { default: footer() }, children: [new docx.Paragraph("Abstract")] },
-      { properties: { type: docx.SectionType.NEXT_PAGE, page: { pageNumbers: { start: 1, formatType: docx.NumberFormat.DECIMAL } } }, footers: { default: footer() }, children: [new docx.Paragraph("Chapter one")] },
+      { properties: { page: { pageNumbers: { start: 1, formatType: docx.NumberFormat.LOWER_ROMAN } } }, footers: { default: footer("Front") }, children: [new docx.Paragraph("Abstract")] },
+      { properties: { type: docx.SectionType.NEXT_PAGE, page: { pageNumbers: { start: 1, formatType: docx.NumberFormat.DECIMAL } } }, footers: { default: footer("Chapter") }, children: [new docx.Paragraph("Chapter one")] },
     ],
   });
   return new Uint8Array(await docx.Packer.toBuffer(file));
@@ -24,6 +24,9 @@ describe("sections", () => {
     expect(breaks).toHaveLength(1);
     expect(breaks[0]!.xml).toContain('w:fmt="lowerRoman"');
     expect(context.sectPr).toContain('w:fmt="decimal"');
+    // The front matter's footer is read too, apart from the last section's.
+    expect([...(context.sectionStories?.values() ?? [])].map((s) => s.doc.textContent.trim())).toEqual(["Front"]);
+    expect(context.stories.map((s) => s.doc.textContent.trim())).toEqual(["Chapter"]);
     const saved = await writeDocx(doc, context);
     expect(await checkPackage(saved)).toEqual([]);
     const again = await readDocx(saved);

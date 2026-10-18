@@ -29,6 +29,8 @@ export interface PageLayout {
   pageOfBlock: Map<number, number>;
   /** Each page's number as headers and footers show it (sections can restart it, or count i, ii, iii). */
   labels?: string[];
+  /** The sections: the page each starts on, and its properties (w:sectPr). */
+  sections?: { firstPage: number; xml: string }[];
 }
 
 export interface PaginationHooks {
@@ -463,7 +465,7 @@ function layout(view: EditorView, hooks: PaginationHooks) {
     pageOfBlock.set(b.pos, pageOf(b.top + moved + 1));
   }
   sections[sections.length - 1].xml = ctx.sectPr ?? "";
-  hooks.onLayout({ count, notes: Array.from({ length: count }, (_, k) => notesOn[k] ?? []), pageOfBlock, labels: pageLabels(count, sections) });
+  hooks.onLayout({ count, notes: Array.from({ length: count }, (_, k) => notesOn[k] ?? []), pageOfBlock, labels: pageLabels(count, sections), sections });
 }
 
 interface SectionBreak {

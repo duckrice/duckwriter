@@ -273,7 +273,7 @@ class App {
   get dirty(): boolean {
     if (!this.savedDoc) return false;
     if (!this.body.state.doc.eq(this.savedDoc) || this.ctx.titlePage !== this.savedTitlePage || !this.lineGridSaved) return true;
-    if (this.ctx.stories.some((s) => !s.saved || !s.doc.eq(s.saved))) return true;
+    if ([...this.ctx.stories, ...(this.ctx.sectionStories?.values() ?? [])].some((s) => !s.saved || !s.doc.eq(s.saved))) return true;
     if (this.ctx.comments.version !== this.ctx.comments.savedVersion || this.ctx.trackChanges !== this.ctx.trackChangesSaved) return true;
     if (this.ctx.bibliography.version !== this.ctx.bibliography.savedVersion) return true;
     if (this.ctx.styleChanges.size || JSON.stringify(this.ctx.properties) !== this.savedProperties) return true;
@@ -804,7 +804,7 @@ class App {
     this.showPage();
     this.pages = layout.count;
     this.lastLayout = layout;
-    this.headers.render(layout.count, layout.labels);
+    this.headers.render(layout.count, layout.labels, layout.sections);
     this.footnotes.render(layout);
     this.comments.layout();
     this.drawLineNumbers();

@@ -108,11 +108,16 @@ export async function readDocx(bytes: Uint8Array): Promise<OpenedDocument> {
 
   const finalSectPr = child(body, "sectPr");
   const stories: Story[] = [];
-  for (const ref of finalSectPr ? children(finalSectPr) : []) {
+  // The last section's headers and footers are the document's; earlier sections' are kept apart, by relationship.
+  const sectionStories = new Map<string, Story>();
+  const earlier = Array.from(body.getElementsByTagNameNS(NS.w, "sectPr")).filter((s) => s !== finalSectPr);
+  const refs = [...(finalSectPr ? children(finalSectPr) : []).map((ref) => ({ ref, last: true })), ...earlier.flatMap((s) => children(s).map((ref) => ({ ref, last: false })))];
+  for (const { ref, last } of refs) {
     const kind = isW(ref, "headerReference") ? "header" : isW(ref, "footerReference") ? "footer" : null;
     const rid = ref.getAttributeNS(NS.r, "id");
     const rel = rid ? rels.get(rid) : undefined;
     if (!kind || !rid || !rel) continue;
+    if (!last && (sectionStories.has(rid) || stories.some((s) => s.rid === rid))) continue;
     const path = resolvePath(dir, rel.target);
     const partXml = await text(path);
     if (!partXml) continue;
@@ -126,7 +131,9 @@ export async function readDocx(bytes: Uint8Array): Promise<OpenedDocument> {
     if (!content.length) content.push(schema.nodes.paragraph.create());
     const doc = schema.nodes.doc.create(null, content);
     const type = (attr(ref, "type") ?? "default") as Story["type"];
-    stories.push({ kind, type, path, rid, rootStart: /<w:(?:hdr|ftr)\b[^>]*>/.exec(partXml)?.[0] ?? null, prefixes: partPrefixes, rels: partRels, doc, saved: doc });
+    const story: Story = { kind, type, path, rid, rootStart: /<w:(?:hdr|ftr)\b[^>]*>/.exec(partXml)?.[0] ?? null, prefixes: partPrefixes, rels: partRels, doc, saved: doc };
+    if (last) stories.push(story);
+    else sectionStories.set(rid, story);
   }
 
   // Endnotes are kept the same way as footnotes, in their own part.
@@ -208,6 +215,7 @@ export async function readDocx(bytes: Uint8Array): Promise<OpenedDocument> {
     sectPr,
     page: readPage(finalSectPr),
     stories,
+    sectionStories,
     titlePage: !!toggle(finalSectPr, "titlePg"),
     footnotes,
     endnotes,

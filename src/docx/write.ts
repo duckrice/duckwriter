@@ -581,7 +581,7 @@ function newRelId(ctx: DocContext): string {
 
 async function writeStories(ctx: DocContext) {
   const dir = documentDir(ctx);
-  for (const story of ctx.stories) {
+  for (const story of [...ctx.stories, ...(ctx.sectionStories?.values() ?? [])]) {
     if (story.path && story.saved && story.doc.eq(story.saved)) continue;
     const info = STORY[story.kind];
     if (!story.path) {
@@ -672,7 +672,7 @@ export function referencedComments(doc: Node, ctx: DocContext): string[] {
       if (n.type === schema.nodes.comment && !ids.includes(n.attrs.id)) ids.push(n.attrs.id);
     });
   visit(doc);
-  for (const story of ctx.stories) visit(story.doc);
+  for (const story of [...ctx.stories, ...(ctx.sectionStories?.values() ?? [])]) visit(story.doc);
   for (const note of ctx.footnotes.notes.values()) visit(note);
   return ids.filter((id) => ctx.comments.items.has(id));
 }
