@@ -1,10 +1,12 @@
 // The navigation pane: the document's headings, as an outline beside the page.
 // Clicking one (or Enter) goes there; the one the cursor is under is marked.
 
+import type { Command } from "prosemirror-state";
 import type { EditorView } from "prosemirror-view";
 import type { DocContext } from "../docx/model";
 import { h } from "../dom";
 import { listLabels } from "../editor/lists";
+import { moveSection, moveSectionCommand, shiftSection } from "../editor/outline";
 import { schema } from "../editor/schema";
 import { headingLevel } from "./references";
 
@@ -14,6 +16,8 @@ export interface NavigationHost {
   readonly body: EditorView;
   readonly ctx: DocContext;
   goTo(pos: number): void;
+  /** Runs a command on the text, as if typed there. */
+  run(command: Command): boolean;
 }
 
 interface Entry {
@@ -51,8 +55,96 @@ export class NavigationPane {
       } else if (event.key === "Escape") {
         event.preventDefault();
         this.host.body.focus();
+      } else if (event.altKey && event.shiftKey && !event.ctrlKey && event.key.startsWith("Arrow") && i >= 0) {
+        // Moving the chosen section, or taking its headings a level up or down.
+        event.preventDefault();
+        const { ctx } = this.host;
+        const pos = this.entries[i].pos;
+        const command =
+          event.key === "ArrowUp" ? moveSection(ctx, -1, pos)
+          : event.key === "ArrowDown" ? moveSection(ctx, 1, pos)
+          : shiftSection(ctx, event.key === "ArrowLeft" ? -1 : 1, pos);
+        this.act(command, event.key === "ArrowUp" || event.key === "ArrowDown" ? null : i);
       }
     });
+    // Dragging a heading moves its section: before the heading it is dropped on, or to the end.
+    this.list.addEventListener("dragstart", (event) => {
+      const item = (event.target as HTMLElement).closest<HTMLElement>(".nav-item");
+      if (!item) return;
+      this.dragging = [...this.list.querySelectorAll(".nav-item")].indexOf(item);
+      event.dataTransfer?.setData("text/x-duckwriter-section", String(this.dragging));
+      if (event.dataTransfer) event.dataTransfer.effectAllowed = "move";
+    });
+    this.list.addEventListener("dragover", (event) => {
+      if (this.dragging < 0) return;
+      event.preventDefault();
+      if (event.dataTransfer) event.dataTransfer.dropEffect = "move";
+      this.showDrop(this.dropIndex(event.clientY));
+    });
+    this.list.addEventListener("dragleave", (event) => {
+      if (!this.list.contains(event.relatedTarget as globalThis.Node | null)) this.showDrop(-1);
+    });
+    this.list.addEventListener("dragend", () => {
+      this.dragging = -1;
+      this.showDrop(-1);
+    });
+    this.list.addEventListener("drop", (event) => {
+      if (this.dragging < 0) return;
+      event.preventDefault();
+      const from = this.entries[this.dragging]?.pos;
+      const j = this.dropIndex(event.clientY);
+      this.dragging = -1;
+      this.showDrop(-1);
+      if (from === undefined) return;
+      const to = j < this.entries.length ? this.entries[j].pos : this.endOfText();
+      this.act(moveSectionCommand(this.host.ctx, from, to), null);
+    });
+  }
+
+  private dragging = -1;
+
+  /** Where the end of the text is, before the list of endnotes if there is one. */
+  private endOfText(): number {
+    const doc = this.host.body.state.doc;
+    const last = doc.lastChild;
+    return last?.type === schema.nodes.endnotes ? doc.content.size - last.nodeSize : doc.content.size;
+  }
+
+  /** The heading a drop at this height goes before (the number of headings: at the end). */
+  private dropIndex(y: number): number {
+    const items = [...this.list.querySelectorAll<HTMLElement>(".nav-item")];
+    const j = items.findIndex((el) => {
+      const r = el.getBoundingClientRect();
+      return y < r.top + r.height / 2;
+    });
+    return j < 0 ? items.length : j;
+  }
+
+  private showDrop(j: number) {
+    const items = [...this.list.querySelectorAll<HTMLElement>(".nav-item")];
+    items.forEach((el, k) => {
+      el.classList.toggle("drop-before", k === j);
+      el.classList.toggle("drop-after", j === items.length && k === items.length - 1);
+    });
+  }
+
+  /** Runs an outline command, then shows the headings again with the moved (or same) one chosen. */
+  private act(command: Command, keep: number | null): boolean {
+    if (!this.host.run(command)) return false;
+    this.render();
+    const items = [...this.list.querySelectorAll<HTMLElement>(".nav-item")];
+    const target = keep ?? this.currentIndex();
+    items[Math.max(0, Math.min(items.length - 1, target))]?.focus();
+    return true;
+  }
+
+  private currentIndex(): number {
+    const at = this.host.body.state.selection.from;
+    let current = 0;
+    this.entries.forEach((e, i) => {
+      if (e.pos < at) current = i;
+    });
+    return current;
   }
 
   get open(): boolean {
@@ -100,7 +192,8 @@ export class NavigationPane {
     this.list.replaceChildren(
       ...(this.entries.length
         ? this.entries.map((e) => {
-            const item = h("button", { type: "button", class: `nav-item level-${Math.min(e.level, 4)}`, role: "treeitem", title: e.text }, e.text);
+            const item = h("button", { type: "button", class: `nav-item level-${Math.min(e.level, 4)}`, role: "treeitem", title: `${e.text}
+Drag to move this section; Alt+Shift+arrows move it or change its level`, draggable: "true" }, e.text);
             item.addEventListener("click", () => this.host.goTo(e.pos));
             return item;
           })

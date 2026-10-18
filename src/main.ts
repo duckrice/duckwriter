@@ -153,6 +153,7 @@ class App {
         return app.ctx;
       },
       goTo: (pos) => this.goTo(pos),
+      run: (command) => command(this.body.state, this.body.dispatch, this.body),
     });
     this.navButton.addEventListener("click", () => this.toggleNavigation());
     this.navButton.classList.toggle("active", this.navigation.open);

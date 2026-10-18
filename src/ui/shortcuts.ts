@@ -1,5 +1,6 @@
 import { showInspection } from "./inspect";
 import { insertEndnote } from "./endnotes";
+import { moveSection, shiftSection } from "../editor/outline";
 import { modifyStyle } from "./styles";
 import { insertBibliography, insertCitation, manageSources } from "./sources";
 import { copyFormatting, pasteFormatting, pastePlain } from "./painter";
@@ -162,6 +163,10 @@ export const SHORTCUTS: Shortcut[] = [
   { group: "Editing", label: "Spell checking on or off", keys: ["Ctrl+F7"], run: (x) => x.toggleSpelling(), everywhere: true },
   { group: "Editing", label: "New line in the same paragraph", keys: ["Shift+Enter"] },
   { group: "Editing", label: "Page break", keys: ["Ctrl+Enter"], run: plain(insertPageBreak()) },
+  { group: "Headings and outline", label: "Move this section (the heading and what is under it) up", keys: ["Alt+Shift+ArrowUp"], run: cmd((ctx) => moveSection(ctx, -1)) },
+  { group: "Headings and outline", label: "Move this section down", keys: ["Alt+Shift+ArrowDown"], run: cmd((ctx) => moveSection(ctx, 1)) },
+  { group: "Headings and outline", label: "Take this section's headings a level up (Heading 2 → 1)", keys: ["Alt+Shift+ArrowLeft"], run: cmd((ctx) => shiftSection(ctx, -1)) },
+  { group: "Headings and outline", label: "Take this section's headings a level down (Heading 1 → 2)", keys: ["Alt+Shift+ArrowRight"], run: cmd((ctx) => shiftSection(ctx, 1)) },
   { group: "Editing", label: "Non-breaking space (keeps “10 kg” on one line)", keys: ["Ctrl+Shift+Space"], run: plain(typeChar(String.fromCharCode(0xa0))) },
   { group: "Editing", label: "Non-breaking hyphen", keys: ["Ctrl+Shift+-", "Ctrl+_"], run: plain(typeChar(String.fromCharCode(0x2011))) },
 
@@ -296,6 +301,8 @@ export function handleShortcuts(host: ShortcutHost) {
       const target = event.target as HTMLElement | null;
       const inBox = !!target && ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName);
       if (inBox && !shortcut.everywhere) return;
+      // In the headings pane they work on the heading chosen there (navigation.ts).
+      if (shortcut.group === "Headings and outline" && target?.closest?.(".nav-list")) return;
       event.preventDefault();
       event.stopPropagation();
       shortcut.run!(host);

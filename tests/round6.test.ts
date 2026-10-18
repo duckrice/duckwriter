@@ -1,5 +1,6 @@
 import JSZip from "jszip";
-import type { EditorState, Transaction } from "prosemirror-state";
+import { TextSelection, type EditorState, type Transaction } from "prosemirror-state";
+import { moveSection, moveSectionCommand, shiftSection } from "../src/editor/outline";
 import type { EditorView } from "prosemirror-view";
 import { describe, expect, it } from "vitest";
 import { readDocx } from "../src/docx/read";
@@ -12,6 +13,68 @@ import { isRis, parseRis, toBibtex } from "../src/docx/ris";
 import { parseBibtex } from "../src/docx/bibliography";
 import { texEscape, toLatex } from "../src/convert/latex";
 import { citationInstr } from "../src/editor/citations";
+
+describe("moving sections", () => {
+  const outline = async () => {
+    const { context: ctx } = await readDocx(await blankDocx());
+    const p = (text: string, style: string | null = null) => schema.nodes.paragraph.create({ style }, schema.text(text));
+    const doc = schema.nodes.doc.create(null, [
+      p("A", "Heading1"),
+      p("a text"),
+      p("A.1", "Heading2"),
+      p("a1 text"),
+      p("B", "Heading1"),
+      p("b text"),
+      p("C", "Heading1"),
+    ]);
+    const view = fakeView(createState(doc, () => ctx));
+    const texts = () => view.state.doc.content.content.map((n) => n.textContent);
+    const at = (text: string) => {
+      let found = -1;
+      view.state.doc.forEach((n, pos) => {
+        if (n.textContent === text) found = pos;
+      });
+      return found;
+    };
+    const cursorIn = (text: string) => view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, at(text) + 1)));
+    return { ctx, view, texts, at, cursorIn };
+  };
+
+  it("moves a heading with everything under it, past the section beside it", async () => {
+    const { ctx, view, texts, cursorIn } = await outline();
+    cursorIn("b text");
+    expect(moveSection(ctx, -1)(view.state, view.dispatch)).toBe(true);
+    expect(texts()).toEqual(["B", "b text", "A", "a text", "A.1", "a1 text", "C"]);
+    // The cursor stayed in the text it was in.
+    expect(view.state.selection.$from.parent.textContent).toBe("b text");
+    expect(moveSection(ctx, 1)(view.state, view.dispatch)).toBe(true);
+    expect(texts()).toEqual(["A", "a text", "A.1", "a1 text", "B", "b text", "C"]);
+    cursorIn("C");
+    expect(moveSection(ctx, 1)(view.state, view.dispatch)).toBe(false);
+  });
+
+  it("drags a section before another heading", async () => {
+    const { ctx, view, texts, at } = await outline();
+    expect(moveSectionCommand(ctx, at("A"), at("C"))(view.state, view.dispatch)).toBe(true);
+    expect(texts()).toEqual(["B", "b text", "A", "a text", "A.1", "a1 text", "C"]);
+    // Not into itself.
+    expect(moveSectionCommand(ctx, at("A"), at("A.1"))(view.state, view.dispatch)).toBe(false);
+  });
+
+  it("takes a section's headings a level down and up", async () => {
+    const { ctx, view, at, cursorIn } = await outline();
+    cursorIn("a text");
+    expect(shiftSection(ctx, 1)(view.state, view.dispatch)).toBe(true);
+    expect(view.state.doc.nodeAt(at("A"))!.attrs.style).toBe("Heading2");
+    expect(view.state.doc.nodeAt(at("A.1"))!.attrs.style).toBe("Heading3");
+    expect(view.state.doc.nodeAt(at("B"))!.attrs.style).toBe("Heading1");
+    expect(ctx.styles.byId.has("Heading3")).toBe(true);
+    expect(shiftSection(ctx, -1)(view.state, view.dispatch)).toBe(true);
+    expect(view.state.doc.nodeAt(at("A"))!.attrs.style).toBe("Heading1");
+    // Heading 1 can't go higher.
+    expect(shiftSection(ctx, -1)(view.state, view.dispatch)).toBe(false);
+  });
+});
 
 describe("RIS and BibTeX", () => {
   const ris = [

@@ -34,6 +34,18 @@ const BUILTINS: Record<string, string> = {
   Footer: para("Footer", "footer", '<w:tabs><w:tab w:val="center" w:pos="4513"/><w:tab w:val="right" w:pos="9026"/></w:tabs><w:spacing w:after="0" w:line="240" w:lineRule="auto"/>', "", '<w:uiPriority w:val="99"/><w:unhideWhenUsed/>'),
 };
 
+// Headings, for taking a section a level down (Word's own look for them).
+for (let n = 1; n <= 9; n++) {
+  const size = [32, 26, 24][n - 1] ?? 22;
+  BUILTINS[`Heading${n}`] = para(
+    `Heading${n}`,
+    `heading ${n}`,
+    `<w:keepNext/><w:keepLines/><w:spacing w:before="${n === 1 ? 240 : 40}" w:after="0"/><w:outlineLvl w:val="${n - 1}"/>`,
+    `<w:rFonts w:asciiTheme="majorHAnsi" w:hAnsiTheme="majorHAnsi" w:eastAsiaTheme="majorEastAsia" w:cstheme="majorBidi"/>${n % 2 === 0 && n > 3 ? "<w:i/><w:iCs/>" : ""}<w:color w:val="${n <= 4 ? "2F5496" : "1F3763"}"/><w:sz w:val="${size}"/><w:szCs w:val="${size}"/>`,
+    '<w:uiPriority w:val="9"/><w:unhideWhenUsed/><w:qFormat/>',
+  );
+}
+
 /**
  * Makes sure the document has these styles: missing ones are added to what
  * is shown now and to the file when it is saved.

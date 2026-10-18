@@ -1901,6 +1901,15 @@ kbd {
   background: var(--hover);
 }
 
+/* Where a dragged section would go. */
+.nav-item.drop-before {
+  box-shadow: inset 0 2px 0 var(--accent);
+}
+
+.nav-item.drop-after {
+  box-shadow: inset 0 -2px 0 var(--accent);
+}
+
 .nav-item:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: -2px;
