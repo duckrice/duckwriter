@@ -159,8 +159,17 @@ export function decide(state: EditorState, list: Change[], accept: boolean, ctx?
 
 const FORMATTING_MARKS = ["bold", "italic", "underline", "strike", "font", "size", "color", "highlight", "vertAlign", "charStyle", "runExtra"] as const;
 
-/** Accepts or rejects every change, and drops Word's records of paragraph formatting changes too. */
-export function decideAll(state: EditorState, accept: boolean, ctx?: DocContext): Transaction | null {
+/** The people whose changes are in the text, in the order they first appear. */
+export function reviewers(doc: Node): string[] {
+  return [...new Set(changes(doc).map((c) => c.author))];
+}
+
+/**
+ * Accepts or rejects every change, and drops Word's records of paragraph
+ * formatting changes too; with `author`, only that person's changes.
+ */
+export function decideAll(state: EditorState, accept: boolean, ctx?: DocContext, author?: string): Transaction | null {
+  if (author !== undefined) return decide(state, changes(state.doc).filter((c) => c.author === author), accept, ctx);
   const tr = decide(state, changes(state.doc), accept, ctx) ?? state.tr;
   // Formatting changes are accepted as they are (DuckWriter can't undo them).
   tr.doc.descendants((node, pos) => {

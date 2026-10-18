@@ -6,6 +6,8 @@ import { blankDocx } from "../src/docx/template";
 import { writeDocx } from "../src/docx/write";
 import { inspect } from "../src/ui/inspect";
 import { piecesToRead } from "../src/ui/readaloud";
+import { createState } from "../src/editor/editor";
+import { decideAll, reviewers } from "../src/editor/review";
 import { isCslJson, parseCslJson } from "../src/docx/ris";
 import { schema } from "../src/editor/schema";
 import { lixLevel, readability } from "../src/ui/wordcount";
@@ -88,6 +90,22 @@ describe("document properties", () => {
     expect(await zip.file("docProps/core.xml")!.async("string")).toContain("<dc:title>New</dc:title>");
     expect(await zip.file("_rels/.rels")!.async("string")).toContain('Target="docProps/core.xml"');
     expect(await zip.file("[Content_Types].xml")!.async("string")).toContain('PartName="/docProps/core.xml"');
+  });
+});
+
+describe("changes by one reviewer", () => {
+  it("are accepted or rejected without touching the others'", async () => {
+    const { context: ctx } = await readDocx(await blankDocx());
+    const ins = (author: string, id: string) => schema.marks.insertion.create({ id, author, date: null });
+    const doc = schema.nodes.doc.create(null, [
+      schema.nodes.paragraph.create(null, [schema.text("Base "), schema.text("kari ", [ins("Kari", "1")]), schema.text("ola", [ins("Ola", "2")])]),
+    ]);
+    const state = createState(doc, () => ctx);
+    expect(reviewers(state.doc)).toEqual(["Kari", "Ola"]);
+    // Rejecting Kari's: her text goes, Ola's stays a change.
+    const after = state.apply(decideAll(state, false, ctx, "Kari")!);
+    expect(after.doc.textContent).toBe("Base ola");
+    expect(reviewers(after.doc)).toEqual(["Ola"]);
   });
 });
 

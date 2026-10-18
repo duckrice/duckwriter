@@ -32,6 +32,7 @@ import {
   toggleVertAlign,
 } from "../editor/commands";
 import { changeListLevel, kindOf, listOf, toggleList } from "../editor/lists";
+import { reviewers } from "../editor/review";
 import { schema } from "../editor/schema";
 import { insertEquation, insertNumberedEquation } from "./equation";
 import { choosePicture, setSnap, snapOn } from "./pictures";
@@ -79,7 +80,7 @@ export interface ToolbarHost {
   toggleTracking(): void;
   stepChange(direction: 1 | -1): void;
   decideChange(accept: boolean): void;
-  decideAllChanges(accept: boolean): void;
+  decideAllChanges(accept: boolean, author?: string): void;
 }
 
 const FONTS = [
@@ -775,6 +776,11 @@ export class Toolbar {
       { class: "menu" },
       item(`${word} this change and go to the next`, () => this.host.decideChange(accept)),
       item(`${word} all changes`, () => this.host.decideAllChanges(accept)),
+      // With several reviewers: one person's changes at a time.
+      ...(() => {
+        const people = reviewers(this.host.body.state.doc);
+        return people.length > 1 ? people.map((who) => item(`${word} all by ${who || "an unnamed reviewer"}`, () => this.host.decideAllChanges(accept, who))) : [];
+      })(),
     );
   }
 

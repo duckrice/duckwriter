@@ -1316,13 +1316,13 @@ class App {
     view.focus();
   }
 
-  decideAllChanges(accept: boolean) {
+  decideAllChanges(accept: boolean, author?: string) {
     const view = this.body;
-    const count = changes(view.state.doc).length;
-    const tr = decideAll(view.state, accept, this.ctx);
+    const count = changes(view.state.doc).filter((c) => author === undefined || c.author === author).length;
+    const tr = decideAll(view.state, accept, this.ctx, author);
     if (!tr) return this.toast("No tracked changes");
     view.dispatch(tr);
-    this.toast(`${accept ? "Accepted" : "Rejected"} ${count} ${count === 1 ? "change" : "changes"}`);
+    this.toast(`${accept ? "Accepted" : "Rejected"} ${count} ${count === 1 ? "change" : "changes"}${author !== undefined ? ` by ${author || "an unnamed reviewer"}` : ""}`);
     view.focus();
   }
 

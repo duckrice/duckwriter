@@ -76,7 +76,7 @@ export interface ShortcutHost {
   toggleTracking(): void;
   stepChange(direction: 1 | -1): void;
   decideChange(accept: boolean): void;
-  decideAllChanges(accept: boolean): void;
+  decideAllChanges(accept: boolean, author?: string): void;
   /** The toolbar's boxes and menus. */
   focusBox(box: "font" | "size" | "style"): void;
   openMenu(menu: "symbol" | "references" | "layout" | "textColor" | "highlight" | "table" | "open" | "newDoc"): void;

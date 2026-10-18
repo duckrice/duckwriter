@@ -169,7 +169,14 @@ written back unchanged.
 - **Saving flushes the file to disk** before it replaces the document, so a
   power cut can't leave it empty (it was already written beside it first).
 
+### Round 11: several reviewers
+- **Accept or reject all by one reviewer**, from the Accept and Reject
+  menus, when more than one person made changes.
+
 ## Next
 
 - Text wrapping on both sides of a picture (the browser engine can't do this).
+- Sections: a document's parts with their own page size, orientation and
+  page numbering (landscape tables, roman numbers in the front matter).
+  Section breaks are kept today, but the pages are laid out as one section.
 - Publishing: the GitHub repository, the first release.
