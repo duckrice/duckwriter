@@ -727,7 +727,7 @@ class App {
     delete this.styleEl.dataset.key;
     this.refreshStyles();
     this.sheet.style.width = `${ctx.page.width}pt`;
-    const state = createState(doc, () => this.ctx, { onLayout: (layout) => this.drawPages(layout), noteHeight: (id) => this.footnotes.height(id) }, plugins);
+    const state = createState(doc, () => this.ctx, { onLayout: (layout) => this.drawPages(layout), noteHeight: (id) => this.footnotes.height(id), measureNotes: (ids) => this.footnotes.measure(ids) }, plugins);
     if (this.body) this.body.updateState(state);
     else {
       this.body = createView(this.sheet, state, {
@@ -1291,8 +1291,22 @@ class App {
     this.body.dispatch(this.body.state.tr.scrollIntoView());
   }
 
-  /** "Page 3 of 9": the page the cursor is on. */
+  private pageShown = false;
+
+  /**
+   * "Page 3 of 9": the page the cursor is on. Once per frame, after the page
+   * layout: measuring right after a change lays out the whole document an extra time.
+   */
   private showPage() {
+    if (this.pageShown) return;
+    this.pageShown = true;
+    requestAnimationFrame(() => {
+      this.pageShown = false;
+      this.showPageNow();
+    });
+  }
+
+  private showPageNow() {
     const count = this.pages;
     let page = 1;
     try {

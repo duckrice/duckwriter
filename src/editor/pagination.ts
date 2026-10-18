@@ -35,6 +35,8 @@ export interface PaginationHooks {
   onLayout(layout: PageLayout): void;
   /** How tall a footnote is at the bottom of a page, in pixels. */
   noteHeight?(id: string): number;
+  /** Measures these footnotes ahead, so that noteHeight changes nothing on the page. */
+  measureNotes?(ids: string[]): void;
 }
 
 /** The line above the footnotes, with the space around it, in pixels. */
@@ -53,6 +55,8 @@ interface Gap {
 
 export const paginationKey = new PluginKey<DecorationSet>("pagination");
 const schedulers = new WeakMap<EditorView, () => void>();
+/** How many layouts ran, and how long they took in all. */
+const layouts = ((globalThis as { __layoutStats?: { runs: number; ms: number } }).__layoutStats = { runs: 0, ms: 0 });
 
 export function paginationPlugin(hooks: PaginationHooks) {
   return new Plugin<DecorationSet>({
@@ -68,24 +72,54 @@ export function paginationPlugin(hooks: PaginationHooks) {
     view(view) {
       let scheduled = false;
       let laidOut: Node | null = null;
+      let took = 0;
+      let waiting: ReturnType<typeof setTimeout> | undefined;
+      const run = () => {
+        scheduled = false;
+        clearTimeout(waiting);
+        waiting = undefined;
+        if (view.isDestroyed) return;
+        const started = performance.now();
+        layout(view, hooks);
+        took = performance.now() - started;
+        laidOut = view.state.doc;
+        // For scripts/profile.mjs.
+        layouts.runs++;
+        layouts.ms += took;
+      };
       const schedule = () => {
         if (scheduled) return;
         scheduled = true;
         // Before the next paint, so the text never shows without its page breaks.
-        queueMicrotask(() => {
-          scheduled = false;
-          if (view.isDestroyed) return;
-          layout(view, hooks);
-          laidOut = view.state.doc;
-        });
+        queueMicrotask(run);
       };
-      schedulers.set(view, schedule);
+      /**
+       * After typing. In a long document, where laying out the pages takes a
+       * while, that waits until typing pauses; until then the page breaks stay
+       * where they were, moved along with the text.
+       */
+      const changed = () => {
+        if (took < 30) return schedule();
+        if (scheduled && !waiting) return;
+        scheduled = true;
+        clearTimeout(waiting);
+        waiting = setTimeout(run, 250);
+      };
+      schedulers.set(view, () => {
+        clearTimeout(waiting);
+        waiting = undefined;
+        scheduled = false;
+        schedule();
+      });
       schedule();
       // Fonts may arrive after the first layout and change line breaks.
       void document.fonts?.ready.then(schedule);
       return {
         update(v: EditorView, prev: EditorState) {
-          if (v.state.doc !== prev.doc && v.state.doc !== laidOut) schedule();
+          if (v.state.doc !== prev.doc && v.state.doc !== laidOut) changed();
+        },
+        destroy() {
+          clearTimeout(waiting);
         },
       };
     },
@@ -177,9 +211,20 @@ function layout(view: EditorView, hooks: PaginationHooks) {
   const page = ctx.page;
   const contentHeight = (page.height - page.marginTop - page.marginBottom) * PX;
   const pitch = page.height * PX + PAGE_GAP;
-  const pageOf = (y: number) => Math.max(0, Math.floor(y / pitch));
+  // A little leeway: far down a long document, a line moved to the top of a
+  // page can end up a rounding error above it, and would be moved again forever.
+  const pageOf = (y: number) => Math.max(0, Math.floor((y + 0.01) / pitch));
   const contentTop = (k: number) => k * pitch;
   const contentBottom = (k: number) => k * pitch + contentHeight;
+
+  if (hooks.measureNotes) {
+    const ids: string[] = [];
+    view.state.doc.descendants((node) => {
+      if (node.type === schema.nodes.footnote) ids.push(node.attrs.id);
+      return node.isBlock;
+    });
+    if (ids.length) hooks.measureNotes(ids);
+  }
 
   // Measure the text without page breaks, keeping the scroll position steady.
   const dom = view.dom as HTMLElement;
@@ -311,11 +356,27 @@ function layout(view: EditorView, hooks: PaginationHooks) {
       continue;
     }
 
+    // The first position on a line, by halving: positions further on are never
+    // on a line higher up. (posAtCoords searches the whole document when the
+    // line is outside the window, which in a long document takes minutes.)
     const lineStart = (line: Line) => {
-      const found = view.posAtCoords({ left: line.left + 1, top: origin.top + ((line.top + line.bottom) / 2) * scale });
-      if (!found) return null;
-      const pos = Math.max(b.pos + 1, Math.min(found.pos, b.pos + b.node.nodeSize - 1));
-      return pos > b.pos + 1 ? pos : null;
+      const below = (pos: number) => {
+        try {
+          const c = view.coordsAtPos(pos, 1);
+          return y((c.top + c.bottom) / 2) >= line.top;
+        } catch {
+          return false;
+        }
+      };
+      let lo = b.pos + 1;
+      let hi = b.pos + b.node.nodeSize - 1;
+      if (!below(hi)) return null;
+      while (lo < hi) {
+        const mid = (lo + hi) >> 1;
+        if (below(mid)) hi = mid;
+        else lo = mid + 1;
+      }
+      return lo > b.pos + 1 ? lo : null;
     };
     const notesIn = (line: Line) => notes.filter((n) => n.y >= line.top - 1 && n.y <= line.bottom + 1).map((n) => n.id);
     /** Where each line's notes were placed, to take them back when the line moves on. */
@@ -327,7 +388,9 @@ function layout(view: EditorView, hooks: PaginationHooks) {
     let handledBreak = 0;
     let movedWhole = false;
     let n = 0;
-    while (n < lines.length) {
+    // Each line moves on at most once or twice; more means something is wrong.
+    let rounds = lines.length * 4 + 8;
+    while (n < lines.length && rounds-- > 0) {
       const line = lines[n];
       // Page breaks above this line send it (and what follows) to a new page.
       while (handledBreak < breaks.length && breaks[handledBreak].bottom <= line.top + 0.5) {

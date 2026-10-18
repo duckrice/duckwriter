@@ -858,6 +858,11 @@ span.page-gap.inline {
   visibility: hidden;
 }
 
+/* Each note on its own, its margins inside, as when it is measured alone. */
+.fn-measured {
+  display: flow-root;
+}
+
 .fn-area {
   position: absolute;
   transform: translateY(-100%);

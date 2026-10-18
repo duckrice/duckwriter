@@ -42,17 +42,28 @@ export class Footnotes {
     return this.editing?.view ?? null;
   }
 
+  private numbers: { doc: Node; of: Map<string, number> } | null = null;
+
   /** The note ids in the order their marks appear in the text. */
   private order(): string[] {
-    const ids: string[] = [];
-    this.host.body.state.doc.descendants((n) => {
-      if (n.type === schema.nodes.footnote && !ids.includes(n.attrs.id)) ids.push(n.attrs.id);
+    return [...this.numbering().keys()];
+  }
+
+  /** Each note's number, worked out once for each version of the text. */
+  private numbering(): Map<string, number> {
+    const doc = this.host.body.state.doc;
+    if (this.numbers?.doc === doc) return this.numbers.of;
+    const of = new Map<string, number>();
+    doc.descendants((n) => {
+      if (n.type === schema.nodes.footnote && !of.has(n.attrs.id)) of.set(n.attrs.id, of.size + 1);
+      return !n.isInline;
     });
-    return ids;
+    this.numbers = { doc, of };
+    return of;
   }
 
   private numberOf(id: string): number {
-    return this.order().indexOf(id) + 1;
+    return this.numbering().get(id) ?? 0;
   }
 
   /** A note as shown at the bottom of a page: its number, then its text. */
@@ -64,6 +75,28 @@ export class Footnotes {
     if (first) first.prepend(number);
     else content.prepend(number);
     return content;
+  }
+
+  /**
+   * Measures the notes not measured yet, all at once: every change to the page
+   * makes the next measurement lay out the whole document again, so measuring
+   * them one by one in a long document takes minutes.
+   */
+  measure(ids: string[]) {
+    const todo: [Node, HTMLElement][] = [];
+    for (const id of new Set(ids)) {
+      const doc = this.host.ctx.footnotes.notes.get(id);
+      if (!doc || this.heights.has(doc)) continue;
+      const box = h("div", { class: "fn-measured" });
+      box.append(this.draw(id, doc));
+      todo.push([doc, box]);
+    }
+    if (!todo.length) return;
+    const p = this.host.ctx.page;
+    this.measurer.style.width = `${p.width - p.marginLeft - p.marginRight}pt`;
+    this.measurer.replaceChildren(...todo.map(([, box]) => box));
+    for (const [doc, box] of todo) this.heights.set(doc, box.offsetHeight);
+    this.measurer.replaceChildren();
   }
 
   /** How tall a note is, in pixels, for the page layout. */
@@ -80,6 +113,11 @@ export class Footnotes {
     this.heights.set(doc, height);
     return height;
   }
+
+  /** What each page's area shows, so that unchanged ones aren't drawn again. */
+  private shown = new WeakMap<HTMLElement, string[]>();
+  private drawn = new WeakMap<HTMLElement, (Node | undefined)[]>();
+  private drawnNumbers = new WeakMap<HTMLElement, number[]>();
 
   /** Draws the notes at the bottom of each page. */
   render(layout: PageLayout) {
@@ -101,6 +139,13 @@ export class Footnotes {
       const ids = layout.notes[k] ?? [];
       area.hidden = !ids.length;
       const editing = this.editing ? area.querySelector<HTMLElement>(`.fn-note.editing[data-id="${this.editing.id}"]`) : null;
+      // The same notes, with the same numbers and text, as last time.
+      const docs = this.host.ctx.footnotes.notes;
+      const was = this.shown.get(area);
+      if (!editing && !this.editing && was && was.length === ids.length && ids.every((id, i) => was[i] === id && this.drawn.get(area)?.[i] === docs.get(id) && this.drawnNumbers.get(area)?.[i] === this.numberOf(id))) continue;
+      this.shown.set(area, [...ids]);
+      this.drawn.set(area, ids.map((id) => docs.get(id)));
+      this.drawnNumbers.set(area, ids.map((id) => this.numberOf(id)));
       // The note being typed in stays where it is: moving it would lose the cursor.
       const separator = area.querySelector(".fn-separator") ?? h("div", { class: "fn-separator" });
       if (!separator.parentNode) area.prepend(separator);
@@ -171,6 +216,8 @@ export class Footnotes {
     this.editing = null;
     this.host.ctx.footnotes.notes.set(editing.id, editing.view.state.doc);
     editing.view.destroy();
+    // Its area shows an editor no longer there: draw it again.
+    this.shown = new WeakMap();
     this.render(this.layout);
     this.host.storiesChanged();
   }
@@ -188,6 +235,8 @@ export class Footnotes {
     // Text typed after the mark isn't superscript.
     tr.setStoredMarks(body.state.selection.$from.marks().filter((m) => m.type !== schema.marks.charStyle));
     body.dispatch(tr.scrollIntoView());
+    // Now, even in a long document, where the layout otherwise waits for typing to pause.
+    relayout(body);
     // Once the page layout has placed it, open the note.
     setTimeout(() => {
       this.start(id);

@@ -115,8 +115,14 @@ export class HeadersAndFooters {
     });
   }
 
+  /** What each area shows, so that unchanged ones aren't drawn again (hundreds of pages). */
+  private shown = new WeakMap<HTMLElement, { doc: unknown; page: number; count: number }>();
+
   /** Shows a story's content with this page's number in it. */
   private fill(area: HTMLElement, story: Story | undefined, page: number) {
+    const was = this.shown.get(area);
+    if (was && !area.classList.contains("editing") && was.doc === story?.doc && was.page === page && was.count === this.pageCount) return;
+    this.shown.set(area, { doc: story?.doc, page, count: this.pageCount });
     area.classList.remove("editing");
     const content = h("div", { class: "hf-doc" });
     if (story) content.append(DOMSerializer.fromSchema(schema).serializeFragment(story.doc.content));
