@@ -64,6 +64,7 @@ export interface ToolbarHost {
   share(): void;
   openRecent(path: string): void;
   versions(): void;
+  compareWithFile(): void;
   exportAs(format: "markdown" | "html" | "text"): void;
   newFromTemplate(kind: import("../templates").TemplateKind): void;
   pageSetup(): void;
@@ -275,6 +276,10 @@ export class Toolbar {
             this.button("nextChange", "Next change or comment (Alt+PageDown)", () => this.host.stepChange(1)),
             this.splitButton("accept", "Accept the change (Ctrl+Alt+Shift+A)", null, () => this.host.decideChange(true), () => this.reviewMenu(true)),
             this.splitButton("reject", "Reject the change (Ctrl+Alt+Shift+D)", null, () => this.host.decideChange(false), () => this.reviewMenu(false)),
+          ),
+          group(
+            textButton("Compare…", "Compare with another version of the document: the differences shown as tracked changes (Ctrl+Alt+Shift+C)", () => this.host.compareWithFile()),
+            textButton("Versions…", "Earlier versions kept on this computer: restore or compare (Alt+Shift+V)", () => this.host.versions()),
           ),
         ],
       },

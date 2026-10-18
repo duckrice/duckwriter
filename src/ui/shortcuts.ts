@@ -55,6 +55,7 @@ export interface ShortcutHost {
   toggleSpelling(): void;
   newComment(): void;
   cycleMarkup(): void;
+  compareWithFile(): void;
   exportAs(format: "markdown" | "html" | "text"): void;
   sortRows(): void;
   toggleFocus(): void;
@@ -225,6 +226,7 @@ export const SHORTCUTS: Shortcut[] = [
   { group: "Review", label: "Write together: share this document, or join one", keys: ["Alt+Shift+W"], run: (x) => x.share(), everywhere: true },
   { group: "Review", label: "New comment", keys: ["Ctrl+Alt+M"], run: (x) => x.newComment() },
   { group: "Review", label: "Show all markup, the final text, or the original", keys: ["Alt+Shift+M"], run: (x) => x.cycleMarkup() },
+  { group: "Review", label: "Compare with another version (the differences as tracked changes)", keys: ["Ctrl+Alt+Shift+C"], run: (x) => void x.compareWithFile(), everywhere: true },
   { group: "Review", label: "Track changes, on or off", keys: ["Ctrl+Shift+E"], run: (x) => x.toggleTracking(), everywhere: true },
   { group: "Review", label: "Next change or comment", keys: ["Alt+PageDown"], run: (x) => x.stepChange(1) },
   { group: "Review", label: "Previous change or comment", keys: ["Alt+PageUp"], run: (x) => x.stepChange(-1) },

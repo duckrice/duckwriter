@@ -14,6 +14,7 @@ export interface VersionsHost {
   readonly path: string | null;
   readonly name: string;
   restoreVersion(version: Version): void;
+  compareVersion(version: Version): void;
   toast(text: string, kind?: "info" | "error"): void;
 }
 
@@ -38,7 +39,12 @@ export async function showVersions(host: VersionsHost) {
             dialog.close();
             host.restoreVersion(v);
           });
-          return h("div", { class: "source-item" }, h("span", { class: "source-label" }, when(v.time)), h("span", { class: "source-tag" }, size(v.size)), restore);
+          const compare = h("button", { type: "button", class: "btn small", title: "Show what changed since then, as tracked changes" }, "Compare");
+          compare.addEventListener("click", () => {
+            dialog.close();
+            host.compareVersion(v);
+          });
+          return h("div", { class: "source-item" }, h("span", { class: "source-label" }, when(v.time)), h("span", { class: "source-tag" }, size(v.size)), compare, restore);
         })
       : [h("div", { class: "nav-empty" }, "None yet: a version is kept each time you save over the document.")]),
   );

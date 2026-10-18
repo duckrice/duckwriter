@@ -1216,7 +1216,17 @@ await session(versioned, 9590, async (app) => {
   await sleep(1500);
   await app.key("V", 86, ALT | SHIFT);
   check("Alt+Shift+V lists the earlier versions", await app.waitFor(`document.querySelectorAll("dialog[open] .source-item").length === 2`, 5000), String(await app.count("dialog[open] .source-item")));
-  // The newest kept one is the file before "Second version" was typed.
+  // Comparing with the newest kept one (from before "Second version" was typed) shows that as added.
+  await app.clickText("dialog[open] .source-item .btn", "Compare");
+  check("Compare shows what changed since a version, as tracked changes", await app.waitFor(`[...document.querySelectorAll(".doc ins.tc-ins")].some((i) => i.textContent.includes("Second version")) && /differences? from/.test(document.querySelector(".toasts").textContent)`, 5000), await app.evaluate(`document.querySelector(".toasts").textContent`));
+  await app.key("V", 86, ALT | SHIFT);
+  // Saved under its own name? No: the comparison is a new, unsaved document; versions belong to the file.
+  check("the comparison is a document of its own", await app.waitFor(`document.title.includes("(compared)")`, 3000));
+  await app.key("Escape", 27);
+  await app.evaluate(`window.__dw.openPath(${JSON.stringify(versioned)})`);
+  await app.waitFor(`document.title.startsWith("duckwriter-smoke-versions.docx")`, 5000);
+  await app.key("V", 86, ALT | SHIFT);
+  await app.waitFor(`document.querySelectorAll("dialog[open] .source-item").length === 2`, 5000);
   await app.clickText("dialog[open] .source-item .btn", "Restore");
   check("restoring one shows it, unsaved", await app.waitFor(`!window.__dw.body.state.doc.textContent.startsWith("Second version") && document.title.startsWith("•")`, 5000));
   check("no errors in the app", app.errors.length === 0, app.errors.join("; "));

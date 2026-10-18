@@ -26,6 +26,8 @@ import { PAGE_GAP, relayout, setPageGap, type PageLayout } from "./editor/pagina
 import { invoke } from "@tauri-apps/api/core";
 import { stylesheetFor } from "./editor/stylesheet";
 import { pickExportPath, setFullscreen } from "./platform";
+import { compareDocs, countChanges } from "./editor/compare";
+import { newAnnotationId } from "./docx/model";
 import { toHtml, toMarkdown, toText } from "./convert/export";
 import { htmlToDoc, markdownToHtml, textFormat, textToHtml } from "./convert/import";
 import { baseName, isDesktop, onCloseRequested, openWindow, pickDocument, pickPdfPath, pickSavePath, readPath, setTitle, startupFiles, windowOpening, windowsSpelling, writePath } from "./platform";
@@ -492,6 +494,47 @@ class App {
     } catch (error) {
       this.toast(`Couldn't save it: ${message(error)}`, "error");
     }
+  }
+
+  /** Compares this document with another version of it, chosen from a file (Ctrl+Alt+Shift+C). */
+  async compareWithFile() {
+    let file;
+    try {
+      file = await pickDocument();
+    } catch (error) {
+      return this.toast(`Couldn't open it: ${message(error)}`, "error");
+    }
+    if (file) await this.compareWith(file.bytes, file.name);
+  }
+
+  /** Compares an earlier version (kept on this computer) with the document as it is. */
+  async compareVersion(version: Version) {
+    try {
+      const file = await readPath(version.path);
+      await this.compareWith(file.bytes, `the version from ${new Date(version.time).toLocaleString([], { dateStyle: "medium", timeStyle: "short" })}`);
+    } catch (error) {
+      this.toast(`Couldn't compare: ${message(error)}`, "error");
+    }
+  }
+
+  /** Shows this document with what changed since `older` as tracked changes. */
+  async compareWith(older: Uint8Array, label: string) {
+    let original: Node;
+    try {
+      original = (await readDocx(older)).doc;
+    } catch (error) {
+      return this.toast(message(error), "error");
+    }
+    const result = compareDocs(original, this.body.state.doc, { author: "Comparison", newId: () => newAnnotationId(this.ctx) });
+    const count = countChanges(result);
+    if (!count) return this.toast(`No differences from ${label}`);
+    if (!(await this.confirmDiscard())) return;
+    const ctx = this.ctx;
+    const name = this.name.replace(/\.docx$/i, "");
+    this.show(result, ctx, `${name} (compared).docx`, null);
+    this.savedDoc = schema.nodes.doc.create(null, schema.nodes.paragraph.create());
+    this.changed(true);
+    this.toast(`${count} ${count === 1 ? "difference" : "differences"} from ${label}, shown as tracked changes`);
   }
 
   /** Earlier versions of this document (Alt+Shift+V). */
