@@ -242,8 +242,62 @@ export class ImageView implements NodeView {
       });
       bar.append(b);
     }
+    // A description for people who can't see the picture (alt text).
+    const describe = document.createElement("button");
+    describe.type = "button";
+    describe.textContent = this.node.attrs.alt ? "Description ✓" : "Description…";
+    describe.title = this.node.attrs.alt || "Describe the picture for people who can't see it (alt text)";
+    describe.addEventListener("mousedown", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      this.describe();
+    });
+    bar.append(describe);
     this.dom.append(bar);
     this.bar = bar;
+  }
+
+  /** Asks for the picture's description (alt text). */
+  describe() {
+    const pos = this.getPos();
+    if (pos === undefined) return;
+    const text = document.createElement("textarea");
+    text.className = "tb-input dialog-input wide";
+    text.rows = 3;
+    text.value = this.node.attrs.alt;
+    text.placeholder = "What the picture shows, in a sentence or two";
+    const dialog = document.createElement("dialog");
+    dialog.className = "dialog";
+    const title = document.createElement("h2");
+    title.textContent = "Describe the picture";
+    const hint = document.createElement("p");
+    hint.className = "dialog-hint";
+    hint.textContent = "Read aloud by screen readers, and shown where the picture can't be. Word calls it alt text.";
+    const footer = document.createElement("div");
+    footer.className = "dialog-footer";
+    const cancel = document.createElement("button");
+    cancel.type = "button";
+    cancel.className = "btn";
+    cancel.textContent = "Cancel";
+    cancel.onclick = () => dialog.close();
+    const ok = document.createElement("button");
+    ok.type = "button";
+    ok.className = "btn primary";
+    ok.textContent = "OK";
+    ok.onclick = () => {
+      const at = this.getPos();
+      if (at !== undefined) this.view.dispatch(this.view.state.tr.setNodeMarkup(at, undefined, { ...this.node.attrs, alt: text.value.trim() }));
+      dialog.close();
+    };
+    footer.append(cancel, ok);
+    dialog.append(title, hint, text, footer);
+    dialog.addEventListener("close", () => {
+      dialog.remove();
+      this.view.focus();
+    });
+    document.body.append(dialog);
+    dialog.showModal();
+    text.focus();
   }
 
   /** Changes how text goes around the picture, keeping it where it is on the page. */

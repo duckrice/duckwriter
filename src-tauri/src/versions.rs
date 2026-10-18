@@ -90,3 +90,40 @@ pub fn versions_list(app: tauri::AppHandle, path: String) -> Result<Vec<Version>
         .map(|(ms, p)| Version { size: fs::metadata(&p).map(|m| m.len()).unwrap_or(0), path: p.to_string_lossy().into_owned(), time: ms as u64 })
         .collect())
 }
+
+// ---- the user's own templates ----------------------------------------------------------
+
+fn templates_folder(app: &tauri::AppHandle) -> Result<PathBuf, String> {
+    let dir = versions_root(app)?.with_file_name("Templates");
+    fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    Ok(dir)
+}
+
+/// Where the user's own templates are kept (made if need be).
+#[tauri::command]
+pub fn templates_dir(app: tauri::AppHandle) -> Result<String, String> {
+    Ok(templates_folder(&app)?.to_string_lossy().into_owned())
+}
+
+/// The user's own templates, by name, alphabetically.
+#[tauri::command]
+pub fn templates_list(app: tauri::AppHandle) -> Result<Vec<String>, String> {
+    let mut names: Vec<String> = fs::read_dir(templates_folder(&app)?)
+        .map_err(|e| e.to_string())?
+        .filter_map(|e| e.ok())
+        .map(|e| e.file_name().to_string_lossy().into_owned())
+        .filter(|n| n.to_lowercase().ends_with(".docx"))
+        .map(|n| n[..n.len() - 5].to_string())
+        .collect();
+    names.sort_by_key(|n| n.to_lowercase());
+    Ok(names)
+}
+
+/// Removes one of the user's templates.
+#[tauri::command]
+pub fn templates_remove(app: tauri::AppHandle, name: String) -> Result<(), String> {
+    if name.contains(['/', '\\']) || name.contains("..") {
+        return Err("Not a template name.".into());
+    }
+    fs::remove_file(templates_folder(&app)?.join(format!("{name}.docx"))).map_err(|e| e.to_string())
+}

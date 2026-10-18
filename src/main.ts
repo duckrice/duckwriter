@@ -221,7 +221,8 @@ class App {
     });
     const zoomOut = h("button", { type: "button", class: "status-button", title: "Zoom out", html: icon("zoomOut", 16), onclick: () => this.stepZoom(-1) });
     const zoomIn = h("button", { type: "button", class: "status-button", title: "Zoom in", html: icon("zoomIn", 16), onclick: () => this.stepZoom(1) });
-    this.zoomLabel.addEventListener("click", () => this.setZoom(1));
+    this.zoomLabel.addEventListener("click", () => this.cycleZoomFit());
+    this.zoomLabel.title = "100% → page width → whole page (Alt+Shift+Z)";
     this.words.addEventListener("click", () => this.wordCount());
     const status = h("footer", { class: "statusbar" }, this.navButton, this.pageCount, this.words, h("span", { class: "status-spacer" }), this.shareStatus, this.trackStatus, this.spellStatus, this.saveStatus, zoomOut, this.zoomLabel, zoomIn);
     document.head.append(this.styleEl, this.pageRule);
@@ -537,6 +538,67 @@ class App {
     this.toast(`${count} ${count === 1 ? "difference" : "differences"} from ${label}, shown as tracked changes`);
   }
 
+  // ---- the user's own templates -------------------------------------------------------
+
+  private async templatePath(name: string): Promise<string> {
+    return `${await invoke<string>("templates_dir")}\\${name}.docx`;
+  }
+
+  /** Keeps this document as a template of one's own, to start new documents from. */
+  async saveAsTemplate() {
+    if (!isDesktop) return this.toast("Templates of your own need the DuckWriter app.");
+    const input = h("input", { class: "tb-input dialog-input wide", value: this.name.replace(/\.docx$/i, ""), "aria-label": "Template name" }) as HTMLInputElement;
+    const ok = async () => {
+      const name = input.value.trim().replace(/[\\/:*?"<>|]/g, "");
+      if (!name) return input.focus();
+      dialog.close();
+      try {
+        const path = await this.templatePath(name);
+        // Written as it is now, without making this document count as saved.
+        const unsaved = this.dirty;
+        const bytes = await this.build();
+        if (unsaved) this.lineGridSaved = false;
+        await writePath(path, bytes);
+        this.toast(`Saved as the template "${name}" (New ▸ My templates)`);
+      } catch (error) {
+        this.toast(`Couldn't save the template: ${message(error)}`, "error");
+      }
+    };
+    const dialog = h(
+      "dialog",
+      { class: "dialog" },
+      h("h2", {}, "Save as a template"),
+      h("p", { class: "dialog-hint" }, "New documents can then start from this one: its text, styles, headers and page setup. Kept on this computer."),
+      h("div", { class: "dialog-form" }, h("label", {}, "Name", input)),
+      h("div", { class: "dialog-footer" }, h("button", { type: "button", class: "btn", onclick: () => dialog.close() }, "Cancel"), h("button", { type: "button", class: "btn primary", onclick: () => void ok() }, "Save")),
+    ) as HTMLDialogElement;
+    input.addEventListener("keydown", (event) => {
+      if (event.key === "Enter") {
+        event.preventDefault();
+        void ok();
+      }
+    });
+    dialog.addEventListener("close", () => dialog.remove());
+    document.body.append(dialog);
+    dialog.showModal();
+    input.select();
+  }
+
+  /** A new document from one's own template: here if this window is unused, else in a window of its own. */
+  async newFromMyTemplate(name: string) {
+    if (isDesktop && !this.blank) return void openWindow(`mytemplate:${name}`);
+    if (!(await this.confirmDiscard())) return;
+    try {
+      const file = await readPath(await this.templatePath(name));
+      const { doc, context } = await readDocx(file.bytes);
+      this.leaveSharing();
+      this.base = file.bytes;
+      this.show(doc, context, "Document1.docx", null);
+    } catch (error) {
+      this.toast(`Couldn't open the template: ${message(error)}`, "error");
+    }
+  }
+
   /** Earlier versions of this document (Alt+Shift+V). */
   versions() {
     void showVersions(this);
@@ -694,7 +756,7 @@ class App {
     });
     // On paper the pages follow each other exactly; a hair less keeps a blank page from spilling over.
     this.sheet.style.height = PAGE_GAP ? `${layout.count * pitch - PAGE_GAP}px` : `calc(${layout.count * p.height}pt - 1px)`;
-    this.pageCount.textContent = `${layout.count} ${layout.count === 1 ? "page" : "pages"}`;
+    this.showPage();
     this.pages = layout.count;
     this.lastLayout = layout;
     this.headers.render(layout.count);
@@ -725,6 +787,7 @@ class App {
     this.findBar?.update();
     this.comments?.render();
     if (this.collab?.active) this.collab.afterChange();
+    if (this.body) this.showPage();
     this.navigation?.update(docChanged);
     this.placeSheet();
     this.trackStatus.hidden = !this.ctx?.trackChanges;
@@ -1207,6 +1270,42 @@ class App {
     this.zoomLabel.textContent = `${Math.round(this.zoom * 100)}%`;
   }
 
+  /** The zoom at which the page fills the window's width, or all of the page shows. */
+  private fitZoom(whole: boolean): number {
+    const p = this.ctx.page;
+    const room = this.workspace.clientWidth - 48 - (this.comments.visible ? 300 : 0);
+    const width = room / (p.width * (4 / 3));
+    if (!whole) return Math.round(width * 100) / 100;
+    const height = (this.workspace.clientHeight - 48) / (p.height * (4 / 3));
+    return Math.round(Math.min(width, height) * 100) / 100;
+  }
+
+  /** 100% → page width → whole page → 100% (Alt+Shift+Z, or a click on the zoom). */
+  cycleZoomFit() {
+    const width = this.fitZoom(false);
+    const whole = this.fitZoom(true);
+    const at = (z: number) => Math.abs(this.zoom - z) < 0.011;
+    if (at(width) && !at(whole)) this.setZoom(whole);
+    else if (at(1) || (!at(width) && !at(whole))) this.setZoom(width);
+    else this.setZoom(1);
+    this.body.dispatch(this.body.state.tr.scrollIntoView());
+  }
+
+  /** "Page 3 of 9": the page the cursor is on. */
+  private showPage() {
+    const count = this.pages;
+    let page = 1;
+    try {
+      const top = this.body.coordsAtPos(this.body.state.selection.head).top;
+      const origin = this.sheet.getBoundingClientRect().top;
+      const pitch = (this.ctx.page.height * (4 / 3) + PAGE_GAP) * (this.zoom || 1);
+      page = Math.min(count, Math.max(1, Math.floor((top - origin) / pitch) + 1));
+    } catch {
+      // Before the first layout.
+    }
+    this.pageCount.textContent = count > 1 ? `Page ${page} of ${count}` : "1 page";
+  }
+
   private stepZoom(direction: 1 | -1) {
     const next = direction > 0 ? ZOOMS.find((z) => z > this.zoom + 0.001) : [...ZOOMS].reverse().find((z) => z < this.zoom - 0.001);
     if (next) this.setZoom(next);
@@ -1267,6 +1366,7 @@ const opening = windowOpening();
 const [first] = opening === undefined ? await startupFiles() : [opening];
 await app.newDocument(false);
 if (first?.startsWith("template:")) await app.newFromTemplate(first.slice(9) as TemplateKind);
+else if (first?.startsWith("mytemplate:")) await app.newFromMyTemplate(first.slice(11));
 else if (first) await app.openPath(first);
 if (localStorage.getItem("duckwriter.debug") === "1") {
   Object.assign(window, { __dw: app });

@@ -5,7 +5,7 @@
 import type { Mark, Node } from "prosemirror-model";
 import { schema } from "../editor/schema";
 import { parseMath } from "../math/ast";
-import { adjustPictureXml, imageType, pictureXml, type PictureLayout } from "./drawing";
+import { adjustPictureXml, imageType, pictureXml, withDescription, type PictureLayout } from "./drawing";
 import { toOmml } from "../math/omml";
 import { TableMap } from "prosemirror-tables";
 import { TWIPS_PER_POINT, originalXml, type CommentData, type DocContext, type Relationship } from "./model";
@@ -362,15 +362,18 @@ class BodyWriter {
     const a = node.attrs;
     const layout: PictureLayout = { width: a.width, height: a.height, floating: a.floating, x: a.x, y: a.y, relX: a.relX, relY: a.relY, wrap: a.wrap };
     if (a.xml && a.original) {
+      // A new description is put in the picture as read.
+      const xml = a.alt !== a.altRead ? withDescription(a.xml, a.alt) : a.xml;
       const before = JSON.parse(a.original) as PictureLayout;
-      if (JSON.stringify(before) === JSON.stringify(layout)) return a.xml;
-      const adjusted = adjustPictureXml(a.xml, before, layout);
+      if (JSON.stringify(before) === JSON.stringify(layout)) return xml;
+      const adjusted = adjustPictureXml(xml, before, layout);
       if (adjusted) return adjusted;
     }
     const rid = a.rid ?? this.addMedia(a.media);
     if (!rid) return "";
     if (!this.drawingId) this.drawingId = Math.max(0, ...[...this.ctx.documentXml.matchAll(/docPr id="(\d+)"/g)].map((m) => Number(m[1]))) + 1;
-    return `<w:r>${this.runProps(node.marks)}${pictureXml(rid, layout, this.drawingId++, !this.ctx.prefixes.has("r"))}</w:r>`;
+    const picture = pictureXml(rid, layout, this.drawingId++, !this.ctx.prefixes.has("r"));
+    return `<w:r>${this.runProps(node.marks)}${a.alt ? withDescription(picture, a.alt) : picture}</w:r>`;
   }
 
   /** Puts a picture added in DuckWriter into the file's media folder, once, and relates this part to it. */

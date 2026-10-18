@@ -1,3 +1,5 @@
+import { invoke } from "@tauri-apps/api/core";
+import { showInspection } from "./inspect";
 import { insertEndnote } from "./endnotes";
 import { TEMPLATES } from "../templates";
 import { modifyStyle, updateStyleToMatch } from "./styles";
@@ -42,6 +44,7 @@ export interface ToolbarHost {
   readonly body: EditorView;
   cycleLineNumbers(): void;
   toggleFocus(): void;
+  cycleZoomFit(): void;
   toggleDarkPage(): void;
   readonly ctx: DocContext;
   /** Switches the line grid on or off. */
@@ -64,6 +67,8 @@ export interface ToolbarHost {
   share(): void;
   openRecent(path: string): void;
   versions(): void;
+  saveAsTemplate(): void;
+  newFromMyTemplate(name: string): void;
   compareWithFile(): void;
   exportAs(format: "markdown" | "html" | "text"): void;
   newFromTemplate(kind: import("../templates").TemplateKind): void;
@@ -281,6 +286,7 @@ export class Toolbar {
             textButton("Compare…", "Compare with another version of the document: the differences shown as tracked changes (Ctrl+Alt+Shift+C)", () => this.host.compareWithFile()),
             textButton("Versions…", "Earlier versions kept on this computer: restore or compare (Alt+Shift+V)", () => this.host.versions()),
           ),
+          group(textButton("Check…", "Check before sending: open changes and comments, undescribed pictures, broken references (Alt+Shift+I)", () => showInspection(this.host.body, this.host.ctx))),
         ],
       },
       {
@@ -290,6 +296,7 @@ export class Toolbar {
           group(
             textButton("Page setup…", "Paper size, orientation, margins (Alt+P)", () => this.host.pageSetup()),
             textButton("Line numbers", "Line numbers: through the document, from 1 on each page, or none (Alt+Shift+L)", () => this.host.cycleLineNumbers()),
+            textButton("Fit zoom", "Zoom to the page width, the whole page, or 100% (Alt+Shift+Z)", () => this.host.cycleZoomFit()),
             textButton("Focus mode", "Only the page, full screen (F11; Esc to leave)", () => this.host.toggleFocus()),
             textButton("Dark page", "A dark page for writing at night; printing is unchanged (Alt+Shift+D)", () => this.host.toggleDarkPage()),
             this.splitButton("layout", "Layout", null, () => this.layoutMenu(), () => this.layoutMenu()),
@@ -587,7 +594,7 @@ export class Toolbar {
       h("div", { class: "menu-hint" }, "Paper size, upright or sideways, and margins."),
       h("div", { class: "menu-separator" }),
       auto,
-      h("div", { class: "menu-hint" }, "Web and e-mail addresses become links; \"1. \" or \"- \" at the start of a paragraph starts a list; \\alpha becomes α and -> becomes →."),
+      h("div", { class: "menu-hint" }, "Web and e-mail addresses become links; \"1. \" or \"- \" at the start of a paragraph starts a list; \\alpha becomes α and -> becomes →; teh becomes the, (c) becomes ©."),
       h("div", { class: "menu-separator" }),
       h("div", { class: "menu-title" }, "Line numbers (Alt+Shift+L)"),
       this.simpleItem("None", () => this.host.setLineNumbers(null), !this.host.ctx.page.lineNumbers),
@@ -616,14 +623,38 @@ export class Toolbar {
 
   /** New: blank, or from a template. */
   private newMenu(): HTMLElement {
-    return h(
+    const mine = h("div", { class: "my-templates" });
+    const menu = h(
       "div",
       { class: "menu" },
       this.simpleItem("Blank document (Ctrl+N)", () => this.host.newDocument()),
       h("div", { class: "menu-separator" }),
       h("div", { class: "menu-title" }, "From a template (Alt+Shift+T)"),
       ...TEMPLATES.map((t) => this.simpleItem(t.name, () => this.host.newFromTemplate(t.kind))),
+      mine,
+      h("div", { class: "menu-separator" }),
+      this.simpleItem("Save this document as a template…", () => this.host.saveAsTemplate()),
     );
+    // One's own templates, once they are listed.
+    void invoke<string[]>("templates_list")
+      .then((names) => {
+        if (!names.length) return;
+        mine.append(
+          h("div", { class: "menu-separator" }),
+          h("div", { class: "menu-title" }, "My templates"),
+          ...names.map((name) => {
+            const remove = h("button", { type: "button", class: "menu-remove", title: `Remove the template "${name}"`, "aria-label": `Remove ${name}` }, "×");
+            remove.addEventListener("click", (event) => {
+              event.stopPropagation();
+              void invoke("templates_remove", { name }).then(() => row.remove());
+            });
+            const row = h("div", { class: "menu-row" }, this.simpleItem(name, () => this.host.newFromMyTemplate(name)), remove);
+            return row;
+          }),
+        );
+      })
+      .catch(() => undefined);
+    return menu;
   }
 
   /** The documents opened lately. */

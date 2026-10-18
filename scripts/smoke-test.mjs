@@ -454,7 +454,7 @@ const pageReport = (app) =>
 
 await session(sample("long.docx"), 9437, async (app) => {
   let report = await pageReport(app);
-  check("a long document is shown on several pages", report.pages >= 3 && (await app.evaluate(`document.querySelector(".statusbar").textContent`)).includes(`${report.pages} pages`), `${report.pages} pages`);
+  check("a long document is shown on several pages", report.pages >= 3 && (await app.evaluate(`document.querySelector(".statusbar").textContent`)).includes(`of ${report.pages}`), `${report.pages} pages`);
   check("no line of text sits in a margin or between pages", report.outside === 0, `${report.outside} lines outside: ${JSON.stringify(await app.evaluate("window.__outside"))}`);
   const headings = report.paras.map((p, i) => [p, report.paras[i + 1]]).filter(([p]) => p.style === "Heading1");
   check("a heading is never left alone at the bottom of a page", headings.every(([h, next]) => !next || next.first === h.last), JSON.stringify(headings.map(([h, n]) => [h.text, h.last, n?.first])));
@@ -719,7 +719,7 @@ await session(null, 9470, async (app) => {
 
   // Resize from the bottom-right corner: the width snaps to the grid.
   const handle = await app.center(".picture-box .resize-handle.se");
-  check("selecting a picture shows its handles and the wrapping choices", !!handle && (await app.count(".picture-bar button")) === 5);
+  check("selecting a picture shows its handles, the wrapping choices and Description", !!handle && (await app.count(".picture-bar button")) === 6 && (await app.evaluate(`[...document.querySelectorAll(".picture-bar button")].pop().textContent`)) === "Description…");
   await app.drag(handle[0], handle[1], handle[0] - 97, handle[1] - 40);
   let attrs = await image();
   check("resizing snaps the width to the grid and keeps the proportions", Math.abs(attrs.width / GRID - Math.round(attrs.width / GRID)) < 0.01 && Math.abs(attrs.height / attrs.width - 0.75) < 0.01, JSON.stringify(attrs));
@@ -1180,6 +1180,15 @@ await session(versioned, 9590, async (app) => {
   await app.key("Enter", 13);
   const pageOfCursor = () => app.evaluate(`(() => { const s = window.__dw.body.state; const r = window.__dw.body.coordsAtPos(s.selection.from); const sheets = [...document.querySelectorAll(".page-sheet")].map((p) => p.getBoundingClientRect()); return sheets.findIndex((p) => r.top >= p.top && r.top <= p.bottom) + 1; })()`);
   check("and goes there", (await pageOfCursor()) === 3, String(await pageOfCursor()));
+  check("the status bar says which page the cursor is on", /^Page 3 of \d+$/.test(await app.evaluate(`document.querySelector(".statusbar .status-item").textContent`)), await app.evaluate(`document.querySelector(".statusbar .status-item").textContent`));
+  await app.key("Z", 90, ALT | SHIFT);
+  const zoomed = () => app.evaluate(`(() => { const w = document.querySelector(".workspace"); const s = document.querySelector(".page-sheet").getBoundingClientRect(); return [Math.round(s.width), w.clientWidth - 48]; })()`);
+  const [width, room] = await zoomed();
+  check("Alt+Shift+Z fits the page to the window's width", Math.abs(width - room) < 12, `${width} vs ${room}`);
+  await app.key("Z", 90, ALT | SHIFT);
+  check("then the whole page", await app.evaluate(`document.querySelector(".page-sheet").getBoundingClientRect().height <= document.querySelector(".workspace").clientHeight`));
+  await app.key("Z", 90, ALT | SHIFT);
+  check("then back to 100%", (await app.evaluate(`document.querySelector(".statusbar").textContent`)).includes("100%"));
 
   await app.key("L", 76, ALT | SHIFT);
   const numbers = () => app.evaluate(`[...document.querySelectorAll(".line-number")].map((n) => Number(n.textContent))`);
@@ -1388,6 +1397,23 @@ for (const [method, place, ports] of [
 }
 relay.kill();
 removeFolder(liveFolder);
+
+// ---- check before sending -----------------------------------------------------------------------
+
+await session(sample("review.docx"), 9596, async (app) => {
+  await app.debugHandle();
+  await app.key("I", 73, ALT | SHIFT);
+  const texts = () => app.evaluate(`[...document.querySelectorAll("dialog[open] .inspect-text")].map((t) => t.textContent)`);
+  check("Alt+Shift+I lists what to look at before sending", await app.waitFor(`document.querySelector("dialog[open] h2")?.textContent === "Check before sending"`, 3000) && (await texts()).some((t) => /4 tracked changes are still there/.test(t)) && (await texts()).some((t) => /2 comments are not resolved/.test(t)), JSON.stringify(await texts()));
+  await app.clickText("dialog[open] .inspect-item .btn", "Show (1 of 4)");
+  const selected = () => app.evaluate(`(() => { const s = window.__dw.body.state; return s.selection.from; })()`);
+  const first = await selected();
+  await app.clickText("dialog[open] .inspect-item .btn", "Show (2 of 4)");
+  check("Show goes from one to the next", (await selected()) > first, `${first} → ${await selected()}`);
+  await app.shoot("check-before-sending");
+  await app.clickText("dialog[open] .btn", "Close");
+  check("no errors in the app", app.errors.length === 0, app.errors.join("; "));
+});
 
 // ---- links ----------------------------------------------------------------------------------------
 

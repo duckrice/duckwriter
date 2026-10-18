@@ -2423,3 +2423,56 @@ kbd {
     box-shadow: none;
   }
 }
+
+/* ---- check before sending ---------------------------------------------------------------- */
+
+.inspect-dialog {
+  position: fixed;
+  inset: auto 24px 48px auto;
+  margin: 0;
+  box-shadow: var(--shadow);
+}
+
+.inspect-item .inspect-text {
+  white-space: normal;
+}
+
+.inspect-mark {
+  display: inline-grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  flex: none;
+  font-weight: 700;
+  font-size: 12px;
+  color: #ffffff;
+  background: #b45309;
+}
+
+.inspect-item.info .inspect-mark {
+  background: var(--muted);
+}
+
+.menu-row {
+  display: flex;
+  align-items: center;
+}
+
+.menu-row .menu-item {
+  flex: 1;
+}
+
+.menu-remove {
+  padding: 2px 8px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.menu-remove:hover {
+  background: var(--hover);
+  color: var(--text);
+}

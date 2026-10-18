@@ -10,6 +10,7 @@ import { listOf, toggleList } from "./lists";
 import { withoutLink } from "./commands";
 import { schema } from "./schema";
 import { SYMBOLS } from "../math/ast";
+import { autoCorrect } from "./autocorrect";
 
 const KEY = "duckwriter.autoformat";
 
@@ -103,7 +104,7 @@ export function autoFormatPlugin(ctx: () => DocContext) {
     props: {
       handleTextInput(view, from, to, text) {
         if (autoFormatOn()) {
-          const math = mathShorthand(view.state, text);
+          const math = mathShorthand(view.state, text) ?? autoCorrect(view.state, text);
           if (math) {
             const at = math.mapping.map(from);
             view.dispatch(math.insertText(text, at, at + (to - from)));

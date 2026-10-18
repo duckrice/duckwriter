@@ -25,6 +25,8 @@ export interface PictureLayout {
 
 export interface PictureInfo extends PictureLayout {
   rid: string;
+  /** Its description for people who can't see it (Word's alt text). */
+  alt: string;
 }
 
 const emu = (value: string | null | undefined) => Number(value ?? 0) / EMU_PER_POINT;
@@ -37,7 +39,8 @@ export function readPicture(drawing: Element): PictureInfo | null {
   const blip = drawing.getElementsByTagNameNS(NS.a, "blip")[0];
   const rid = blip?.getAttributeNS(NS.r, "embed");
   if (!extent || !rid) return null;
-  const base = { rid, width: emu(extent.getAttribute("cx")), height: emu(extent.getAttribute("cy")) };
+  const docPr = holder.getElementsByTagNameNS(WP, "docPr")[0];
+  const base = { rid, alt: docPr?.getAttribute("descr") ?? "", width: emu(extent.getAttribute("cx")), height: emu(extent.getAttribute("cy")) };
   if (holder.localName === "inline") return { ...base, floating: false, x: 0, y: 0, relX: "column", relY: "paragraph", wrap: "square" };
   const position = (name: string) => {
     const el = holder.getElementsByTagNameNS(WP, name)[0];
@@ -56,6 +59,14 @@ export function readPicture(drawing: Element): PictureInfo | null {
 const round = (points: number) => Math.round(points * EMU_PER_POINT);
 
 /** A new picture's <w:drawing>, referring to its image by relationship id. */
+/** A picture's XML with its description (alt text) set. */
+export function withDescription(xml: string, alt: string): string {
+  return xml.replace(/<wp:docPr\b([^>]*?)(\/?)>/, (_m, attrs: string, close: string) => {
+    const rest = attrs.replace(/\sdescr="[^"]*"/, "");
+    return `<wp:docPr${rest}${alt ? ` descr="${escapeAttr(alt)}"` : ""}${close}>`;
+  });
+}
+
 export function pictureXml(rid: string, layout: PictureLayout, id: number, declareR: boolean): string {
   const cx = round(layout.width);
   const cy = round(layout.height);

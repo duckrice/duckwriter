@@ -848,8 +848,8 @@ class BodyReader {
           if (picture && this.images.has(picture.rid)) {
             flush();
             const xml = `${startTag(r)}>${rPr ? this.raw(rPr) : ""}${this.raw(el)}</${r.tagName}>`;
-            const { rid, ...layout } = picture;
-            out.push(schema.nodes.image.create({ ...layout, rid, src: this.images.get(rid), xml, original: JSON.stringify(layout) }, null, marks));
+            const { rid, alt, ...layout } = picture;
+            out.push(schema.nodes.image.create({ ...layout, rid, alt, altRead: alt, src: this.images.get(rid), xml, original: JSON.stringify(layout) }, null, marks));
             break;
           }
           flush();

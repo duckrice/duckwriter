@@ -264,10 +264,13 @@ export const schema = new Schema(clipboardReady({
         relX: { default: "column" },
         relY: { default: "paragraph" },
         wrap: { default: "square" },
+        /** A description of the picture for people who can't see it (alt text), and as read. */
+        alt: { default: "" },
+        altRead: { default: "" },
         xml: { default: null },
         original: { default: null },
       },
-      toDOM: (node) => ["img", { class: "picture", src: node.attrs.src, style: `width:${node.attrs.width}pt;height:${node.attrs.height}pt` }],
+      toDOM: (node) => ["img", { class: "picture", src: node.attrs.src, alt: node.attrs.alt, style: `width:${node.attrs.width}pt;height:${node.attrs.height}pt` }],
     },
 
     /**

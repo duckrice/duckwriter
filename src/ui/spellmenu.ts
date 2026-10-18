@@ -5,6 +5,7 @@ import { TextSelection } from "prosemirror-state";
 import type { EditorView } from "prosemirror-view";
 import { h } from "../dom";
 import { addToDictionary, correct, ignoreWord, suggestions, type Mistake } from "../editor/spelling";
+import { addCorrection } from "../editor/autocorrect";
 
 let open: { el: HTMLElement; close: () => void } | null = null;
 
@@ -59,6 +60,15 @@ export function showSpellMenu(view: EditorView, mistake: Mistake, at: { left: nu
           )
         : [h("div", { class: "spell-loading" }, "No suggestions")]),
       h("div", { class: "menu-separator" }),
+      ...(words.length
+        ? [
+            item(`Always correct to “${words[0]}”`, () => {
+              addCorrection(mistake.word, words[0]);
+              const tr = correct(view.state, mistake, words[0]);
+              if (tr) view.dispatch(tr);
+            }),
+          ]
+        : []),
       item("Ignore all", () => ignoreWord(mistake.word)),
       item("Add to dictionary", () => addToDictionary(mistake.word)),
     );

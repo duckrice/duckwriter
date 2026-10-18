@@ -1,3 +1,4 @@
+import { showInspection } from "./inspect";
 import { insertEndnote } from "./endnotes";
 import { modifyStyle } from "./styles";
 import { insertBibliography, insertCitation, manageSources } from "./sources";
@@ -55,6 +56,7 @@ export interface ShortcutHost {
   toggleSpelling(): void;
   newComment(): void;
   cycleMarkup(): void;
+  cycleZoomFit(): void;
   compareWithFile(): void;
   exportAs(format: "markdown" | "html" | "text"): void;
   sortRows(): void;
@@ -226,6 +228,7 @@ export const SHORTCUTS: Shortcut[] = [
   { group: "Review", label: "Write together: share this document, or join one", keys: ["Alt+Shift+W"], run: (x) => x.share(), everywhere: true },
   { group: "Review", label: "New comment", keys: ["Ctrl+Alt+M"], run: (x) => x.newComment() },
   { group: "Review", label: "Show all markup, the final text, or the original", keys: ["Alt+Shift+M"], run: (x) => x.cycleMarkup() },
+  { group: "Review", label: "Check before sending (open changes, comments, undescribed pictures, broken references)", keys: ["Alt+Shift+I"], run: (x) => showInspection(x.body, x.ctx), everywhere: true },
   { group: "Review", label: "Compare with another version (the differences as tracked changes)", keys: ["Ctrl+Alt+Shift+C"], run: (x) => void x.compareWithFile(), everywhere: true },
   { group: "Review", label: "Track changes, on or off", keys: ["Ctrl+Shift+E"], run: (x) => x.toggleTracking(), everywhere: true },
   { group: "Review", label: "Next change or comment", keys: ["Alt+PageDown"], run: (x) => x.stepChange(1) },
@@ -263,6 +266,7 @@ export const SHORTCUTS: Shortcut[] = [
   { group: "View and layout", label: "Zoom in", keys: ["Ctrl+Alt++", "Ctrl+Alt+="], run: (x) => x.zoomBy(1), everywhere: true },
   { group: "View and layout", label: "Zoom out", keys: ["Ctrl+Alt+-"], run: (x) => x.zoomBy(-1), everywhere: true },
   { group: "View and layout", label: "Zoom to 100%", keys: ["Ctrl+Alt+0"], run: (x) => x.zoomBy(0), everywhere: true },
+  { group: "View and layout", label: "Zoom to the page width, the whole page, or 100%", keys: ["Alt+Shift+Z"], run: (x) => x.cycleZoomFit(), everywhere: true },
   { group: "View and layout", label: "Snap pictures to the grid, on or off", keys: ["Ctrl+Alt+G"], run: (x) => x.toggleSnap() },
   { group: "View and layout", label: "Line grid, on or off", keys: ["Ctrl+Alt+L"], run: (x) => x.setLineGrid(x.ctx.page.lineGrid === null) },
   { group: "View and layout", label: "Move or resize a picture without snapping", keys: ["Alt (hold while dragging)"] },
@@ -279,7 +283,7 @@ export function handleShortcuts(host: ShortcutHost) {
   window.addEventListener(
     "keydown",
     (event) => {
-      if (event.defaultPrevented || document.querySelector("dialog[open]")) return;
+      if (event.defaultPrevented || document.querySelector("dialog:modal")) return;
       const shortcut = shortcutFor(event);
       if (!shortcut) return;
       const target = event.target as HTMLElement | null;
