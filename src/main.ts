@@ -804,7 +804,7 @@ class App {
     this.showPage();
     this.pages = layout.count;
     this.lastLayout = layout;
-    this.headers.render(layout.count);
+    this.headers.render(layout.count, layout.labels);
     this.footnotes.render(layout);
     this.comments.layout();
     this.drawLineNumbers();

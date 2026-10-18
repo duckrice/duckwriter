@@ -1497,6 +1497,34 @@ removeFolder(round6Profile);
 rmSync(paperIn, { force: true });
 rmSync(texOut, { force: true });
 
+// ---- sections: front matter i, ii, then chapters from 1 -----------------------------------------
+
+{
+  const docx = await import("docx");
+  const thesisFile = join(tmpdir(), "duckwriter-smoke-thesis.docx");
+  const footer = () => new docx.Footer({ children: [new docx.Paragraph({ children: [new docx.TextRun({ children: [docx.PageNumber.CURRENT] })] })] });
+  writeFileSync(
+    thesisFile,
+    await docx.Packer.toBuffer(
+      new docx.Document({
+        sections: [
+          { properties: { page: { pageNumbers: { start: 1, formatType: docx.NumberFormat.LOWER_ROMAN } } }, footers: { default: footer() }, children: [new docx.Paragraph("Abstract")] },
+          { properties: { type: docx.SectionType.NEXT_PAGE, page: { pageNumbers: { start: 1, formatType: docx.NumberFormat.DECIMAL } } }, footers: { default: footer() }, children: [new docx.Paragraph("Chapter one")] },
+        ],
+      }),
+    ),
+  );
+  await session(thesisFile, 9599, async (app) => {
+    await app.waitFor(`document.querySelectorAll(".page-sheet").length === 2`, 5000);
+    const page = (text) => app.evaluate(`(() => { const p = [...document.querySelectorAll(".doc p")].find((p) => p.textContent === ${JSON.stringify(text)}); const pitch = document.querySelectorAll(".page-sheet")[1].getBoundingClientRect().top - document.querySelectorAll(".page-sheet")[0].getBoundingClientRect().top; return Math.floor((p.getBoundingClientRect().top - document.querySelector(".page-sheet").getBoundingClientRect().top) / pitch); })()`);
+    check("a section break starts a new page", (await page("Abstract")) === 0 && (await page("Chapter one")) === 1, `${await page("Abstract")}, ${await page("Chapter one")}`);
+    const footers = await app.evaluate(`[...document.querySelectorAll(".hf.footer")].map((f) => f.textContent.trim()).join(",")`);
+    check("page numbers follow the sections: i in the front matter, 1 in the first chapter", footers === "i,1", footers);
+    check("no errors in the app", app.errors.length === 0, app.errors.join("; "));
+  });
+  rmSync(thesisFile, { force: true });
+}
+
 // ---- round 7: properties, readability, Zotero -------------------------------------------------
 
 const round7Profile = join(tmpdir(), "duckwriter-smoke-round7-profile");

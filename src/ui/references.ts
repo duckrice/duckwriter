@@ -278,6 +278,12 @@ export function insertToc(view: EditorView, ctx: DocContext, label: string | nul
 }
 
 /** Brings tables of contents up to date with the headings and the pages they are on. */
+/** A block's page as the page numbers show it (iii in the front matter, 12 in a chapter). */
+const pageLabel = (layout: PageLayout, pos: number): number | string => {
+  const k = layout.pageOfBlock.get(pos) ?? 0;
+  return layout.labels?.[k] ?? k + 1;
+};
+
 export function updateTocs(view: EditorView, ctx: DocContext, layout: PageLayout) {
   const { doc } = view.state;
   let hasToc = false;
@@ -286,11 +292,11 @@ export function updateTocs(view: EditorView, ctx: DocContext, layout: PageLayout
   });
   if (!hasToc) return;
   const labels = listLabels(ctx, doc);
-  const entries: { level: number; text: string; page: number; pos: number }[] = [];
+  const entries: { level: number; text: string; page: number | string; pos: number }[] = [];
   doc.forEach((para, pos) => {
     const level = headingLevel(ctx, para);
     if (!level || level > 3 || !para.textContent.trim()) return;
-    entries.push({ level, text: `${labels.get(pos)?.label ?? ""} ${para.textContent}`.trim(), page: (layout.pageOfBlock.get(pos) ?? 0) + 1, pos });
+    entries.push({ level, text: `${labels.get(pos)?.label ?? ""} ${para.textContent}`.trim(), page: pageLabel(layout, pos), pos });
   });
   // Lists of figures and tables: the captions with that label.
   const captions = new Map<string, typeof entries>();
@@ -302,7 +308,7 @@ export function updateTocs(view: EditorView, ctx: DocContext, layout: PageLayout
     });
     if (!label) return;
     const list = captions.get(label) ?? [];
-    list.push({ level: 1, text: captionText(para).trim(), page: (layout.pageOfBlock.get(pos) ?? 0) + 1, pos });
+    list.push({ level: 1, text: captionText(para).trim(), page: pageLabel(layout, pos), pos });
     captions.set(label, list);
   });
   const tr = view.state.tr;

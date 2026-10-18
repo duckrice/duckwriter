@@ -147,7 +147,7 @@ export const schema = new Schema(clipboardReady({
       /** label: null for the headings, or a caption label ("Figure", "Table") for a list of those. */
       attrs: { title: { default: "Contents" }, entries: { default: [] }, label: { default: null } },
       toDOM(node): DOMOutputSpec {
-        const entries = node.attrs.entries as { level: number; text: string; page: number; pos: number }[];
+        const entries = node.attrs.entries as { level: number; text: string; page: number | string; pos: number }[];
         return [
           "div",
           { class: "toc", title: node.attrs.label ? `List of ${String(node.attrs.label).toLowerCase()}s — it updates by itself` : "Table of contents — it updates by itself" },

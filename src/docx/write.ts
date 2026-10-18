@@ -236,7 +236,7 @@ class BodyWriter {
   private toc(node: Node): string {
     const p = this.ctx.page;
     const tab = twips(p.width - p.marginLeft - p.marginRight);
-    const entries = node.attrs.entries as { level: number; text: string; page: number }[];
+    const entries = node.attrs.entries as { level: number; text: string; page: number | string }[];
     const label = node.attrs.label as string | null;
     let out = node.attrs.title ? `<w:p><w:pPr><w:pStyle w:val="TOCHeading"/></w:pPr><w:r><w:t xml:space="preserve">${escapeText(node.attrs.title)}</w:t></w:r></w:p>` : "";
     // A list of figures is Word's table of figures: a TOC field over the captions with that label.

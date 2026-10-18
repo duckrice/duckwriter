@@ -82,8 +82,9 @@ export class HeadersAndFooters {
   }
 
   /** Draws the headers and footers of `count` pages. */
-  render(count: number) {
+  render(count: number, labels: string[] = []) {
     this.pageCount = count;
+    this.labels = labels;
     const p = this.host.ctx.page;
     const pitch = p.height * PX + PAGE_GAP;
     const areas = [...this.layer.querySelectorAll<HTMLElement>(".hf")];
@@ -116,18 +117,20 @@ export class HeadersAndFooters {
   }
 
   /** What each area shows, so that unchanged ones aren't drawn again (hundreds of pages). */
-  private shown = new WeakMap<HTMLElement, { doc: unknown; page: number; count: number }>();
+  private shown = new WeakMap<HTMLElement, { doc: unknown; page: number; count: number; label?: string }>();
+  /** Each page's number as shown (sections may restart it or show i, ii, iii). */
+  private labels: string[] = [];
 
   /** Shows a story's content with this page's number in it. */
   private fill(area: HTMLElement, story: Story | undefined, page: number) {
     const was = this.shown.get(area);
-    if (was && !area.classList.contains("editing") && was.doc === story?.doc && was.page === page && was.count === this.pageCount) return;
-    this.shown.set(area, { doc: story?.doc, page, count: this.pageCount });
+    if (was && !area.classList.contains("editing") && was.doc === story?.doc && was.page === page && was.count === this.pageCount && was.label === this.labels[page]) return;
+    this.shown.set(area, { doc: story?.doc, page, count: this.pageCount, label: this.labels[page] });
     area.classList.remove("editing");
     const content = h("div", { class: "hf-doc" });
     if (story) content.append(DOMSerializer.fromSchema(schema).serializeFragment(story.doc.content));
     for (const field of content.querySelectorAll<HTMLElement>(".field")) {
-      if (field.dataset.instr === "PAGE") field.textContent = String(page + 1);
+      if (field.dataset.instr === "PAGE") field.textContent = this.labels[page] ?? String(page + 1);
       else if (field.dataset.instr === "NUMPAGES") field.textContent = String(this.pageCount);
     }
     area.classList.toggle("empty", !story || !story.doc.textContent.trim() && !content.querySelector(".field"));
@@ -203,7 +206,7 @@ export class HeadersAndFooters {
     }
     this.layer.parentElement?.classList.remove("editing-hf");
     this.bar.hidden = true;
-    this.render(this.pageCount);
+    this.render(this.pageCount, this.labels);
     this.host.storiesChanged();
   }
 

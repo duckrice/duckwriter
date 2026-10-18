@@ -27,6 +27,8 @@ export interface PageLayout {
   notes: string[][];
   /** The page (from 0) each top-level paragraph starts on, by its position. */
   pageOfBlock: Map<number, number>;
+  /** Each page's number as headers and footers show it (sections can restart it, or count i, ii, iii). */
+  labels?: string[];
 }
 
 export interface PaginationHooks {
@@ -278,15 +280,28 @@ function layout(view: EditorView, hooks: PaginationHooks) {
   const fits = (bottom: number, k: number, ids: string[]) => bottom <= contentBottom(k) - noteRoom(k, ids) + 0.5;
 
   const pageOfBlock = new Map<number, number>();
+  // Sections: where each starts (its first page) and its properties (Word keeps them at its end).
+  const sections: { firstPage: number; restarts: boolean; xml: string }[] = [{ firstPage: 0, restarts: true, xml: "" }];
+  let broke: SectionBreak | null = null;
   for (let i = 0; i < blocks.length; i++) {
     const b = blocks[i];
     const top = () => b.top + shift;
     let k = pageOf(top());
-    // Starting in the space between pages, or asked to start a page.
-    if (top() > contentBottom(k) - 0.5 || (props(b.node).pageBreakBefore && top() > contentTop(k) + 1)) {
+    // Starting in the space between pages, asked to start a page, or after a section break that starts one.
+    const newSection = broke !== null && broke.type !== "continuous";
+    if (top() > contentBottom(k) - 0.5 || ((props(b.node).pageBreakBefore || newSection) && top() > contentTop(k) + 1)) {
       add(b.pos, top(), false);
       k = pageOf(top());
     }
+    // An odd- or even-page section starts with a blank page if needed (page 1 is odd).
+    if (broke && ((broke.type === "oddPage" && k % 2 === 1) || (broke.type === "evenPage" && k % 2 === 0))) {
+      gaps.push({ pos: b.pos, height: pitch, inline: false });
+      shift += pitch;
+      k++;
+    }
+    if (broke) sections.push({ firstPage: k, restarts: broke.type !== "continuous", xml: "" });
+    broke = sectionBreak(b.node);
+    if (broke) sections[sections.length - 1].xml = broke.xml;
 
     const breaks: { pos: number; bottom: number }[] = [];
     const notes: { id: string; y: number }[] = [];
@@ -447,5 +462,65 @@ function layout(view: EditorView, hooks: PaginationHooks) {
     while (g < gapsBefore.length && gapsBefore[g].pos <= b.pos) moved += gapsBefore[g++].height;
     pageOfBlock.set(b.pos, pageOf(b.top + moved + 1));
   }
-  hooks.onLayout({ count, notes: Array.from({ length: count }, (_, k) => notesOn[k] ?? []), pageOfBlock });
+  sections[sections.length - 1].xml = ctx.sectPr ?? "";
+  hooks.onLayout({ count, notes: Array.from({ length: count }, (_, k) => notesOn[k] ?? []), pageOfBlock, labels: pageLabels(count, sections) });
+}
+
+interface SectionBreak {
+  type: string;
+  /** The section's properties (w:sectPr), as kept in the paragraph that ends it. */
+  xml: string;
+}
+
+/** A paragraph that ends a section: Word keeps the section's properties in its own. */
+export function sectionBreak(node: Node): SectionBreak | null {
+  if (node.type !== schema.nodes.paragraph) return null;
+  const xml = /<w:sectPr\b[\s\S]*?<\/w:sectPr>|<w:sectPr\b[^>]*\/>/.exec(node.attrs.extra ?? "")?.[0];
+  if (!xml) return null;
+  return { type: /<w:type\b[^>]*w:val="(\w+)"/.exec(xml)?.[1] ?? "nextPage", xml };
+}
+
+const roman = (n: number) => {
+  const map: [number, string][] = [[1000, "m"], [900, "cm"], [500, "d"], [400, "cd"], [100, "c"], [90, "xc"], [50, "l"], [40, "xl"], [10, "x"], [9, "ix"], [5, "v"], [4, "iv"], [1, "i"]];
+  let out = "";
+  for (const [v, s] of map) while (n >= v) (out += s), (n -= v);
+  return out;
+};
+const letters = (n: number) => String.fromCharCode(97 + ((n - 1) % 26)).repeat(Math.floor((n - 1) / 26) + 1);
+
+/** A page number as a section's numbering shows it: 3, iii, III, c or C. */
+export function formatPageNumber(n: number, format: string): string {
+  if (n < 1) return String(n);
+  switch (format) {
+    case "lowerRoman":
+      return roman(n);
+    case "upperRoman":
+      return roman(n).toUpperCase();
+    case "lowerLetter":
+      return letters(n);
+    case "upperLetter":
+      return letters(n).toUpperCase();
+    default:
+      return String(n);
+  }
+}
+
+/** Each page's number as shown in headers and footers: numbering restarts or changes format by section. */
+export function pageLabels(count: number, sections: { firstPage: number; restarts: boolean; xml: string }[]): string[] {
+  const labels: string[] = [];
+  let n = 0;
+  let s = 0;
+  let format = "decimal";
+  for (let k = 0; k < count; k++) {
+    while (s + 1 < sections.length && sections[s + 1].firstPage <= k) s++;
+    const section = sections[s];
+    const numType = /<w:pgNumType\b[^>]*>/.exec(section.xml)?.[0] ?? "";
+    if (k === section.firstPage || k === 0) {
+      format = /w:fmt="(\w+)"/.exec(numType)?.[1] ?? "decimal";
+      const start = /w:start="(\d+)"/.exec(numType)?.[1];
+      n = start && (section.restarts || k === 0) ? Number(start) : n + 1;
+    } else n++;
+    labels.push(formatPageNumber(n, format));
+  }
+  return labels;
 }
