@@ -1,6 +1,7 @@
 // Profiles opening a long document, and typing in it: which functions take
 // the time, and from where. If it hangs, "stacks" shows where it is stuck.
 //   node scripts/profile.mjs [size] [seconds to wait for opening] [stacks]
+// With REVIEW=1, every paragraph has tracked changes and every third a comment.
 import { spawn } from "node:child_process";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -17,11 +18,22 @@ const words = "the rate of the reaction increases with temperature as the measur
 const sentence = (i) => Array.from({ length: 70 }, (_, k) => words[(i * 7 + k) % words.length]).join(" ") + ".";
 const children = [];
 const footnotes = {};
+const comments = [];
 let note = 1;
 for (let p = 0; p < pages; p++) {
   if (p % 4 === 0) children.push(new Paragraph({ text: `Section ${p / 4 + 1}`, heading: HeadingLevel.HEADING_1 }));
   for (let i = 0; i < 4; i++) {
     const runs = [new TextRun(sentence(p * 5 + i))];
+    const k = p * 5 + i;
+    if (process.env.REVIEW) {
+      const who = { author: k % 2 ? "Kari" : "Ola", date: "2026-10-01T10:00:00Z" };
+      runs.push(new docx.InsertedTextRun({ text: " added here", id: 10000 + k * 2, ...who }), new docx.DeletedTextRun({ text: " taken out", id: 10001 + k * 2, ...who }));
+      if (k % 3 === 0) {
+        comments.push({ id: k, author: who.author, date: new Date("2026-10-01"), children: [new Paragraph(`Comment ${k}`)] });
+        runs.unshift(new docx.CommentRangeStart(k));
+        runs.push(new docx.CommentRangeEnd(k), new TextRun({ children: [new docx.CommentReference(k)] }));
+      }
+    }
     if (i === 1 && p % 2 === 0) {
       footnotes[note] = { children: [new Paragraph(`Note ${note}.`)] };
       runs.push(new docx.FootnoteReferenceRun(note++));
@@ -32,7 +44,7 @@ for (let p = 0; p < pages; p++) {
 }
 const work = mkdtempSync(join(tmpdir(), "duckwriter-perf-"));
 const file = join(work, "long.docx");
-writeFileSync(file, await docx.Packer.toBuffer(new docx.Document({ footnotes, styles: { default: { document: { run: { font: "Calibri", size: 22 } } } }, sections: [{ children }] })));
+writeFileSync(file, await docx.Packer.toBuffer(new docx.Document({ footnotes, ...(comments.length ? { comments: { children: comments } } : {}), styles: { default: { document: { run: { font: "Calibri", size: 22 } } } }, sections: [{ children }] })));
 
 const port = 9621;
 const child = spawn(exe, [], {

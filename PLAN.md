@@ -142,12 +142,14 @@ written back unchanged.
   for proofreading. (Automatic hyphenation was on the list, but the browser
   engine has no hyphenation dictionaries on Windows.)
 
-### Round 8 (in progress): sturdiness
-- **A package check** on saved files: every relationship points to a part
+### Round 8: sturdiness
+- **A package check** on saved files (it found copied pictures sharing an id,
+  now fixed): every relationship points to a part
   that is there, every part has a content type, the XML is well formed,
   and ids (comments, changes, bookmarks, pictures) are unique, so Word never
   calls a saved file damaged. Run over every sample and over edited files.
-- **Speed with many changes and comments** in a long document.
+- **Speed with many changes and comments**: 450 comments and 2,700 tracked
+  changes in 124 pages, 22 ms a key (was 205).
 - **Every button has a name** for screen readers (checked in the app test).
 
 ## Next

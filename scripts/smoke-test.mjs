@@ -261,6 +261,9 @@ await session(null, 9433, async (app) => {
   check("starts with a new, empty document", (await app.evaluate("document.title")).startsWith("Document1.docx") && (await app.count(".doc > .para")) === 1);
   check("the page is A4 with 2.54 cm margins", await app.evaluate(`(() => { const s = document.querySelector(".sheet").style; return s.width === "595.3pt" && document.querySelector(".doc").style.margin === "72pt 72pt 0px"; })()`));
   check("the cursor is in the text, ready to type", await app.evaluate(`document.activeElement?.classList.contains("doc")`));
+  // Screen readers say each button's name: its text, aria-label or title. Every ribbon tab, and the status bar.
+  const unnamed = await app.evaluate(`[...document.querySelectorAll("button, select, input")].filter((b) => !(b.getAttribute("aria-label") || b.textContent.trim() || b.title || b.labels?.length || b.closest("label"))).map((b) => b.outerHTML.slice(0, 120))`);
+  check("every button and box has a name for screen readers", unnamed.length === 0, unnamed.join(" | "));
 
   await app.type("Packing list");
   await app.evaluate(`(() => { const s = document.querySelector(".style-select"); s.value = "Heading1"; s.dispatchEvent(new Event("change")); })()`);

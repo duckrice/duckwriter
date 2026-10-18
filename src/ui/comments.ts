@@ -37,6 +37,8 @@ function grow(area: HTMLTextAreaElement) {
 export class CommentsPane {
   readonly el = h("div", { class: "comments-pane", "aria-label": "Comments" });
   private cards = new Map<string, HTMLElement>();
+  /** What each card shows, to tell when it needs drawing again. */
+  private drawn = new WeakMap<HTMLElement, string>();
   /** A comment just added, whose card gets the cursor. */
   private focusNext: string | null = null;
 
@@ -79,10 +81,16 @@ export class CommentsPane {
       return item && !(item.parent && placed.has(item.parent));
     });
     const active = activeComment(body.state);
+    // Each comment's replies, in the order of the text (once, not for every card).
+    const repliesOf = new Map<string, CommentData[]>();
+    for (const r of anchors) {
+      const item = ctx.comments.items.get(r.id);
+      if (item?.parent) (repliesOf.get(item.parent) ?? repliesOf.set(item.parent, []).get(item.parent)!).push(item);
+    }
     const keep = new Set<string>();
     for (const a of top) {
       const item = ctx.comments.items.get(a.id)!;
-      const replies = anchors.map((r) => ctx.comments.items.get(r.id)!).filter((r) => r?.parent === a.id);
+      const replies = repliesOf.get(a.id) ?? [];
       const card = this.card(item, replies, a.id === active);
       keep.add(a.id);
       if (!card.isConnected) this.el.append(card);
@@ -127,6 +135,10 @@ export class CommentsPane {
       return card;
     }
     card.dataset.replies = String(replies.length);
+    // Unchanged since it was drawn: nothing to rebuild (hundreds of comments, at every key).
+    const drawn = JSON.stringify([item, ...replies].map((c) => [c.id, c.author, c.date, c.text, c.done]));
+    if (this.drawn.get(card) === drawn) return card;
+    this.drawn.set(card, drawn);
     const typing = document.activeElement instanceof HTMLTextAreaElement && card.contains(document.activeElement) ? document.activeElement : null;
     card.replaceChildren(this.entry(item, true), ...replies.map((r) => this.entry(r, false)), this.replyBox(item));
     if (typing) (card.querySelector(`[data-entry="${typing.closest<HTMLElement>("[data-entry]")?.dataset.entry}"] .comment-text`) as HTMLElement | null)?.focus();
@@ -238,15 +250,25 @@ export class CommentsPane {
     if (!this.cards.size) return;
     const zoom = this.host.zoom || 1;
     const origin = sheet.getBoundingClientRect().top;
-    let bottom = 0;
-    for (const card of this.el.children as HTMLCollectionOf<HTMLElement>) {
-      const id = card.dataset.id!;
-      const anchor = sheet.querySelector(`.doc .comment-anchor.comment-start[data-id="${CSS.escape(id)}"]`) ?? sheet.querySelector(`.doc .comment-anchor[data-id="${CSS.escape(id)}"]`);
-      const want = anchor ? (anchor.getBoundingClientRect().top - origin) / zoom - 6 : bottom;
-      const top = Math.max(want, bottom);
-      card.style.top = `${top}px`;
-      bottom = top + card.offsetHeight + 8;
+    // Each comment's place in the text: where it starts, or else any of its marks; found in one go.
+    const anchors = new Map<string, Element>();
+    for (const el of sheet.querySelectorAll(".doc .comment-anchor[data-id]")) {
+      const id = (el as HTMLElement).dataset.id!;
+      if (!anchors.has(id) || el.classList.contains("comment-start")) anchors.set(id, el);
     }
+    // Everything measured first, then everything moved: no layout in between.
+    const cards = [...(this.el.children as HTMLCollectionOf<HTMLElement>)];
+    const wants = cards.map((card) => {
+      const anchor = anchors.get(card.dataset.id!);
+      return anchor ? (anchor.getBoundingClientRect().top - origin) / zoom - 6 : null;
+    });
+    const heights = cards.map((card) => card.offsetHeight);
+    let bottom = 0;
+    cards.forEach((card, i) => {
+      const top = Math.max(wants[i] ?? bottom, bottom);
+      card.style.top = `${top}px`;
+      bottom = top + heights[i] + 8;
+    });
   }
 }
 
