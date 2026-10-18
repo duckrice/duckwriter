@@ -8,7 +8,7 @@ import { h } from "../dom";
 import type { DocContext, Story } from "../docx/model";
 import { ensureStyles } from "../docx/builtins";
 import { createState, createView } from "../editor/editor";
-import { PAGE_GAP } from "../editor/pagination";
+import { pageBox, pageOffset, type PageLayout } from "../editor/pagination";
 import { schema } from "../editor/schema";
 
 export interface HeaderHost {
@@ -98,12 +98,12 @@ export class HeadersAndFooters {
   }
 
   /** Draws the headers and footers of `count` pages. */
-  render(count: number, labels: string[] = [], sections: { firstPage: number; xml: string }[] = []) {
+  render(count: number, labels: string[] = [], sections: { firstPage: number; xml: string }[] = [], layout: PageLayout | null = this.layout) {
     this.pageCount = count;
     this.labels = labels;
     this.sections = sections;
-    const p = this.host.ctx.page;
-    const pitch = p.height * PX + PAGE_GAP;
+    this.layout = layout;
+    const main = this.host.ctx.page;
     const areas = [...this.layer.querySelectorAll<HTMLElement>(".hf")];
     const wanted = count * 2;
     while (areas.length < wanted) {
@@ -118,14 +118,16 @@ export class HeadersAndFooters {
       const page = Math.floor(i / 2);
       const kind = area.dataset.kind as Kind;
       area.dataset.page = String(page);
-      area.style.left = `${p.marginLeft}pt`;
-      area.style.right = `${p.marginRight}pt`;
+      // Each page's own size and margins (a section may have its own).
+      const { top, setup: p } = pageBox(layout, page, main);
+      area.style.left = `${pageOffset(p, main) + p.marginLeft}pt`;
+      area.style.width = `${p.width - p.marginLeft - p.marginRight}pt`;
       if (kind === "header") {
-        area.style.top = `${page * pitch + p.headerDistance * PX}px`;
+        area.style.top = `${top + p.headerDistance * PX}px`;
         area.style.minHeight = `${Math.max(12, p.marginTop - p.headerDistance)}pt`;
       } else {
         // Its bottom sits the footer distance above the bottom of the page; it grows upwards.
-        area.style.top = `${page * pitch + (p.height - p.footerDistance) * PX}px`;
+        area.style.top = `${top + (p.height - p.footerDistance) * PX}px`;
         area.style.minHeight = `${Math.max(12, p.marginBottom - p.footerDistance)}pt`;
       }
       const editing = this.editing && this.editing.kind === kind && this.editing.page === page;
@@ -137,6 +139,8 @@ export class HeadersAndFooters {
   private shown = new WeakMap<HTMLElement, { doc: unknown; page: number; count: number; label?: string }>();
   /** Each page's number as shown (sections may restart it or show i, ii, iii). */
   private labels: string[] = [];
+  /** The last layout, for each page's size. */
+  private layout: PageLayout | null = null;
   /** The sections, from the last layout. */
   private sections: { firstPage: number; xml: string }[] = [];
 
@@ -225,7 +229,7 @@ export class HeadersAndFooters {
     }
     this.layer.parentElement?.classList.remove("editing-hf");
     this.bar.hidden = true;
-    this.render(this.pageCount, this.labels, this.sections);
+    this.render(this.pageCount, this.labels, this.sections, this.layout);
     this.host.storiesChanged();
   }
 

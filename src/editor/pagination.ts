@@ -9,7 +9,8 @@ import type { Node } from "prosemirror-model";
 import { Plugin, PluginKey, type EditorState } from "prosemirror-state";
 import { Decoration, DecorationSet, type EditorView } from "prosemirror-view";
 import { TableMap } from "prosemirror-tables";
-import { resolvedPara, type DocContext } from "../docx/model";
+import { resolvedPara, type DocContext, type PageSetup } from "../docx/model";
+import { pageFromSectPr } from "../docx/read";
 import { schema } from "./schema";
 
 /** Space between pages on screen, in pixels; none when printing. */
@@ -31,6 +32,8 @@ export interface PageLayout {
   labels?: string[];
   /** The sections: the page each starts on, and its properties (w:sectPr). */
   sections?: { firstPage: number; xml: string }[];
+  /** Each page: where it starts (pixels from the top of the first) and its size and margins. */
+  pages?: { top: number; setup: PageSetup }[];
 }
 
 export interface PaginationHooks {
@@ -212,15 +215,66 @@ function linesOf(el: HTMLElement, originTop: number, scale: number): Line[] {
 
 function layout(view: EditorView, hooks: PaginationHooks) {
   const ctx = hooks.context();
-  const page = ctx.page;
+
+  // Each section's page (size, orientation, margins): the last section's is the document's.
+  const sectionOf: number[] = [];
+  const setups: PageSetup[] = [];
+  {
+    let s = 0;
+    view.state.doc.forEach((node) => {
+      sectionOf.push(s);
+      const end = sectionBreak(node);
+      if (end) {
+        // On paper (PDF, printing) every page has the document's size: one paper size per print.
+        setups[s] = (!onPaper() && pageFromSectPr(end.xml)) || ctx.page;
+        s++;
+      }
+    });
+    setups[s] = ctx.page;
+  }
+
+  // The pages, made as the text reaches them; a section that starts a page sets that page's size.
+  // y is measured from the top of the text on the first page (the document's top margin).
+  const pageSetups: PageSetup[] = [];
+  const pageTops: number[] = [];
+  let setup = setups[0];
+  const origin0 = ctx.page.marginTop * PX;
+  const ensure = (k: number) => {
+    while (pageSetups.length <= k) {
+      const n = pageSetups.length;
+      pageTops.push(n === 0 ? 0 : pageTops[n - 1] + pageSetups[n - 1].height * PX + PAGE_GAP);
+      pageSetups.push(setup);
+    }
+  };
+  /** From page k on, pages have this setup. */
+  const startPages = (k: number, next: PageSetup) => {
+    ensure(k);
+    pageSetups.length = k + 1;
+    pageTops.length = k + 1;
+    pageSetups[k] = next;
+    setup = next;
+  };
+  const contentTop = (k: number) => {
+    ensure(k);
+    return pageTops[k] + pageSetups[k].marginTop * PX - origin0;
+  };
   // At least half an inch of text on a page, whatever the margins say.
-  const contentHeight = Math.max(36, page.height - page.marginTop - page.marginBottom) * PX;
-  const pitch = page.height * PX + PAGE_GAP;
+  const contentBottom = (k: number) => contentTop(k) + Math.max(36, pageSetups[k].height - pageSetups[k].marginTop - pageSetups[k].marginBottom) * PX;
   // A little leeway: far down a long document, a line moved to the top of a
   // page can end up a rounding error above it, and would be moved again forever.
-  const pageOf = (y: number) => Math.max(0, Math.floor((y + 0.01) / pitch));
-  const contentTop = (k: number) => k * pitch;
-  const contentBottom = (k: number) => k * pitch + contentHeight;
+  const pageOf = (y: number) => {
+    let last = Math.max(0, pageSetups.length - 1);
+    while (contentTop(last + 1) <= y + 0.01) last++;
+    // The last page whose text starts at or above y.
+    let lo = 0;
+    let hi = last;
+    while (lo < hi) {
+      const mid = (lo + hi + 1) >> 1;
+      if (contentTop(mid) <= y + 0.01) lo = mid;
+      else hi = mid - 1;
+    }
+    return lo;
+  };
 
   if (hooks.measureNotes) {
     const ids: string[] = [];
@@ -288,18 +342,30 @@ function layout(view: EditorView, hooks: PaginationHooks) {
   for (let i = 0; i < blocks.length; i++) {
     const b = blocks[i];
     const top = () => b.top + shift;
+    // The first section's top margin may be deeper than the document's (the page's own setup).
+    if (i === 0 && contentTop(0) - top() > 0.5) {
+      const down = contentTop(0) - top();
+      gaps.push({ pos: b.pos, height: down, inline: false });
+      shift += down;
+    }
     let k = pageOf(top());
-    // Starting in the space between pages, asked to start a page, or after a section break that starts one.
     const newSection = broke !== null && broke.type !== "continuous";
-    if (top() > contentBottom(k) - 0.5 || ((props(b.node).pageBreakBefore || newSection) && top() > contentTop(k) + 1)) {
+    if (newSection) {
+      // A section that starts a page: on the next page (or this one, if it is at its top), with
+      // the section's own page size; an odd- or even-page section may need a blank page first.
+      let at = top() > contentTop(k) + 1 ? k + 1 : k;
+      if ((broke!.type === "oddPage" && at % 2 === 1) || (broke!.type === "evenPage" && at % 2 === 0)) at++;
+      startPages(at, setups[sectionOf[i]] ?? setup);
+      const down = contentTop(at) - top();
+      if (down > 0.5) {
+        gaps.push({ pos: b.pos, height: down, inline: false });
+        shift += down;
+      }
+      k = at;
+    } else if (top() > contentBottom(k) - 0.5 || (props(b.node).pageBreakBefore && top() > contentTop(k) + 1)) {
+      // Starting in the space between pages, or asked to start a page.
       add(b.pos, top(), false);
       k = pageOf(top());
-    }
-    // An odd- or even-page section starts with a blank page if needed (page 1 is odd).
-    if (broke && ((broke.type === "oddPage" && k % 2 === 1) || (broke.type === "evenPage" && k % 2 === 0))) {
-      gaps.push({ pos: b.pos, height: pitch, inline: false });
-      shift += pitch;
-      k++;
     }
     if (broke) sections.push({ firstPage: k, restarts: broke.type !== "continuous", xml: "" });
     broke = sectionBreak(b.node);
@@ -361,7 +427,7 @@ function layout(view: EditorView, hooks: PaginationHooks) {
         }
         const height = contentTop(k + 1) - rowTop;
         // Repeating the header makes no sense if it would fill the page.
-        const repeat = header.length && headerHeight < contentHeight / 2 ? header : undefined;
+        const repeat = header.length && headerHeight < (contentBottom(k + 1) - contentTop(k + 1)) / 2 ? header : undefined;
         gaps.push({ pos: rowPos, height, inline: false, columns, header: repeat });
         shift += height + (repeat ? headerHeight : 0);
         void row;
@@ -465,7 +531,71 @@ function layout(view: EditorView, hooks: PaginationHooks) {
     pageOfBlock.set(b.pos, pageOf(b.top + moved + 1));
   }
   sections[sections.length - 1].xml = ctx.sectPr ?? "";
-  hooks.onLayout({ count, notes: Array.from({ length: count }, (_, k) => notesOn[k] ?? []), pageOfBlock, labels: pageLabels(count, sections), sections });
+  hooks.onLayout({ count, notes: Array.from({ length: count }, (_, k) => notesOn[k] ?? []), pageOfBlock, labels: pageLabels(count, sections), sections, pages: Array.from({ length: count }, (_, k) => (ensure(k), { top: pageTops[k], setup: pageSetups[k] })) });
+}
+
+/**
+ * A section whose text is wider or set further in than the document's (a
+ * landscape table): its paragraphs and tables take its own width, by margins
+ * on each block. (Indents are padding, so these don't clash with them.)
+ */
+export function sectionWidthPlugin(context: () => DocContext) {
+  let cached: { doc: Node; page: string; set: DecorationSet } | null = null;
+  const setups = new Map<string, PageSetup | null>();
+  return new Plugin({
+    props: {
+      decorations(state) {
+        const main = context().page;
+        const key = JSON.stringify(main) + onPaper();
+        if (cached && cached.doc === state.doc && cached.page === key) return cached.set;
+        // Each section's blocks, with the setup found at the section's end.
+        const decorations: Decoration[] = [];
+        if (onPaper()) {
+          cached = { doc: state.doc, page: key, set: DecorationSet.empty };
+          return cached.set;
+        }
+        let blocks: { pos: number; end: number }[] = [];
+        state.doc.forEach((node, pos) => {
+          blocks.push({ pos, end: pos + node.nodeSize });
+          const end = sectionBreak(node);
+          if (!end) return;
+          if (!setups.has(end.xml)) setups.set(end.xml, pageFromSectPr(end.xml));
+          const p = setups.get(end.xml);
+          // A page of another width is centred on the document's, as Word shows it.
+          const shift = p ? pageOffset(p, main) : 0;
+          const left = p ? shift + p.marginLeft - main.marginLeft : 0;
+          const right = p ? main.width - main.marginRight - (shift + p.width - p.marginRight) : 0;
+          if (Math.abs(left) > 0.5 || Math.abs(right) > 0.5) {
+            for (const b of blocks) decorations.push(Decoration.node(b.pos, b.end, { style: `margin-left:${left}pt;margin-right:${right}pt` }));
+          }
+          blocks = [];
+        });
+        const set = DecorationSet.create(state.doc, decorations);
+        cached = { doc: state.doc, page: key, set };
+        return set;
+      },
+    },
+  });
+}
+
+/** Laying out for paper (PDF, printing), where there are no gaps between pages. */
+const onPaper = () => PAGE_GAP === 0;
+
+/** How far a page of this size sits left of the document's pages (points; negative: further left), centred on them. */
+export const pageOffset = (setup: PageSetup, main: PageSetup) => (main.width - setup.width) / 2;
+
+/** Page k: where it starts (pixels from the top of the first page) and its size and margins. */
+export function pageBox(layout: PageLayout | null | undefined, k: number, page: PageSetup): { top: number; setup: PageSetup } {
+  return layout?.pages?.[k] ?? { top: k * (page.height * PX + PAGE_GAP), setup: page };
+}
+
+/** The page at a height (pixels from the top of the first page). */
+export function pageAt(layout: PageLayout | null | undefined, y: number, page: PageSetup): number {
+  const pages = layout?.pages;
+  if (!pages?.length) return Math.max(0, Math.floor(y / (page.height * PX + PAGE_GAP)));
+  let k = 0;
+  while (k + 1 < pages.length && pages[k + 1].top <= y) k++;
+  return k;
 }
 
 interface SectionBreak {

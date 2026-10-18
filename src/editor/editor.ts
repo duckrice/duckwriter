@@ -25,7 +25,7 @@ import { citationsPlugin } from "./citations";
 import { authorName } from "../author";
 import { ImageView, type PictureHooks } from "./imageview";
 import { MathView } from "./mathview";
-import { paginationPlugin, type PaginationHooks } from "./pagination";
+import { paginationPlugin, sectionWidthPlugin, type PaginationHooks } from "./pagination";
 import { schema } from "./schema";
 import { editEquation } from "../ui/equation";
 import { EndnotesView, editEndnote } from "../ui/endnotes";
@@ -100,7 +100,7 @@ export function createState(doc: Node, ctx: () => DocContext, pages?: Omit<Pagin
       trackPlugin({ on: () => !!ctx().trackChanges, author: authorName, context: ctx }),
       pastePlugin(ctx),
       citationsPlugin(ctx),
-      ...(pages ? [paginationPlugin({ context: ctx, ...pages })] : []),
+      ...(pages ? [paginationPlugin({ context: ctx, ...pages }), sectionWidthPlugin(ctx)] : []),
       dropCursor({ color: "#0f766e", width: 2 }),
       gapCursor(),
       new Plugin({

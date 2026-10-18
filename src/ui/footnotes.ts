@@ -9,7 +9,7 @@ import { h } from "../dom";
 import { ensureStyles } from "../docx/builtins";
 import type { DocContext } from "../docx/model";
 import { createState, createView } from "../editor/editor";
-import { NOTE_SEPARATOR, PAGE_GAP, relayout, type PageLayout } from "../editor/pagination";
+import { NOTE_SEPARATOR, pageBox, pageOffset, relayout, type PageLayout } from "../editor/pagination";
 import { schema } from "../editor/schema";
 
 export interface FootnoteHost {
@@ -122,8 +122,7 @@ export class Footnotes {
   /** Draws the notes at the bottom of each page. */
   render(layout: PageLayout) {
     this.layout = layout;
-    const p = this.host.ctx.page;
-    const pitch = p.height * PX + PAGE_GAP;
+    const main = this.host.ctx.page;
     const areas = [...this.layer.querySelectorAll<HTMLElement>(".fn-area")];
     while (areas.length > layout.count) areas.pop()!.remove();
     for (let k = 0; k < layout.count; k++) {
@@ -133,9 +132,11 @@ export class Footnotes {
         this.layer.append(area);
         areas.push(area);
       }
-      area.style.left = `${p.marginLeft}pt`;
-      area.style.right = `${p.marginRight}pt`;
-      area.style.top = `${k * pitch + (p.height - p.marginBottom) * PX}px`;
+      // Each page's own size and margins (a section may have its own).
+      const { top, setup: p } = pageBox(layout, k, main);
+      area.style.left = `${pageOffset(p, main) + p.marginLeft}pt`;
+      area.style.width = `${p.width - p.marginLeft - p.marginRight}pt`;
+      area.style.top = `${top + (p.height - p.marginBottom) * PX}px`;
       const ids = layout.notes[k] ?? [];
       area.hidden = !ids.length;
       const editing = this.editing ? area.querySelector<HTMLElement>(`.fn-note.editing[data-id="${this.editing.id}"]`) : null;

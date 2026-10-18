@@ -1523,6 +1523,52 @@ rmSync(texOut, { force: true });
     check("no errors in the app", app.errors.length === 0, app.errors.join("; "));
   });
   rmSync(thesisFile, { force: true });
+
+  // A landscape section in the middle, for a wide table.
+  const wideFile = join(tmpdir(), "duckwriter-smoke-wide.docx");
+  writeFileSync(
+    wideFile,
+    await docx.Packer.toBuffer(
+      new docx.Document({
+        sections: [
+          { footers: { default: footer("Portrait") }, children: [new docx.Paragraph("Before the table")] },
+          { properties: { type: docx.SectionType.NEXT_PAGE, page: { size: { orientation: docx.PageOrientation.LANDSCAPE } } }, footers: { default: footer("Landscape") }, children: [new docx.Paragraph("A wide table goes here, across the whole width of a landscape page.")] },
+          { properties: { type: docx.SectionType.NEXT_PAGE }, footers: { default: footer("Portrait") }, children: [new docx.Paragraph("After the table")] },
+        ],
+      }),
+    ),
+  );
+  await session(wideFile, 9600, async (app) => {
+    await app.waitFor(`document.querySelectorAll(".page-sheet").length === 3`, 5000);
+    const sizes = await app.evaluate(`[...document.querySelectorAll(".page-sheet")].map((s) => { const r = s.getBoundingClientRect(); return Math.round(r.width) + "x" + Math.round(r.height); }).join(",")`);
+    const [a, b, c] = sizes.split(",").map((s) => s.split("x").map(Number));
+    check("a landscape section's page is drawn landscape, between portrait ones", a[0] < a[1] && b[0] > b[1] && c[0] < c[1] && Math.abs(b[0] - a[1]) < 3, sizes);
+    const widths = await app.evaluate(`["Before the table", "A wide table", "After the table"].map((t) => Math.round([...document.querySelectorAll(".doc p")].find((p) => p.textContent.startsWith(t)).getBoundingClientRect().width)).join(",")`);
+    const [w1, w2, w3] = widths.split(",").map(Number);
+    check("its text is as wide as the landscape page allows", w2 > w1 * 1.3 && w1 === w3, widths);
+    const placed = await app.evaluate(`(() => {
+      const sheets = [...document.querySelectorAll(".page-sheet")].map((s) => s.getBoundingClientRect());
+      const on = (el) => { const r = el.getBoundingClientRect(); return sheets.findIndex((s) => r.top >= s.top - 1 && r.bottom <= s.bottom + 1 && r.left >= s.left - 1 && r.right <= s.right + 1); };
+      const text = ["Before the table", "A wide table", "After the table"].map((t) => on([...document.querySelectorAll(".doc p")].find((p) => p.textContent.startsWith(t))));
+      const footers = [...document.querySelectorAll(".hf.footer")].map((f) => on(f) + ":" + f.textContent.trim().split(" ")[0]);
+      return text.join(",") + " | " + footers.join(",");
+    })()`);
+    check("each section's text and footer are on its own page", placed === "0,1,2 | 0:Portrait,1:Landscape,2:Portrait", placed);
+    await app.shoot("landscape-section");
+    // On paper, one size for all pages: three pages still, and back to landscape on screen afterwards.
+    await app.debugHandle();
+    const widePdf = join(tmpdir(), "duckwriter-smoke-wide.pdf");
+    rmSync(widePdf, { force: true });
+    await app.evaluate(`window.__dw.savePdfTo(${JSON.stringify(widePdf)})`);
+    await app.waitFor(`/Saved duckwriter-smoke-wide.pdf/.test(document.querySelector(".toasts").textContent)`, 20000);
+    const pdfPages = (readFileSync(widePdf).toString("latin1").match(/\/Type\s*\/Page(?![a-z])/g) ?? []).length;
+    check("a PDF of it has its three pages", pdfPages === 3, String(pdfPages));
+    rmSync(widePdf, { force: true });
+    const after = await app.evaluate(`(() => { const r = document.querySelectorAll(".page-sheet")[1].getBoundingClientRect(); return r.width > r.height; })()`);
+    check("and the screen shows the landscape page again", after);
+    check("no errors in the app", app.errors.length === 0, app.errors.join("; "));
+  });
+  rmSync(wideFile, { force: true });
 }
 
 // ---- round 7: properties, readability, Zotero -------------------------------------------------

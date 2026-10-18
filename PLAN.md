@@ -173,15 +173,18 @@ written back unchanged.
 - **Accept or reject all by one reviewer**, from the Accept and Reject
   menus, when more than one person made changes.
 
-### Round 12: sections, first part
+### Round 12: sections
 - **Section breaks** start a new page (or the next odd or even one), as in Word.
 - **Each section its own headers and footers**, read, shown and saved.
 - **Page numbers by section**: front matter i, ii, iii, chapters from 1;
   in footers, headers and the table of contents.
+- **Pages of their own size**: a landscape section (for a wide table) is
+  drawn landscape, centred on the others as in Word, its text as wide as
+  its page. On paper (PDF, printing) all pages still take the document's
+  size, since a print has one paper size.
 
 ## Next
 
 - Text wrapping on both sides of a picture (the browser engine can't do this).
-- Sections with their own page size or orientation (a landscape table):
-  pages are still drawn at the last section's size.
+- Landscape pages in a PDF (one PDF with pages of two sizes).
 - Publishing: the GitHub repository, the first release.

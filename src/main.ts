@@ -22,7 +22,7 @@ import type { CollabSession } from "./collab/session";
 import { joinSharing, showSharing, startSharing, stopSharing } from "./ui/share";
 import type { Method } from "./collab/invite";
 import { schema } from "./editor/schema";
-import { PAGE_GAP, relayout, setPageGap, type PageLayout } from "./editor/pagination";
+import { PAGE_GAP, pageAt, pageBox, pageOffset, relayout, setPageGap, type PageLayout } from "./editor/pagination";
 import { invoke } from "@tauri-apps/api/core";
 import { stylesheetFor } from "./editor/stylesheet";
 import { pickExportPath, setFullscreen } from "./platform";
@@ -396,7 +396,6 @@ class App {
     if (!numbering) return void this.lineNumberLayer.replaceChildren();
     const zoom = this.zoom || 1;
     const origin = this.sheet.getBoundingClientRect();
-    const pitch = this.ctx.page.height * (4 / 3) + PAGE_GAP;
     const lines: number[] = [];
     for (const p of this.body.dom.querySelectorAll<HTMLElement>(":scope > p.para")) {
       const range = document.createRange();
@@ -421,7 +420,7 @@ class App {
     let n = 0;
     let page = -1;
     for (const y of lines) {
-      const k = Math.floor(y / pitch);
+      const k = pageAt(this.lastLayout, y, this.ctx.page);
       if (numbering.restart === "newPage" && k !== page) n = 0;
       page = k;
       n++;
@@ -791,20 +790,26 @@ class App {
   /** Draws a sheet of paper behind each page of text. */
   private drawPages(layout: PageLayout) {
     const p = this.ctx.page;
-    const pitch = p.height * (4 / 3) + PAGE_GAP;
     while (this.pagesLayer.children.length < layout.count) this.pagesLayer.append(h("div", { class: "page-sheet" }));
     while (this.pagesLayer.children.length > layout.count) this.pagesLayer.lastElementChild!.remove();
+    let height = 0;
     [...this.pagesLayer.children].forEach((el, i) => {
       const sheet = el as HTMLElement;
-      sheet.style.top = `${i * pitch}px`;
-      sheet.style.height = `${p.height}pt`;
+      // A section may have pages of its own size (a landscape table).
+      const { top, setup } = pageBox(layout, i, p);
+      sheet.style.top = `${top}px`;
+      sheet.style.height = `${setup.height}pt`;
+      sheet.style.width = setup.width === p.width ? "" : `${setup.width}pt`;
+      sheet.style.left = setup.width === p.width ? "" : `${pageOffset(setup, p)}pt`;
+      height += setup.height;
     });
+    const last = pageBox(layout, layout.count - 1, p);
     // On paper the pages follow each other exactly; a hair less keeps a blank page from spilling over.
-    this.sheet.style.height = PAGE_GAP ? `${layout.count * pitch - PAGE_GAP}px` : `calc(${layout.count * p.height}pt - 1px)`;
+    this.sheet.style.height = PAGE_GAP ? `${last.top + last.setup.height * (4 / 3)}px` : `calc(${height}pt - 1px)`;
     this.showPage();
     this.pages = layout.count;
     this.lastLayout = layout;
-    this.headers.render(layout.count, layout.labels, layout.sections);
+    this.headers.render(layout.count, layout.labels, layout.sections, layout);
     this.footnotes.render(layout);
     this.comments.layout();
     this.drawLineNumbers();
@@ -1443,8 +1448,7 @@ class App {
     try {
       const top = this.body.coordsAtPos(this.body.state.selection.head).top;
       const origin = this.sheet.getBoundingClientRect().top;
-      const pitch = (this.ctx.page.height * (4 / 3) + PAGE_GAP) * (this.zoom || 1);
-      page = Math.min(count, Math.max(1, Math.floor((top - origin) / pitch) + 1));
+      page = Math.min(count, Math.max(1, pageAt(this.lastLayout, (top - origin) / (this.zoom || 1), this.ctx.page) + 1));
     } catch {
       // Before the first layout.
     }

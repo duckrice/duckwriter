@@ -529,6 +529,20 @@ function readNumbering(text: string | null): Numbering {
   return numbering;
 }
 
+/**
+ * The page setup of a section from its properties as kept in a paragraph
+ * (<w:sectPr>…</w:sectPr>); null if they can't be read.
+ */
+export function pageFromSectPr(xml: string): PageSetup | null {
+  // Only the parts about the page, with the one namespace they need.
+  const parts = (xml.match(/<w:(pgSz|pgMar|docGrid|lnNumType)\b[^>]*\/>/g) ?? []).join("");
+  try {
+    return readPage(parseXml(`<w:sectPr xmlns:w="${NS.w}">${parts}</w:sectPr>`).documentElement);
+  } catch {
+    return null;
+  }
+}
+
 function readPage(sectPr: Element | null): PageSetup {
   if (!sectPr) return { ...DEFAULT_PAGE };
   const size = child(sectPr, "pgSz");
