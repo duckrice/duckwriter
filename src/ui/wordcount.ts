@@ -38,6 +38,51 @@ export function count(doc: Node, from = 0, to = doc.content.size): Counts {
   return out;
 }
 
+export interface Readability {
+  sentences: number;
+  wordsPerSentence: number;
+  /** Words of more than six letters, as a share of all words (0–1). */
+  longWords: number;
+  /** Björnsson's readability index: words per sentence plus the percentage of long words. */
+  lix: number;
+}
+
+/** How hard the text is to read, from its sentences and long words; headings and captions left out. */
+export function readability(doc: Node): Readability {
+  let sentences = 0;
+  let words = 0;
+  let long = 0;
+  doc.descendants((node) => {
+    if (!node.isTextblock) return true;
+    if (/^(Heading|Title|Subtitle|Caption|TOC)/.test(node.attrs.style ?? "")) return false;
+    let text = "";
+    node.forEach((child) => {
+      if (child.isText && !child.marks.some((m) => m.type === schema.marks.deletion)) text += child.text;
+      else if (!child.isText) text += " ";
+    });
+    const found = text.match(WORD) ?? [];
+    if (!found.length) return false;
+    words += found.length;
+    long += found.filter((w) => w.replace(/[^\p{L}]/gu, "").length > 6).length;
+    // Full stops, question and exclamation marks and colons end sentences; so does the paragraph's end.
+    const ends = (text.match(/[.!?:]+(?=\s|$)/g) ?? []).length;
+    sentences += Math.max(1, ends + (/[.!?:]["'”’)]*\s*$/.test(text) ? 0 : 1));
+    return false;
+  });
+  const wordsPerSentence = sentences ? words / sentences : 0;
+  const longWords = words ? long / words : 0;
+  return { sentences, wordsPerSentence, longWords, lix: Math.round(wordsPerSentence + longWords * 100) };
+}
+
+/** What a LIX value means, roughly (Björnsson's scale). */
+export function lixLevel(lix: number): string {
+  if (lix < 25) return "very easy";
+  if (lix < 35) return "easy";
+  if (lix < 45) return "medium, like a newspaper";
+  if (lix < 55) return "hard, like academic text";
+  return "very hard, like technical writing";
+}
+
 export interface Progress {
   /** The words the document should reach, if set. */
   goal: number | null;
@@ -48,6 +93,7 @@ export interface Progress {
 /** The counts, for the document and (if any) the selection, and the goal to set. */
 export function showCounts(doc: Node, selection: { from: number; to: number; empty: boolean }, pages: number, progress?: Progress, setGoal?: (goal: number | null) => void) {
   const all = count(doc);
+  const read = readability(doc);
   const sel = selection.empty ? null : count(doc, selection.from, selection.to);
   const n = (v: number) => v.toLocaleString();
   const row = (label: string, a: number | string, b?: number) => h("tr", {}, h("th", {}, label), h("td", {}, typeof a === "number" ? n(a) : a), sel ? h("td", {}, b === undefined ? "" : n(b)) : null);
@@ -67,6 +113,9 @@ export function showCounts(doc: Node, selection: { from: number; to: number; emp
         row("Characters (no spaces)", all.charactersNoSpaces, sel?.charactersNoSpaces),
         row("Characters (with spaces)", all.characters, sel?.characters),
         row("Paragraphs", all.paragraphs, sel?.paragraphs),
+        row("Sentences", read.sentences),
+        row("Words per sentence", read.wordsPerSentence.toLocaleString(undefined, { maximumFractionDigits: 1 })),
+        row("Readability (LIX)", read.sentences ? `${read.lix}: ${lixLevel(read.lix)}` : "–"),
       ),
     ),
     h("p", { class: "dialog-hint" }, "Footnotes, headers and footers aren't counted, and deleted text (tracked changes) isn't either."),

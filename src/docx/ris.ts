@@ -1,7 +1,70 @@
 // Sources from RIS (EndNote, Mendeley, Zotero, most journal sites: "Export
-// citation") and out as BibTeX, for LaTeX or another reference manager.
+// citation") and CSL-JSON (Zotero, Mendeley, citation.js), and out as BibTeX,
+// for LaTeX or another reference manager.
 
 import { emptySource, type Source, type SourceType } from "./bibliography";
+
+const CSL_TYPES: Record<string, SourceType> = {
+  "article-journal": "JournalArticle",
+  "article-magazine": "JournalArticle",
+  "article-newspaper": "JournalArticle",
+  article: "JournalArticle",
+  book: "Book",
+  chapter: "BookSection",
+  "paper-conference": "ConferenceProceedings",
+  report: "Report",
+  thesis: "Report",
+  webpage: "InternetSite",
+  "post-weblog": "InternetSite",
+};
+
+interface CslName {
+  family?: string;
+  given?: string;
+  literal?: string;
+}
+
+/** Whether text looks like CSL-JSON: a list of items (or one) with a type and a title. */
+export function isCslJson(input: string): boolean {
+  const t = input.trim();
+  if (!t.startsWith("[") && !t.startsWith("{")) return false;
+  try {
+    const items = JSON.parse(t);
+    return (Array.isArray(items) ? items : [items]).some((i) => i && typeof i === "object" && "type" in i && ("title" in i || "author" in i));
+  } catch {
+    return false;
+  }
+}
+
+/** Reads CSL-JSON items (and Zotero's local API, whose items carry them as `csljson`). */
+export function parseCslJson(input: string | unknown): Source[] {
+  let data = typeof input === "string" ? JSON.parse(input) : input;
+  // Zotero's format=csljson: { items: [...] }.
+  if (data && typeof data === "object" && !Array.isArray(data) && Array.isArray((data as { items?: unknown }).items)) data = (data as { items: unknown[] }).items;
+  const items: Record<string, unknown>[] = (Array.isArray(data) ? data : [data]).map((i) => (i && typeof i === "object" && "csljson" in i ? (i as { csljson: Record<string, unknown> }).csljson : i));
+  return items
+    .filter((i) => i && typeof i === "object")
+    .map((i) => {
+      const str = (v: unknown) => (typeof v === "string" || typeof v === "number" ? String(v).trim() : "");
+      const s = emptySource();
+      s.type = CSL_TYPES[str(i.type)] ?? "Misc";
+      const names = ((i.author ?? i.editor ?? []) as CslName[]).filter(Boolean);
+      s.authors = names.map((n) => (n.literal ? { last: n.literal, first: "" } : { last: n.family ?? "", first: n.given ?? "" }));
+      s.title = str(i.title);
+      const issued = i.issued as { "date-parts"?: unknown[][]; raw?: string } | undefined;
+      s.year = str(issued?.["date-parts"]?.[0]?.[0]) || (/\d{4}/.exec(issued?.raw ?? "") ?? [""])[0];
+      s.container = str(i["container-title"]) || str(i["collection-title"]);
+      s.volume = str(i.volume);
+      s.issue = str(i.issue);
+      s.pages = str(i.page).replace(/-+/g, "–");
+      s.publisher = str(i.publisher);
+      s.city = str(i["publisher-place"]);
+      s.url = str(i.URL);
+      s.doi = str(i.DOI);
+      s.tag = str(i["citation-key"]) || str(i.id);
+      return s;
+    });
+}
 
 const RIS_TYPES: Record<string, SourceType> = {
   JOUR: "JournalArticle",

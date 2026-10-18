@@ -130,6 +130,18 @@ written back unchanged.
   (Ctrl+Shift+Space) and **non-breaking hyphen** (Ctrl+Shift+-); paste as
   plain text was already there (Ctrl+Alt+V).
 
+### Round 7 (in progress)
+- **Document properties**: title, subject, author, keywords; the save date
+  and "last saved by" kept up to date; Check before sending lists the names
+  in them.
+- **CSL-JSON** sources (Zotero, Mendeley), and **searching Zotero** while it
+  runs, to add sources from it.
+- **Readability** in the word count: sentences, words per sentence, and LIX
+  (which works for Norwegian and English alike).
+- **Read aloud** with Windows' voices, from the cursor or the selection,
+  for proofreading. (Automatic hyphenation was on the list, but the browser
+  engine has no hyphenation dictionaries on Windows.)
+
 ## Next
 
 - Text wrapping on both sides of a picture (the browser engine can't do this).

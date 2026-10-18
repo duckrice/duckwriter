@@ -35,6 +35,9 @@ export const windowsSpelling = {
   suggest: (word: string) => invoke<string[]>("spell_suggest", { word }),
 };
 
+/** Items in the Zotero library on this computer matching `query`, as CSL-JSON (Zotero must be running). */
+export const searchZotero = (query: string) => invoke<string>("zotero_search", { query });
+
 export async function readPath(path: string): Promise<OpenedFile> {
   const buffer = await invoke<ArrayBuffer>("read_file", { path });
   return { name: baseName(path), path, bytes: new Uint8Array(buffer) };

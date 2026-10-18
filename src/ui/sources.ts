@@ -6,8 +6,8 @@ import { TextSelection } from "prosemirror-state";
 import type { EditorView } from "prosemirror-view";
 import { CITATION_STYLES, SOURCE_TYPES, emptySource, makeTag, parseBibtex, type CitationStyle, type Source, type SourceType } from "../docx/bibliography";
 import { ensureStyles } from "../docx/builtins";
-import { isRis, parseRis, toBibtex } from "../docx/ris";
-import { pickExportPath, writePath } from "../platform";
+import { isCslJson, isRis, parseCslJson, parseRis, toBibtex } from "../docx/ris";
+import { isDesktop, pickExportPath, searchZotero, writePath } from "../platform";
 import type { DocContext } from "../docx/model";
 import { h } from "../dom";
 import { citationInstr, citationsKey, formatCitation, citedOrder } from "../editor/citations";
@@ -169,13 +169,13 @@ export function manageSources(view: EditorView, ctx: DocContext, afterwards?: ()
   const add = h("button", { type: "button", class: "btn" }, "Add a source…");
   add.addEventListener("click", () => editSource(emptySource(), true));
 
-  const importBox = h("textarea", { class: "tb-input dialog-input wide", rows: 3, placeholder: "Paste BibTeX (@article{…}) or RIS (TY  - JOUR …) here" }) as HTMLTextAreaElement;
+  const importBox = h("textarea", { class: "tb-input dialog-input wide", rows: 3, placeholder: "Paste BibTeX (@article{…}), RIS (TY  - JOUR …) or CSL-JSON here" }) as HTMLTextAreaElement;
   const importButton = h("button", { type: "button", class: "btn" }, "Import");
   const status = h("p", { class: "dialog-error", role: "status" });
   importButton.addEventListener("click", () => {
-    const found = isRis(importBox.value) ? parseRis(importBox.value) : parseBibtex(importBox.value);
+    const found = isCslJson(importBox.value) ? parseCslJson(importBox.value) : isRis(importBox.value) ? parseRis(importBox.value) : parseBibtex(importBox.value);
     if (!found.length) {
-      status.textContent = "No BibTeX or RIS entries found there.";
+      status.textContent = "No BibTeX, RIS or CSL-JSON entries found there.";
       return;
     }
     for (const s of found) {
@@ -214,6 +214,54 @@ export function manageSources(view: EditorView, ctx: DocContext, afterwards?: ()
     }
   });
 
+  // The Zotero library on this computer, while Zotero runs.
+  const zoteroBox = h("input", { class: "tb-input dialog-input", placeholder: "Search Zotero: author, title, year", "aria-label": "Search Zotero" }) as HTMLInputElement;
+  const zoteroButton = h("button", { type: "button", class: "btn" }, "Search Zotero");
+  const zoteroResults = h("div", { class: "source-list zotero-results", hidden: true });
+  const added = (s: Source) => bib.sources.some((o) => (s.doi && o.doi.toLowerCase() === s.doi.toLowerCase()) || (o.title === s.title && o.year === s.year));
+  zoteroButton.addEventListener("click", async () => {
+    if (!zoteroBox.value.trim()) return zoteroBox.focus();
+    zoteroButton.disabled = true;
+    status.textContent = "";
+    try {
+      const found = parseCslJson(await searchZotero(zoteroBox.value.trim()));
+      zoteroResults.hidden = false;
+      zoteroResults.replaceChildren(
+        ...(found.length
+          ? found.map((s) => {
+              const who = s.authors.map((a) => a.last).slice(0, 3).join(", ") + (s.authors.length > 3 ? " et al." : "");
+              const item = h("button", { type: "button", class: "source-item" }, h("span", { class: "source-tag" }, s.year || "n.d."), ` ${who}: ${s.title}`);
+              const mark = () => {
+                item.disabled = true;
+                item.title = "Added";
+                item.classList.add("added");
+              };
+              if (added(s)) mark();
+              item.addEventListener("click", () => {
+                if (added(s)) return mark();
+                s.tag = makeTag(s, bib.sources);
+                bib.sources.push(s);
+                mark();
+                refresh(view, ctx);
+                render();
+              });
+              return item;
+            })
+          : [h("div", { class: "nav-empty" }, "Nothing in Zotero matches that.")]),
+      );
+    } catch (error) {
+      status.textContent = String((error as Error).message ?? error);
+    } finally {
+      zoteroButton.disabled = false;
+    }
+  });
+  zoteroBox.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      zoteroButton.click();
+    }
+  });
+
   const exportBib = h("button", { type: "button", class: "btn", title: "For LaTeX or another reference manager" }, "Save as BibTeX…");
   exportBib.addEventListener("click", async () => {
     if (!bib.sources.length) {
@@ -236,6 +284,7 @@ export function manageSources(view: EditorView, ctx: DocContext, afterwards?: ()
     list,
     h("div", { class: "source-actions" }, add, h("span", { class: "dialog-spacer" }), doi, lookUp),
     h("div", { class: "source-actions" }, importBox, importButton, exportBib),
+    ...(isDesktop ? [h("div", { class: "source-actions" }, zoteroBox, zoteroButton), zoteroResults] : []),
     status,
     h("div", { class: "dialog-footer" }, h("button", { type: "button", class: "btn primary", onclick: () => dialog.close() }, "Done")),
   );

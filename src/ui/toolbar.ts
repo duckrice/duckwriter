@@ -784,7 +784,7 @@ export class Toolbar {
     });
     const convert = (to: "endnote" | "footnote") => {
       const n = convertNotes(body, ctx, to);
-      this.host.toast(`${n} ${to === "endnote" ? "footnote" : "endnote"}${n === 1 ? "" : "s"} made into ${to}s`);
+      this.host.toast(`${n} ${to === "endnote" ? "footnote" : "endnote"}${n === 1 ? "" : "s"} made into ${n === 1 ? `${to === "endnote" ? "an" : "a"} ${to}` : `${to}s`}`);
     };
     return [
       ...(footnotes ? [item("Make all footnotes endnotes", () => convert("endnote"))] : []),
