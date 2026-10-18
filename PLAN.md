@@ -186,5 +186,9 @@ written back unchanged.
 ## Next
 
 - Text wrapping on both sides of a picture (the browser engine can't do this).
-- Landscape pages in a PDF (one PDF with pages of two sizes).
+- Landscape pages in a PDF. Tried: the browser engine's printing gives pages
+  their own size (CSS named pages), but lays all the text out at the first
+  page's width, so a landscape table is cut off. It would take printing each
+  run of same-size pages on its own and joining the PDFs. Until then a PDF
+  has all pages at the document's size, wide tables fitted to it.
 - Publishing: the GitHub repository, the first release.
