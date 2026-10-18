@@ -19,6 +19,9 @@ describe("keyboard shortcuts", () => {
     expect(matches("Ctrl+B", press("ctrl shift", "B", "KeyB"))).toBe(false);
     expect(matches("Ctrl+Shift+L", press("ctrl shift", "L", "KeyL"))).toBe(true);
     expect(matches("F12", press("", "F12", "F12"))).toBe(true);
+    // Ctrl+Alt+Space (Read aloud) is a shortcut, not AltGr typing a space.
+    expect(matches("Ctrl+Alt+Space", press("ctrl alt", " ", "Space"))).toBe(true);
+    expect(matches("Ctrl+Shift+Space", press("ctrl shift", " ", "Space"))).toBe(true);
   });
 
   it("change the font size on a US keyboard", () => {

@@ -65,7 +65,8 @@ export function matches(spec: string, event: KeyEventLike): boolean {
   if (ctrl !== want.ctrl || event.altKey !== want.alt) return false;
   const typed = event.key;
   // AltGr (Ctrl+Alt on Windows) typing a character: that is text, not a shortcut.
-  if (event.ctrlKey && event.altKey && typed.length === 1 && typed.toUpperCase() !== (codeChar(event.code) ?? "").toUpperCase()) return false;
+  const place = codeChar(event.code);
+  if (event.ctrlKey && event.altKey && typed.length === 1 && typed.toUpperCase() !== (place === "Space" ? " " : (place ?? "")).toUpperCase()) return false;
 
   if (isNamed(want.key)) {
     // F12, Enter, Space, ArrowUp…

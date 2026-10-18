@@ -69,6 +69,7 @@ export interface ToolbarHost {
   openRecent(path: string): void;
   versions(): void;
   properties(): void;
+  readAloud(): void;
   saveAsTemplate(): void;
   newFromMyTemplate(name: string): void;
   compareWithFile(): void;
@@ -288,7 +289,10 @@ export class Toolbar {
             textButton("Compare…", "Compare with another version of the document: the differences shown as tracked changes (Ctrl+Alt+Shift+C)", () => this.host.compareWithFile()),
             textButton("Versions…", "Earlier versions kept on this computer: restore or compare (Alt+Shift+V)", () => this.host.versions()),
           ),
-          group(textButton("Check…", "Check before sending: open changes and comments, undescribed pictures, broken references (Alt+Shift+I)", () => showInspection(this.host.body, this.host.ctx))),
+          group(
+            textButton("Check…", "Check before sending: open changes and comments, undescribed pictures, broken references (Alt+Shift+I)", () => showInspection(this.host.body, this.host.ctx)),
+            textButton("Read aloud", "Read the selection, or from the cursor on, aloud; again to stop (Ctrl+Alt+Space)", () => this.host.readAloud()),
+          ),
         ],
       },
       {

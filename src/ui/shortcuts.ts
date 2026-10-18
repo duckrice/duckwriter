@@ -65,6 +65,7 @@ export interface ShortcutHost {
   toggleDarkPage(): void;
   versions(): void;
   properties(): void;
+  readAloud(): void;
   styleChanged(id: string): void;
   cycleLineNumbers(): void;
   goToPage(): void;
@@ -242,6 +243,7 @@ export const SHORTCUTS: Shortcut[] = [
   { group: "Review", label: "Write together: share this document, or join one", keys: ["Alt+Shift+W"], run: (x) => x.share(), everywhere: true },
   { group: "Review", label: "New comment", keys: ["Ctrl+Alt+M"], run: (x) => x.newComment() },
   { group: "Review", label: "Show all markup, the final text, or the original", keys: ["Alt+Shift+M"], run: (x) => x.cycleMarkup() },
+  { group: "Review", label: "Read aloud: the selection, or from the cursor on (again to stop)", keys: ["Ctrl+Alt+Space"], run: (x) => x.readAloud(), everywhere: true },
   { group: "Review", label: "Check before sending (open changes, comments, undescribed pictures, broken references)", keys: ["Alt+Shift+I"], run: (x) => showInspection(x.body, x.ctx), everywhere: true },
   { group: "Review", label: "Compare with another version (the differences as tracked changes)", keys: ["Ctrl+Alt+Shift+C"], run: (x) => void x.compareWithFile(), everywhere: true },
   { group: "Review", label: "Track changes, on or off", keys: ["Ctrl+Shift+E"], run: (x) => x.toggleTracking(), everywhere: true },

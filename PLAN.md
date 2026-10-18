@@ -130,7 +130,7 @@ written back unchanged.
   (Ctrl+Shift+Space) and **non-breaking hyphen** (Ctrl+Shift+-); paste as
   plain text was already there (Ctrl+Alt+V).
 
-### Round 7 (in progress)
+### Round 7
 - **Document properties**: title, subject, author, keywords; the save date
   and "last saved by" kept up to date; Check before sending lists the names
   in them.

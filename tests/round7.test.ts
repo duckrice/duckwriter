@@ -5,6 +5,7 @@ import { readDocx } from "../src/docx/read";
 import { blankDocx } from "../src/docx/template";
 import { writeDocx } from "../src/docx/write";
 import { inspect } from "../src/ui/inspect";
+import { piecesToRead } from "../src/ui/readaloud";
 import { isCslJson, parseCslJson } from "../src/docx/ris";
 import { schema } from "../src/editor/schema";
 import { lixLevel, readability } from "../src/ui/wordcount";
@@ -87,6 +88,23 @@ describe("document properties", () => {
     expect(await zip.file("docProps/core.xml")!.async("string")).toContain("<dc:title>New</dc:title>");
     expect(await zip.file("_rels/.rels")!.async("string")).toContain('Target="docProps/core.xml"');
     expect(await zip.file("[Content_Types].xml")!.async("string")).toContain('PartName="/docProps/core.xml"');
+  });
+});
+
+describe("read aloud", () => {
+  it("reads the selection, or every paragraph from the cursor on, without deleted text", () => {
+    const del = schema.marks.deletion.create({ id: "1", author: "A", date: "" });
+    const doc = schema.nodes.doc.create(null, [
+      schema.nodes.paragraph.create(null, schema.text("First one.")),
+      schema.nodes.paragraph.create(null, [schema.text("Second "), schema.text("gone ", [del]), schema.text("one.")]),
+      schema.nodes.paragraph.create(),
+      schema.nodes.paragraph.create(null, schema.text("Third one.")),
+    ]);
+    // The cursor in the second paragraph: from there to the end, whole paragraphs.
+    const second = doc.child(0).nodeSize;
+    expect(piecesToRead(doc, second + 3, second + 3).map((p) => p.text)).toEqual(["Second one.", "Third one."]);
+    // A selection: just that.
+    expect(piecesToRead(doc, 1, 6).map((p) => p.text)).toEqual(["First"]);
   });
 });
 

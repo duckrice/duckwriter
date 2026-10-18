@@ -1925,6 +1925,12 @@ kbd {
   background: var(--hover);
 }
 
+/* The paragraph being read aloud. */
+.doc .reading-aloud {
+  background: var(--accent-soft);
+  border-radius: 3px;
+}
+
 /* Where a dragged section would go. */
 .nav-item.drop-before {
   box-shadow: inset 0 2px 0 var(--accent);

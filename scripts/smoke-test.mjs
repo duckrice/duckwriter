@@ -1494,6 +1494,50 @@ removeFolder(round6Profile);
 rmSync(paperIn, { force: true });
 rmSync(texOut, { force: true });
 
+// ---- round 7: properties, readability, Zotero -------------------------------------------------
+
+const round7Profile = join(tmpdir(), "duckwriter-smoke-round7-profile");
+removeFolder(round7Profile);
+await session(null, 9598, async (app) => {
+  await app.debugHandle();
+  await app.clickText(".doc p", "");
+  await app.type("The duck swam across the lake. It was cold.");
+
+  // Document properties.
+  await app.key("P", 80, ALT | SHIFT);
+  check("Alt+Shift+P opens the document's properties", await app.waitFor(`document.querySelector("dialog[open] h2")?.textContent === "Document properties"`, 3000));
+  await app.evaluate(`(() => {
+    const set = (key, value) => { const el = document.querySelector('dialog[open] [data-key="' + key + '"]'); el.value = value; };
+    set("title", "Ducks in winter");
+    set("creator", "Kari Nordmann");
+  })()`);
+  await app.shoot("properties");
+  await app.clickText("dialog[open] .btn", "OK");
+  check("the title and author are kept, to be saved", await app.evaluate(`window.__dw.ctx.properties.title === "Ducks in winter" && window.__dw.ctx.properties.creator === "Kari Nordmann"`));
+
+  // Check before sending names them, and can leave them out.
+  await app.key("I", 73, ALT | SHIFT);
+  check("Check before sending lists the names in the properties", await app.waitFor(`[...document.querySelectorAll("dialog[open] .inspect-text")].some((t) => t.textContent.includes("Kari Nordmann"))`, 3000));
+  await app.clickText("dialog[open] .inspect-item .btn", "Leave out");
+  check("Leave out removes them", await app.evaluate(`window.__dw.ctx.properties.anonymous === true && window.__dw.ctx.properties.creator === ""`));
+  await app.clickText("dialog[open] .btn", "Close");
+
+  // Readability in the word count.
+  await app.key("G", 71, CTRL | SHIFT);
+  check("the word count has sentences and LIX", await app.waitFor(`[...document.querySelectorAll("dialog[open] .count-table th")].some((t) => t.textContent === "Readability (LIX)") && [...document.querySelectorAll("dialog[open] .count-table tr")].some((r) => r.textContent === "Sentences2")`, 3000), await app.evaluate(`document.querySelector("dialog[open] .count-table")?.textContent ?? ""`));
+  await app.clickText("dialog[open] .btn", "Close");
+
+  // Zotero: results if it runs, otherwise why not.
+  await app.key("S", 83, ALT | SHIFT);
+  await app.waitFor(`document.querySelector("dialog[open] h2")?.textContent === "Sources"`, 3000);
+  await app.evaluate(`(() => { const box = document.querySelector('dialog[open] [aria-label="Search Zotero"]'); box.value = "duck"; })()`);
+  await app.clickText("dialog[open] .btn", "Search Zotero");
+  check("searching Zotero lists what it has, or says why it can't", await app.waitFor(`!document.querySelector("dialog[open] .zotero-results")?.hidden || /Zotero/.test(document.querySelector("dialog[open] .dialog-error")?.textContent ?? "")`, 20000), await app.evaluate(`document.querySelector("dialog[open] .dialog-error")?.textContent ?? ""`));
+  await app.clickText("dialog[open] .btn", "Done");
+  check("no errors in the app", app.errors.length === 0, app.errors.join("; "));
+}, { profileDir: round7Profile });
+removeFolder(round7Profile);
+
 // ---- links ----------------------------------------------------------------------------------------
 
 await session(null, 9560, async (app) => {

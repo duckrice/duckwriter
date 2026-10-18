@@ -32,6 +32,7 @@ import { toHtml, toMarkdown, toText } from "./convert/export";
 import { toLatex } from "./convert/latex";
 import { authorName } from "./author";
 import { showProperties } from "./ui/properties";
+import { isReading, toggleReadAloud } from "./ui/readaloud";
 import { stamped } from "./docx/properties";
 import { htmlToDoc, markdownToHtml, textFormat, textToHtml } from "./convert/import";
 import { baseName, isDesktop, onCloseRequested, openWindow, pickDocument, pickPdfPath, pickSavePath, readPath, setTitle, startupFiles, windowOpening, windowsSpelling, writePath } from "./platform";
@@ -623,6 +624,15 @@ class App {
   /** Earlier versions of this document (Alt+Shift+V). */
   versions() {
     void showVersions(this);
+  }
+
+  /** Reads the selection, or from the cursor on, aloud; again to stop (Ctrl+Alt+Space). */
+  readAloud() {
+    const started = toggleReadAloud(this.body, (on) => {
+      if (!on) this.toast("Stopped reading aloud");
+    });
+    if (started) this.toast("Reading aloud; Ctrl+Alt+Space stops");
+    else if (!isReading() && !window.speechSynthesis) this.toast("Windows has no voice to read with", "error");
   }
 
   /** Title, author, keywords… (Alt+Shift+P). */
