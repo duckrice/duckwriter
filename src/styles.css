@@ -2112,6 +2112,10 @@ kbd {
   margin-top: 8px;
 }
 
+.source-actions[hidden] {
+  display: none;
+}
+
 .dialog-input.wide {
   width: 100%;
   min-width: 240px;
@@ -2200,6 +2204,17 @@ kbd {
 
 .share-place {
   margin-left: 24px;
+}
+
+/* The shared folder, folded away under "Other ways". */
+.share-more {
+  margin: 6px 0 4px;
+}
+
+.share-more summary {
+  cursor: pointer;
+  color: var(--muted);
+  font-size: 13px;
 }
 
 .invite {

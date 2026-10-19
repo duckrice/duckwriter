@@ -1,12 +1,14 @@
 // Write together (Alt+Shift+W): share the open document, or join one someone
-// shares, in one of three ways:
+// shares. The dialog offers two ways:
 //
-//   - This network: the sharer's DuckWriter is the meeting point; nothing goes
-//     over the internet.
-//   - A relay server: for the internet. A small program anyone can run
-//     (server/relay.mjs); everything passing it is encrypted.
-//   - A shared folder: OneDrive, Dropbox, Google Drive or a network drive. No
-//     server at all; changes arrive as fast as the folder syncs.
+//   - This network (the default): the sharer's DuckWriter is the meeting point;
+//     nothing goes over the internet.
+//   - A shared folder (under Other ways): OneDrive, Dropbox, Google Drive or a
+//     network drive. No server at all; changes arrive as fast as the folder syncs.
+//
+// A third, a relay server for the internet (server/relay.mjs), still works
+// (shareBy("relay", …), and invitations for it can be joined) but isn't offered
+// in the dialog; see COLLABORATION.md.
 
 import { invoke } from "@tauri-apps/api/core";
 import { open as pickFolderDialog } from "@tauri-apps/plugin-dialog";
@@ -25,16 +27,7 @@ export interface ShareHost extends CollabApp {
   readonly folder: string | null;
 }
 
-const RELAY_KEY = "duckwriter.relay";
 const LAN_PORT = 47800;
-
-function remembered(key: string): string {
-  try {
-    return localStorage.getItem(key) ?? "";
-  } catch {
-    return "";
-  }
-}
 
 /** Starts sharing the open document; resolves to the invitation to give the others. */
 export async function startSharing(app: ShareHost, method: Method, place: string): Promise<string> {
@@ -52,7 +45,6 @@ export async function startSharing(app: ShareHost, method: Method, place: string
   } else if (method === "relay") {
     address = normalizeServer(place);
     if (!address) throw new Error("Give the relay server's address, like wss://relay.example.com.");
-    localStorage.setItem(RELAY_KEY, address);
     hub = new SocketHub(address, room, "host");
   } else {
     if (!place) throw new Error("Choose the shared folder (in OneDrive, Dropbox, a network drive…).");
@@ -144,8 +136,11 @@ function inviteBox(invite: string): HTMLElement {
   return h("div", { class: "invite" }, code, copy);
 }
 
+/** When computers on one network can't reach each other. */
+const NETWORK_TIP = "Some networks (eduroam, guest Wi-Fi) keep computers from seeing each other; then share through a folder instead (Write together → Other ways).";
+
 function howToJoin(method: Method): string {
-  if (method === "lan") return "Send this invitation to the others (chat, e-mail). On the same network, they choose Write together → Join and paste it. Your computer may ask once whether DuckWriter may use the network: allow it on private networks.";
+  if (method === "lan") return `Send this invitation to the others (chat, e-mail). On the same network, they choose Write together → Join and paste it. Your computer may ask once whether DuckWriter may use the network: allow it on private networks. ${NETWORK_TIP}`;
   if (method === "relay") return "Send this invitation to the others. Wherever they are, they choose Write together → Join and paste it.";
   return "Send this invitation to the others. They need the same shared folder on their computer; they choose Write together → Join, paste it and pick the folder.";
 }
@@ -181,7 +176,6 @@ function choosePanel(app: ShareHost, dialog: HTMLDialogElement) {
     const radio = h("input", { type: "radio", name: "share-method", value, checked }) as HTMLInputElement;
     return h("label", { class: "share-option" }, radio, h("span", {}, h("strong", {}, title), h("span", { class: "dialog-hint" }, hint)));
   };
-  const relay = h("input", { class: "tb-input dialog-input wide", placeholder: "wss://relay.example.com", value: remembered(RELAY_KEY), "aria-label": "Relay server" }) as HTMLInputElement;
   const shareFolder = h("input", { class: "tb-input dialog-input wide", placeholder: "C:\\Users\\…\\OneDrive\\Shared", value: app.folder ?? "", "aria-label": "Shared folder" }) as HTMLInputElement;
   const pickShare = h("button", { type: "button", class: "btn" }, "Choose…");
   pickShare.addEventListener("click", () => void chooseFolder(shareFolder));
@@ -192,7 +186,7 @@ function choosePanel(app: ShareHost, dialog: HTMLDialogElement) {
     error.textContent = "";
     start.disabled = true;
     try {
-      const invite = await startSharing(app, method, method === "relay" ? relay.value : shareFolder.value);
+      const invite = await startSharing(app, method, shareFolder.value);
       result.replaceChildren(h("p", { class: "dialog-hint" }, howToJoin(method)), inviteBox(invite));
       start.hidden = true;
     } catch (e) {
@@ -218,7 +212,9 @@ function choosePanel(app: ShareHost, dialog: HTMLDialogElement) {
       await joinSharing(app, inviteInput.value, joinFolder.value);
       dialog.close();
     } catch (e) {
-      error.textContent = e instanceof Error ? e.message : String(e);
+      const text = e instanceof Error ? e.message : String(e);
+      // Some networks (eduroam, guest Wi-Fi) keep computers from seeing each other: a folder still works.
+      error.textContent = decodeInviteSafe(inviteInput.value)?.method === "lan" ? `${text} ${NETWORK_TIP}` : text;
       join.disabled = false;
       join.textContent = "Join";
     }
@@ -228,10 +224,13 @@ function choosePanel(app: ShareHost, dialog: HTMLDialogElement) {
     h("h2", {}, "Write together"),
     h("h3", {}, "Share this document"),
     option("lan", "On this network", "Wi-Fi at home, the office or the university. Your DuckWriter is the meeting point; nothing goes over the internet.", true),
-    option("relay", "Over the internet, through a relay server", "A small program you (or someone you trust) run on a server. It only passes encrypted messages along; it can't read the document."),
-    h("div", { class: "share-place" }, relay),
-    option("folder", "Through a shared folder", "OneDrive, Dropbox, Google Drive or a network drive that everyone has. No server; changes arrive as fast as the folder syncs (usually seconds)."),
-    h("div", { class: "share-place source-actions" }, shareFolder, pickShare),
+    h(
+      "details",
+      { class: "share-more" },
+      h("summary", {}, "Other ways"),
+      option("folder", "Through a shared folder", "OneDrive, Dropbox, Google Drive or a network drive that everyone has. Works wherever you are, and when the network one can't connect. No server; changes arrive as fast as the folder syncs (usually seconds)."),
+      h("div", { class: "share-place source-actions" }, shareFolder, pickShare),
+    ),
     h("div", { class: "dialog-footer" }, start),
     result,
     h("h3", {}, "Join someone"),

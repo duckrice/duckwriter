@@ -233,6 +233,17 @@ async function session(files, port, run, { profileDir = profile, keepAutoSave = 
     ws.close();
     child.kill();
     await sleep(500);
+    // Its unsaved work stays out of the next sessions: three minutes on, the app would offer
+    // it back to whichever test starts then. (The recovery test keeps it on purpose.)
+    if (!keepAutoSave) {
+      let left = [];
+      try {
+        left = readdirSync(recoveryDir);
+      } catch {
+        // No recovery folder yet.
+      }
+      for (const f of left) rmSync(join(recoveryDir, f), { force: true });
+    }
   }
 }
 
@@ -731,7 +742,8 @@ await session(null, 9470, async (app) => {
   await app.clickText(".picture-bar button", "Square");
   attrs = await image();
   check("Square makes it float with the text around it", attrs.floating && attrs.wrap === "square", JSON.stringify(attrs));
-  const beside = await app.evaluate(`(() => {
+  // The picture settles into place just after the layout.
+  const beside = await app.waitFor(`(() => {
     const img = document.querySelector(".picture-box img").getBoundingClientRect();
     const p = document.querySelector(".doc > .para");
     const w = document.createTreeWalker(p, NodeFilter.SHOW_TEXT);
@@ -740,7 +752,7 @@ await session(null, 9470, async (app) => {
       for (const x of r.getClientRects()) if (x.top < img.bottom - 5 && x.bottom > img.top + 5 && x.left >= img.right) return true;
     }
     return false;
-  })()`);
+  })()`, 3000);
   check("the text runs beside the picture", beside);
 
   // Drag it: it lands on the grid, and the grid shows while dragging.
@@ -1366,6 +1378,20 @@ for (const [method, place, ports] of [
     await kari.evaluate(`localStorage.setItem("duckwriter.author", "Kari")`);
     await kari.debugHandle();
     await kari.type("Hello");
+    if (method === "lan") {
+      // The dialog: this network first and chosen; a shared folder under Other ways; no relay.
+      await kari.key("W", 87, ALT | SHIFT);
+      await kari.waitFor(`document.querySelector("dialog[open] h2")?.textContent === "Write together"`, 3000);
+      const offered = await kari.evaluate(`(() => {
+        const options = [...document.querySelectorAll('dialog[open] input[name="share-method"]')];
+        const more = document.querySelector("dialog[open] .share-more");
+        return options.map((o) => o.value + (o.checked ? "*" : "") + (more?.contains(o) ? "(more)" : "")).join(",") + (more?.open ? " open" : " closed");
+      })()`);
+      check("Write together offers this network first, and a shared folder under Other ways", offered === "lan*,folder(more) closed", offered);
+      check("joining asks for a folder only for a folder's invitation", await kari.evaluate(`getComputedStyle(document.querySelector('dialog[open] [aria-label="Shared folder"][placeholder^="The shared folder"]').parentElement).display === "none"`));
+      await kari.shoot("write-together-dialog");
+      await kari.clickText("dialog[open] .dialog-footer .btn", "Close");
+    }
     const invite = await kari.evaluate(`window.__dw.shareBy(${JSON.stringify(method)}, ${JSON.stringify(place)})`);
     check(`${method}: sharing gives an invitation`, typeof invite === "string" && invite.startsWith("DW1."), String(invite));
     await session(null, ports[1], async (ola) => {

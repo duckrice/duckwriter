@@ -7,9 +7,9 @@ their name. All three ways below are built and tested; they differ only in
 DuckWriter should offer it.
 
 How to try: **Write together** (the people button in the toolbar, or
-Alt+Shift+W) → choose a way → **Start sharing** → send the invitation
-(`DW1.…`) to the other person → they choose **Write together → Join** and
-paste it.
+Alt+Shift+W) → **Start sharing** (on this network; a shared folder is under
+**Other ways**) → send the invitation (`DW1.…`) to the other person → they
+choose **Write together → Join** and paste it.
 
 ## What is the same in all three
 
@@ -42,13 +42,18 @@ paste it.
 | **Set-up for you** | None | Run the server once (I can set it up when you have an account somewhere) | None |
 | **Snags** | Windows asks once whether DuckWriter may use the network (allow private networks). Some guest/eduroam networks block devices from seeing each other. | Someone has to run the server | Slower; leaves a `.duckwriter-live` folder (small, can be deleted afterwards) |
 
-### My recommendation
+### Chosen (2026-10-19)
 
-Offer **A** and **C** straight away: they need no server and cost nothing, and
-between them they cover "we're in the same place" and "we're not, but we share
-a OneDrive/Dropbox folder". Add **B** if you want real-time writing over the
-internet without a shared folder; it needs one small server, which I can
-deploy once you pick a host (Fly.io, Render, a cheap VPS, or a Raspberry Pi).
+**A is the way DuckWriter offers**: the Write together dialog has "On this
+network" chosen from the start. **C is the fallback**, under "Other ways", for
+when you aren't on the same network, or the network keeps computers from
+seeing each other (eduroam and guest Wi-Fi often do); the dialog says so when
+joining on the network fails.
+
+**B is not offered.** Its code stays (`server/relay.mjs`, and an invitation for
+a relay server can still be joined), so it can come back if real-time writing
+over the internet without a shared folder is wanted; it needs one small server
+(Fly.io, Render, a cheap VPS, or a Raspberry Pi).
 
 ### Not built (ideas for later)
 

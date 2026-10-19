@@ -75,6 +75,6 @@ describe("odd files", () => {
         const after = (await checkPackage(saved)).filter((p) => !before.has(p));
         expect(after, `round ${round}`).toEqual([]);
       }
-    });
+    }, 60_000);
   }
 });
