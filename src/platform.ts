@@ -25,8 +25,9 @@ const SAVE_FILTERS = [
   { name: "Word XML document", extensions: ["xml"] },
 ];
 const OPEN_FILTERS = [
-  { name: "Documents", extensions: ["docx", "docm", "dotx", "dotm", "xml", "md", "markdown", "html", "htm", "txt"] },
-  { name: "Word document", extensions: ["docx", "docm", "dotx", "dotm", "xml"] },
+  { name: "Documents", extensions: ["docx", "docm", "dotx", "dotm", "xml", "doc", "rtf", "odt", "md", "markdown", "html", "htm", "txt"] },
+  { name: "Word document", extensions: ["docx", "docm", "dotx", "dotm", "xml", "doc"] },
+  { name: "Rich text or OpenDocument", extensions: ["rtf", "odt"] },
   { name: "Markdown, web page or text", extensions: ["md", "markdown", "html", "htm", "txt"] },
 ];
 export const DOCX_MIME = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
@@ -58,7 +59,7 @@ export async function pickDocument(): Promise<OpenedFile | null> {
   return new Promise((resolve) => {
     const input = document.createElement("input");
     input.type = "file";
-    input.accept = `${DOCX_MIME},.docx,.docm,.dotx,.dotm,.xml,.md,.markdown,.html,.htm,.txt`;
+    input.accept = `${DOCX_MIME},.docx,.docm,.dotx,.dotm,.xml,.doc,.rtf,.odt,.md,.markdown,.html,.htm,.txt`;
     input.onchange = async () => {
       const file = input.files?.[0];
       resolve(file ? { name: file.name, path: null, bytes: new Uint8Array(await file.arrayBuffer()) } : null);

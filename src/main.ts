@@ -30,6 +30,9 @@ import { compareDocs, countChanges } from "./editor/compare";
 import { newAnnotationId } from "./docx/model";
 import { toHtml, toMarkdown, toText } from "./convert/export";
 import { toLatex } from "./convert/latex";
+import { docToHtml } from "./convert/doc";
+import { odtToHtml } from "./convert/odt";
+import { rtfToHtml } from "./convert/rtf";
 import { authorName } from "./author";
 import { loadKeyLayout, localKeys } from "./keys";
 import { showProperties } from "./ui/properties";
@@ -197,7 +200,7 @@ class App {
     );
     document.addEventListener("duckwriter-toast", (event) => this.toast((event as CustomEvent<string>).detail));
     // A document dropped on the window opens (Word, Markdown, a web page, text); pictures dropped in the text are the editor's.
-    const documentFile = (f: File) => /\.(docx?|docm|dotx|dotm|xml|md|markdown|html?|txt)$/i.test(f.name);
+    const documentFile = (f: File) => /\.(docx?|docm|dotx|dotm|xml|rtf|odt|md|markdown|html?|txt)$/i.test(f.name);
     const hasFiles = (event: DragEvent) => [...(event.dataTransfer?.items ?? [])].some((i) => i.kind === "file");
     window.addEventListener("dragover", (event) => {
       if (!hasFiles(event)) return;
@@ -471,13 +474,19 @@ class App {
     this.show(doc, context, TEMPLATES.find((t) => t.kind === kind)?.file ?? "Document1.docx", null);
   }
 
-  /** Markdown, a web page or text, opened as a new Word document (saving asks where). */
-  private async importText(bytes: Uint8Array, name: string, format: "markdown" | "html" | "text") {
+  /** An older Word document (.doc), RTF, OpenDocument, Markdown, a web page or text, opened as a new Word document (saving asks where). */
+  private async importText(bytes: Uint8Array, name: string, format: NonNullable<ReturnType<typeof textFormat>>) {
     try {
-      const text = new TextDecoder().decode(bytes);
+      const text = new TextDecoder(format === "rtf" ? "windows-1252" : "utf-8").decode(bytes);
       const blank = await blankDocx();
       const { context } = await readDocx(blank);
-      const html = format === "markdown" ? markdownToHtml(text) : format === "html" ? text : textToHtml(text);
+      const html =
+        format === "doc" ? docToHtml(bytes)
+        : format === "odt" ? await odtToHtml(bytes)
+        : format === "rtf" ? rtfToHtml(text)
+        : format === "markdown" ? markdownToHtml(text)
+        : format === "html" ? text
+        : textToHtml(text);
       const doc = htmlToDoc(html, context);
       this.leaveSharing();
       this.base = blank;
@@ -1061,7 +1070,7 @@ class App {
     const format = textFormat(name);
     if (format) return this.importText(bytes, name, format);
     if (!isWordFile(name)) {
-      this.toast(/\.doc$/i.test(name) ? `${name} is an old Word file (.doc). Open it in Word and save it as .docx first.` : `${name} isn't a Word document (.docx).`, "error");
+      this.toast(`${name} isn't a document DuckWriter can open.`, "error");
       return;
     }
     try {

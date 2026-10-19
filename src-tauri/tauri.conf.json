@@ -61,6 +61,27 @@
         "description": "Word Template",
         "mimeType": "application/vnd.openxmlformats-officedocument.wordprocessingml.template",
         "role": "Editor"
+      },
+      {
+        "ext": ["doc"],
+        "name": "Word 97-2003 Document",
+        "description": "Word 97-2003 Document",
+        "mimeType": "application/msword",
+        "role": "Viewer"
+      },
+      {
+        "ext": ["rtf"],
+        "name": "Rich Text Document",
+        "description": "Rich Text Document",
+        "mimeType": "application/rtf",
+        "role": "Viewer"
+      },
+      {
+        "ext": ["odt"],
+        "name": "OpenDocument Text",
+        "description": "OpenDocument Text",
+        "mimeType": "application/vnd.oasis.opendocument.text",
+        "role": "Viewer"
       }
     ],
     "createUpdaterArtifacts": true

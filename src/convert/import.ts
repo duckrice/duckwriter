@@ -126,7 +126,10 @@ export function htmlToDoc(html: string, ctx: DocContext): Node {
 }
 
 /** Which of the formats a file name is, if any. */
-export function textFormat(name: string): "markdown" | "html" | "text" | null {
+export function textFormat(name: string): "markdown" | "html" | "text" | "doc" | "rtf" | "odt" | null {
+  // Older document formats: also opened as a new Word document.
+  const old = /\.(doc|rtf|odt)$/i.exec(name)?.[1]?.toLowerCase();
+  if (old) return old as "doc" | "rtf" | "odt";
   if (/\.(md|markdown)$/i.test(name)) return "markdown";
   if (/\.html?$/i.test(name)) return "html";
   if (/\.txt$/i.test(name)) return "text";

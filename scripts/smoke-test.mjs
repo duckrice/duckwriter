@@ -1769,6 +1769,14 @@ await session(sample("long.docx"), 9530, async (app) => {
   check("no errors in the app", app.errors.length === 0, app.errors.join("; "));
 });
 
+// Older formats open as new Word documents.
+for (const [ext, port] of [["doc", 9436], ["rtf", 9437], ["odt", 9438]]) {
+  await session(join(root, "tests", "fixtures", `formats.${ext}`), port, async (app) => {
+    check(`a .${ext} file opens as a new Word document, with its text`, await app.waitFor(`document.title.includes("formats.docx") && document.querySelector('.doc p[data-style="Heading1"]')?.textContent === "Introduction" && !!document.querySelector(".doc table")`, 8000), await app.evaluate(`document.title`));
+    check("no errors in the app", app.errors.length === 0, app.errors.join("; "));
+  });
+}
+
 await session(sample("not-a-docx.docx"), 9435, async (app) => {
   check("a file that isn't a Word document gets a plain message", await app.waitFor(`/isn't a Word document/.test(document.querySelector(".toast.error")?.textContent ?? "")`, 5000));
 });
