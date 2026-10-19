@@ -16,10 +16,17 @@ export interface OpenedFile {
   bytes: Uint8Array;
 }
 
-const DOCX_FILTER = [{ name: "Word document", extensions: ["docx"] }];
-const OPEN_FILTERS = [
-  { name: "Documents", extensions: ["docx", "md", "markdown", "html", "htm", "txt"] },
+/** What a document can be saved as: the Word formats, each kept as it is. */
+const SAVE_FILTERS = [
   { name: "Word document", extensions: ["docx"] },
+  { name: "Word macro-enabled document", extensions: ["docm"] },
+  { name: "Word template", extensions: ["dotx"] },
+  { name: "Word macro-enabled template", extensions: ["dotm"] },
+  { name: "Word XML document", extensions: ["xml"] },
+];
+const OPEN_FILTERS = [
+  { name: "Documents", extensions: ["docx", "docm", "dotx", "dotm", "xml", "md", "markdown", "html", "htm", "txt"] },
+  { name: "Word document", extensions: ["docx", "docm", "dotx", "dotm", "xml"] },
   { name: "Markdown, web page or text", extensions: ["md", "markdown", "html", "htm", "txt"] },
 ];
 export const DOCX_MIME = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
@@ -51,7 +58,7 @@ export async function pickDocument(): Promise<OpenedFile | null> {
   return new Promise((resolve) => {
     const input = document.createElement("input");
     input.type = "file";
-    input.accept = `${DOCX_MIME},.docx,.md,.markdown,.html,.htm,.txt`;
+    input.accept = `${DOCX_MIME},.docx,.docm,.dotx,.dotm,.xml,.md,.markdown,.html,.htm,.txt`;
     input.onchange = async () => {
       const file = input.files?.[0];
       resolve(file ? { name: file.name, path: null, bytes: new Uint8Array(await file.arrayBuffer()) } : null);
@@ -102,9 +109,12 @@ export async function pickExportPath(suggested: string, name: string, ext: strin
 /** Asks where to save; returns null if cancelled. In the browser there is nothing to ask. */
 export async function pickSavePath(suggested: string): Promise<string | null> {
   if (!isDesktop) return suggested;
-  const path = await save({ defaultPath: suggested, filters: DOCX_FILTER });
+  // The document's own kind first, so saving keeps it unless another is chosen.
+  const ext = /\.(docx|docm|dotx|dotm|xml)$/i.exec(suggested)?.[1]?.toLowerCase() ?? "docx";
+  const filters = [...SAVE_FILTERS].sort((a, b) => Number(b.extensions[0] === ext) - Number(a.extensions[0] === ext));
+  const path = await save({ defaultPath: suggested, filters });
   if (!path) return null;
-  return /\.docx$/i.test(path) ? path : `${path}.docx`;
+  return /\.(docx|docm|dotx|dotm|xml)$/i.test(path) ? path : `${path}.${ext}`;
 }
 
 export async function writePath(path: string, bytes: Uint8Array): Promise<void> {

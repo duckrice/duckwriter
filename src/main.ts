@@ -35,6 +35,7 @@ import { showProperties } from "./ui/properties";
 import { isReading, toggleReadAloud } from "./ui/readaloud";
 import { stamped } from "./docx/properties";
 import { checkPackage } from "./docx/check";
+import { asPackage, convertPackage, isWordFile, packageKind, toFlatOpc, wordXml } from "./docx/package";
 import { htmlToDoc, markdownToHtml, textFormat, textToHtml } from "./convert/import";
 import { baseName, isDesktop, onCloseRequested, openWindow, pickDocument, pickPdfPath, pickSavePath, readPath, setTitle, startupFiles, windowOpening, windowsSpelling, writePath } from "./platform";
 import { Footnotes } from "./ui/footnotes";
@@ -195,7 +196,7 @@ class App {
     );
     document.addEventListener("duckwriter-toast", (event) => this.toast((event as CustomEvent<string>).detail));
     // A document dropped on the window opens (Word, Markdown, a web page, text); pictures dropped in the text are the editor's.
-    const documentFile = (f: File) => /\.(docx?|md|markdown|html?|txt)$/i.test(f.name);
+    const documentFile = (f: File) => /\.(docx?|docm|dotx|dotm|xml|md|markdown|html?|txt)$/i.test(f.name);
     const hasFiles = (event: DragEvent) => [...(event.dataTransfer?.items ?? [])].some((i) => i.kind === "file");
     window.addEventListener("dragover", (event) => {
       if (!hasFiles(event)) return;
@@ -544,7 +545,7 @@ class App {
   async compareWith(older: Uint8Array, label: string) {
     let original: Node;
     try {
-      original = (await readDocx(older)).doc;
+      original = (await readDocx(await asPackage(older))).doc;
     } catch (error) {
       return this.toast(message(error), "error");
     }
@@ -652,9 +653,10 @@ class App {
     if (!(await this.confirmDiscard())) return;
     try {
       const file = await readPath(version.path);
-      const { doc, context } = await readDocx(file.bytes);
+      const bytes = await asPackage(file.bytes, file.name);
+      const { doc, context } = await readDocx(bytes);
       this.show(doc, context, this.name, this.path);
-      this.base = file.bytes;
+      this.base = bytes;
       // Not saved yet: it differs from the file.
       this.savedDoc = schema.nodes.doc.create(null, schema.nodes.paragraph.create());
       this.changed(true);
@@ -1048,11 +1050,13 @@ class App {
   private async load(bytes: Uint8Array, name: string, path: string | null) {
     const format = textFormat(name);
     if (format) return this.importText(bytes, name, format);
-    if (!/\.docx$/i.test(name)) {
+    if (!isWordFile(name)) {
       this.toast(/\.doc$/i.test(name) ? `${name} is an old Word file (.doc). Open it in Word and save it as .docx first.` : `${name} isn't a Word document (.docx).`, "error");
       return;
     }
     try {
+      // A Word XML document holds the same parts as a .docx, in one file.
+      if (/\.xml$/i.test(name)) bytes = await wordXml(bytes, name);
       const { doc, context } = await readDocx(bytes);
       this.leaveSharing();
       this.base = bytes;
@@ -1097,9 +1101,12 @@ class App {
     const titlePage = this.ctx.titlePage;
     try {
       const bytes = await this.build();
+      // As the kind of file it is saved as: with or without macros, a template, or Word XML in one file.
+      let out = await convertPackage(bytes, packageKind(path) ?? "docx");
+      if (/\.xml$/i.test(path)) out = new TextEncoder().encode(await toFlatOpc(out));
       // The file as it was is kept first (auto-save: at most every ten minutes).
       if (isDesktop) await invoke("versions_keep", { path, minAgeSecs: quiet ? 600 : 0 }).catch((error) => console.warn("No earlier version kept", error));
-      await writePath(path, bytes);
+      await writePath(path, out);
       this.base = bytes;
     } catch (error) {
       if (!quiet) this.toast(`Couldn't save: ${message(error)}`, "error");

@@ -47,6 +47,20 @@
         "description": "Word Document",
         "mimeType": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
         "role": "Editor"
+      },
+      {
+        "ext": ["docm"],
+        "name": "Word Macro-Enabled Document",
+        "description": "Word Macro-Enabled Document",
+        "mimeType": "application/vnd.ms-word.document.macroEnabled.12",
+        "role": "Editor"
+      },
+      {
+        "ext": ["dotx", "dotm"],
+        "name": "Word Template",
+        "description": "Word Template",
+        "mimeType": "application/vnd.openxmlformats-officedocument.wordprocessingml.template",
+        "role": "Editor"
       }
     ],
     "createUpdaterArtifacts": true
