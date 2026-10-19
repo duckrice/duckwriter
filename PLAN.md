@@ -191,4 +191,4 @@ written back unchanged.
   page's width, so a landscape table is cut off. It would take printing each
   run of same-size pages on its own and joining the PDFs. Until then a PDF
   has all pages at the document's size, wide tables fitted to it.
-- Publishing: the GitHub repository, the first release.
+- Published: github.com/duckrice/duckwriter, 1.0.0 released 2026-10-19.
