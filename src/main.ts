@@ -31,6 +31,7 @@ import { newAnnotationId } from "./docx/model";
 import { toHtml, toMarkdown, toText } from "./convert/export";
 import { toLatex } from "./convert/latex";
 import { authorName } from "./author";
+import { loadKeyLayout, localKeys } from "./keys";
 import { showProperties } from "./ui/properties";
 import { isReading, toggleReadAloud } from "./ui/readaloud";
 import { stamped } from "./docx/properties";
@@ -253,6 +254,15 @@ class App {
       if (this.headers.view && !this.headers.layer.contains(event.target as HTMLElement)) this.headers.stop();
     });
     handleShortcuts(this);
+    // Tooltips name shortcuts as on this keyboard (Ctrl+Å on a Norwegian one, not Ctrl+[).
+    void loadKeyLayout().then(() => {
+      for (const el of document.querySelectorAll<HTMLElement>("[title], [aria-label]")) {
+        for (const name of ["title", "aria-label"]) {
+          const text = el.getAttribute(name);
+          if (text && /Ctrl|Alt|Shift/.test(text)) el.setAttribute(name, localKeys(text));
+        }
+      }
+    });
     onCloseRequested(async () => {
       const close = await this.confirmDiscard();
       if (close) this.leaveSharing();

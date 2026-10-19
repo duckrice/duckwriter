@@ -58,6 +58,45 @@ function parse(spec: string): Parsed {
 const isLetterOrDigit = (key: string) => /^[A-Za-z0-9]$/.test(key);
 const isNamed = (key: string) => key.length > 1;
 
+// ---- shortcuts as they are on this keyboard ----------------------------------------------
+
+/** Each key's place → the character it types on this keyboard, once the browser has said. */
+let layout: Map<string, string> | null = null;
+
+/** Asks the browser for this keyboard's layout (Norwegian, English…); resolves when known. */
+export async function loadKeyLayout(): Promise<void> {
+  try {
+    const keyboard = (navigator as { keyboard?: { getLayoutMap(): Promise<Map<string, string>> } }).keyboard;
+    if (keyboard) layout = new Map(await keyboard.getLayoutMap());
+  } catch {
+    // Labels stay as written.
+  }
+}
+
+/**
+ * A shortcut as it is pressed on this keyboard. A sign this keyboard types
+ * only with AltGr ([ and ] on a Norwegian one) works by its key's place, so
+ * it is named by what that key shows: "Ctrl+[" is "Ctrl+Å" there.
+ */
+export function localKey(spec: string): string {
+  if (!layout) return spec;
+  const { key } = parse(spec);
+  if (isNamed(key) || isLetterOrDigit(key)) return spec;
+  // Only signs many keyboards type with AltGr; others (= with Shift+0 on a Norwegian one)
+  // are found by the character typed, and keep their name.
+  if (!"[]\\{}|".includes(key)) return spec;
+  if ([...layout.values()].includes(key)) return spec;
+  const place = Object.entries(CODE_CHARS).find(([, c]) => c === key)?.[0];
+  const local = place ? layout.get(place) : undefined;
+  return local ? `${spec.slice(0, spec.length - key.length)}${local.toUpperCase()}` : spec;
+}
+
+/** Text with every shortcut in it ("Smaller (Ctrl+[)") as on this keyboard. */
+export function localKeys(text: string): string {
+  if (!layout) return text;
+  return text.replace(/(?:Ctrl|Alt|Shift)(?:\+(?:Ctrl|Alt|Shift))*\+[^\s,)A-Za-z0-9]/g, (spec) => localKey(spec));
+}
+
 /** Whether a key press is the shortcut \`spec\`, such as "Ctrl+B", "Ctrl+Alt+1", "Ctrl+>" or "F12". */
 export function matches(spec: string, event: KeyEventLike): boolean {
   const want = parse(spec);

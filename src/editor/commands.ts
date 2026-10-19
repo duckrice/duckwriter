@@ -355,3 +355,36 @@ export function changeCase(): Command {
     return true;
   };
 }
+
+/**
+ * Ctrl+Up and Ctrl+Down, as in Word: to the start of this paragraph (or the
+ * one before, if already there), or to the start of the next; with Shift, the
+ * selection grows to there.
+ */
+export function moveByParagraph(direction: -1 | 1, extend = false): Command {
+  return (state, dispatch) => {
+    const { head, anchor } = state.selection;
+    const starts: number[] = [];
+    state.doc.descendants((node, pos) => {
+      if (!node.isTextblock) return true;
+      starts.push(pos + 1);
+      return false;
+    });
+    if (!starts.length) return false;
+    let target: number | undefined;
+    if (direction < 0) target = [...starts].reverse().find((s) => s < head);
+    else target = starts.find((s) => s > head);
+    // At the last paragraph, Ctrl+Down goes to its end.
+    if (target === undefined) {
+      if (direction < 0) return false;
+      const last = starts[starts.length - 1];
+      target = last + state.doc.resolve(last).parent.content.size;
+      if (target === head) return false;
+    }
+    if (dispatch) {
+      const selection = extend ? TextSelection.create(state.doc, anchor, target) : TextSelection.create(state.doc, target);
+      dispatch(state.tr.setSelection(selection).scrollIntoView());
+    }
+    return true;
+  };
+}

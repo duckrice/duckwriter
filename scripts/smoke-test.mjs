@@ -323,6 +323,13 @@ await session(null, 9433, async (app) => {
   await app.type("Centred and big");
   await app.key("e", 69, CTRL);
   await app.key("Home", 36, SHIFT);
+  // The size box's list shows every size, the current one marked, not only what matches the box.
+  const [ax, ay] = await app.center(".size-input + .combo-arrow");
+  await app.click(ax, ay);
+  const offered = await app.evaluate(`(() => { const items = [...document.querySelectorAll(".size-input ~ .combo-list .combo-item")]; return items.length + ":" + (items.find((i) => i.classList.contains("active"))?.textContent ?? "none"); })()`);
+  check("the font size list shows every size, with the current one marked", offered === "17:11", offered);
+  await app.clickText(".size-input ~ .combo-list .combo-item", "16");
+  check("choosing a size applies it and gives the text back the cursor", (await app.evaluate(`document.querySelector(".size-input").value`)) === "16" && (await app.evaluate(`!!document.activeElement?.closest(".doc")`)));
   await app.evaluate(`(() => { const i = document.querySelector(".size-input"); i.value = "20"; i.dispatchEvent(new Event("change")); })()`);
   paras = await paragraphs(app);
   check("Ctrl+E centres the paragraph", paras.at(-1)?.align === "center");

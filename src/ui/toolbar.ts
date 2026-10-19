@@ -16,6 +16,7 @@ import { redo, undo, undoDepth, redoDepth } from "prosemirror-history";
 import type { Command } from "prosemirror-state";
 import type { EditorView } from "prosemirror-view";
 import { h } from "../dom";
+import { combo } from "./combo";
 import { HIGHLIGHTS, type DocContext } from "../docx/model";
 import {
   clearFormatting,
@@ -138,16 +139,13 @@ export class Toolbar {
       const size = Number(this.sizeInput.value.replace(",", "."));
       if (size >= 1 && size <= 1638) this.run(setMark(schema.marks.size, { pt: Math.round(size * 2) / 2 }));
     });
-    // Choosing from the list should apply straight away and give the text back the focus.
-    for (const input of [this.fontInput, this.sizeInput]) {
-      input.addEventListener("keydown", (event) => {
-        if (event.key === "Enter") {
-          input.dispatchEvent(new Event("change"));
-          this.host.view.focus();
-        } else if (event.key === "Escape") this.host.view.focus();
-      });
-      input.addEventListener("focus", () => input.select());
-    }
+    // Lists as Word's: every font and size, the current one marked; choosing applies it
+    // straight away and gives the text back the cursor.
+    const apply = (input: HTMLInputElement) => () => input.dispatchEvent(new Event("change"));
+    const back = () => this.host.view.focus();
+    const fontBox = combo({ input: this.fontInput, options: () => FONTS, style: (font) => `font-family: "${font}", sans-serif`, choose: apply(this.fontInput), done: back });
+    const sizeBox = combo({ input: this.sizeInput, options: () => SIZES.map(String), choose: apply(this.sizeInput), done: back });
+    for (const input of [this.fontInput, this.sizeInput]) input.addEventListener("focus", () => input.select());
 
     const ctx = () => this.host.ctx;
     const group = (...items: HTMLElement[]) => h("div", { class: "tb-group" }, ...items);
@@ -196,8 +194,8 @@ export class Toolbar {
         groups: [
           group(this.styleSelect, this.styleMenuButton()),
           group(
-            this.fontInput,
-            this.sizeInput,
+            fontBox,
+            sizeBox,
             this.button("zoomIn", "Bigger text (Ctrl+> or Ctrl+])", () => this.run(stepSize(ctx(), 1)), "sizeUp"),
             this.button("zoomOut", "Smaller text (Ctrl+< or Ctrl+[)", () => this.run(stepSize(ctx(), -1)), "sizeDown"),
           ),

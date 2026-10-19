@@ -28,9 +28,10 @@ import {
   toggleVertAlign,
   formattingAt,
   changeCase,
+  moveByParagraph,
 } from "../editor/commands";
 import { changeListLevel, toggleList } from "../editor/lists";
-import { matches } from "../keys";
+import { localKey, matches } from "../keys";
 import { insertEquation, insertNumberedEquation } from "./equation";
 import { choosePicture } from "./pictures";
 import { captionDialog, insertToc, toggleHeadingNumbers } from "./references";
@@ -165,6 +166,11 @@ export const SHORTCUTS: Shortcut[] = [
   { group: "Editing", label: "Next spelling mistake, with suggestions", keys: ["F7", "Alt+F7"], run: (x) => x.nextSpellingMistake() },
   { group: "Editing", label: "Spell checking on or off", keys: ["Ctrl+F7"], run: (x) => x.toggleSpelling(), everywhere: true },
   { group: "Editing", label: "New line in the same paragraph", keys: ["Shift+Enter"] },
+  { group: "Editing", label: "Word by word", keys: ["Ctrl+ArrowLeft", "Ctrl+ArrowRight"] },
+  { group: "Editing", label: "To the start of this paragraph, or the one before", keys: ["Ctrl+ArrowUp"], run: plain(moveByParagraph(-1)) },
+  { group: "Editing", label: "To the start of the next paragraph", keys: ["Ctrl+ArrowDown"], run: plain(moveByParagraph(1)) },
+  { group: "Editing", label: "Select to the start of this paragraph, or the one before", keys: ["Ctrl+Shift+ArrowUp"], run: plain(moveByParagraph(-1, true)) },
+  { group: "Editing", label: "Select to the start of the next paragraph", keys: ["Ctrl+Shift+ArrowDown"], run: plain(moveByParagraph(1, true)) },
   { group: "Editing", label: "Page break", keys: ["Ctrl+Enter"], run: plain(insertPageBreak()) },
   { group: "Headings and outline", label: "Move this section (the heading and what is under it) up", keys: ["Alt+Shift+ArrowUp"], run: cmd((ctx) => moveSection(ctx, -1)) },
   { group: "Headings and outline", label: "Move this section down", keys: ["Alt+Shift+ArrowDown"], run: cmd((ctx) => moveSection(ctx, 1)) },
@@ -334,7 +340,7 @@ export function showShortcutHelp() {
             "div",
             { class: "shortcut-row" },
             h("span", { class: "shortcut-label" }, s.label),
-            h("span", { class: "shortcut-keys" }, ...s.keys.flatMap((k, i) => [...(i ? [h("span", { class: "shortcut-or" }, "or")] : []), keysView(k)])),
+            h("span", { class: "shortcut-keys" }, ...s.keys.flatMap((k, i) => [...(i ? [h("span", { class: "shortcut-or" }, "or")] : []), keysView(localKey(k))])),
           ),
         ),
       );
