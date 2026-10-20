@@ -1,5 +1,6 @@
 //! Spelling, with Windows' own spell checker, in every language of the user's
-//! Windows language list (Settings → Time & language → Language & region).
+//! Windows language list (Settings → Time & language → Language & region),
+//! and always in English too.
 //! A word is right when any of those languages knows it, so Norwegian and
 //! English can be mixed in one document. The checkers live on a thread of
 //! their own.
@@ -78,15 +79,20 @@ mod imp {
 
     pub type Checkers = Vec<(String, ISpellChecker)>;
 
-    /// The user's languages, in their order. Tests name their own.
+    /// The user's languages, in their order, and English after them: so much
+    /// is written in English that it is always checked too. Tests name their own.
     fn user_languages() -> Vec<String> {
         if let Ok(list) = std::env::var("DUCKWRITER_SPELL_LANGUAGES") {
             return list.split(',').map(|s| s.trim().to_string()).filter(|s| !s.is_empty()).collect();
         }
-        let Ok(view) = windows::System::UserProfile::GlobalizationPreferences::Languages() else {
-            return Vec::new();
+        let mut tags: Vec<String> = match windows::System::UserProfile::GlobalizationPreferences::Languages() {
+            Ok(view) => (0..view.Size().unwrap_or(0)).filter_map(|i| view.GetAt(i).ok()).map(|tag| tag.to_string()).collect(),
+            Err(_) => Vec::new(),
         };
-        (0..view.Size().unwrap_or(0)).filter_map(|i| view.GetAt(i).ok()).map(|tag| tag.to_string()).collect()
+        if !tags.iter().any(|t| t.to_lowercase().starts_with("en")) {
+            tags.extend(["en-US".to_string(), "en-GB".to_string(), "en".to_string()]);
+        }
+        tags
     }
 
     fn strings(list: Option<IEnumString>) -> Vec<String> {
@@ -124,7 +130,9 @@ mod imp {
                 .or_else(|| supported.iter().find(|s| s.to_lowercase().starts_with(&format!("{}-", tag.to_lowercase()))))
                 .cloned();
             let Some(found) = found else { continue };
-            if out.iter().any(|(t, _)| *t == found) {
+            // One English is enough (en-US if there is one, else en-GB, else any).
+            let english = |t: &str| t.to_lowercase().starts_with("en-");
+            if out.iter().any(|(t, _)| *t == found || (english(t) && english(&found))) {
                 continue;
             }
             if let Ok(checker) = unsafe { factory.CreateSpellChecker(&HSTRING::from(&found)) } {
