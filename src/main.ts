@@ -9,6 +9,7 @@ import { ensureStyles } from "./docx/builtins";
 import { blankDocx } from "./docx/template";
 import { writeDocx } from "./docx/write";
 import { createState, createView, setLinkOpener } from "./editor/editor";
+import { stepSize } from "./editor/commands";
 import { bookmarkPosition } from "./ui/references";
 import { addRecent, removeRecent } from "./recent";
 import { pageSetup } from "./ui/pagesetup";
@@ -240,10 +241,21 @@ class App {
     document.head.append(this.styleEl, this.pageRule);
     root.append(this.toolbar.el, h("div", { class: "main-row" }, this.navigation.el, this.workspace), status, this.toasts);
 
+    // Ctrl+wheel zooms; Alt+wheel makes the selected text a size bigger or smaller per notch.
+    let altWheel = 0;
     this.workspace.addEventListener("wheel", (event) => {
-      if (!event.ctrlKey) return;
-      event.preventDefault();
-      this.stepZoom(event.deltaY < 0 ? 1 : -1);
+      if (event.ctrlKey) {
+        event.preventDefault();
+        this.stepZoom(event.deltaY < 0 ? 1 : -1);
+      } else if (event.altKey) {
+        event.preventDefault();
+        // Touchpads send many small turns: a step for every notch's worth.
+        altWheel += event.deltaY;
+        if (Math.abs(altWheel) < 50) return;
+        const view = this.view;
+        stepSize(this.ctx, altWheel < 0 ? 1 : -1)(view.state, view.dispatch, view);
+        altWheel = 0;
+      }
     }, { passive: false });
     // Clicking the grey area or the margins puts the cursor in the text.
     this.workspace.addEventListener("mousedown", (event) => {

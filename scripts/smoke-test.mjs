@@ -1212,6 +1212,30 @@ await session(versioned, 9590, async (app) => {
   await app.key("Z", 90, ALT | SHIFT);
   check("then back to 100%", (await app.evaluate(`document.querySelector(".statusbar").textContent`)).includes("100%"));
 
+  // Alt+scroll wheel: the selected words a size bigger per notch.
+  await app.evaluate(`(() => {
+    const para = document.querySelector(".doc .para");
+    para.scrollIntoView({ block: "center" });
+    const text = document.createTreeWalker(para, NodeFilter.SHOW_TEXT).nextNode();
+    const range = document.createRange();
+    range.setStart(text, 0);
+    range.setEnd(text, Math.min(4, text.length));
+    window.__dw.body.focus();
+    getSelection().removeAllRanges();
+    getSelection().addRange(range);
+  })()`);
+  await sleep(300);
+  const sizeBefore = Number(await app.evaluate(`document.querySelector(".size-input").value`));
+  const word = await app.center(".doc .para");
+  await app.wheel(word[0], word[1], -100, ALT);
+  await sleep(200);
+  const sizeAfter = Number(await app.evaluate(`document.querySelector(".size-input").value`));
+  check("Alt+scroll wheel makes the selected text bigger", sizeBefore > 0 && sizeAfter > sizeBefore, `${sizeBefore} → ${sizeAfter}`);
+  await app.wheel(word[0], word[1], 100, ALT);
+  await sleep(200);
+  check("and smaller again", Number(await app.evaluate(`document.querySelector(".size-input").value`)) === sizeBefore);
+  check("without zooming", (await app.evaluate(`document.querySelector(".statusbar").textContent`)).includes("100%"));
+
   await app.key("L", 76, ALT | SHIFT);
   const numbers = () => app.evaluate(`[...document.querySelectorAll(".line-number")].map((n) => Number(n.textContent))`);
   const first = await numbers();
