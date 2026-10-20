@@ -1,4 +1,4 @@
-DuckWriter is a free word processor for Windows that opens and saves Word documents (.docx), with what scientific writing needs: equations, footnotes and endnotes, captions and cross-references, citations and a reference list (APA, Harvard, Chicago, IEEE, Vancouver; BibTeX, RIS, CSL-JSON, DOI lookup, Zotero), tracked changes and comments, and sections with their own page numbers. It saves copies as PDF, LaTeX, Markdown, web pages and plain text.
+DuckWriter is a free word processor for Windows that opens and saves Word documents (.docx), with what scientific writing needs: equations, footnotes and endnotes, captions and cross-references, citations and a reference list (APA, Harvard, Chicago, IEEE, Vancouver; BibTeX, RIS, CSL-JSON, DOI lookup, Zotero), tracked changes and comments, and sections with their own page numbers. It also opens older Word documents (.doc), RTF, OpenDocument and PDFs (worked out into an editable document), and saves copies as PDF, LaTeX, Markdown, web pages and plain text.
 
 ## Install
 

@@ -22,7 +22,7 @@
       }
     ],
     "security": {
-      "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data: blob:; connect-src 'self' ipc: http://ipc.localhost data: blob: https://api.crossref.org https://github.com https://objects.githubusercontent.com ws: wss:",
+      "csp": "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; worker-src 'self' blob:; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data: blob:; connect-src 'self' ipc: http://ipc.localhost data: blob: https://api.crossref.org https://github.com https://objects.githubusercontent.com ws: wss:",
       "devCsp": "default-src * 'unsafe-inline' 'unsafe-eval' data: blob: ipc: ws: http://ipc.localhost"
     }
   },
@@ -49,35 +49,46 @@
         "role": "Editor"
       },
       {
-        "ext": ["docm"],
+        "ext": [
+          "docm"
+        ],
         "name": "Word Macro-Enabled Document",
         "description": "Word Macro-Enabled Document",
         "mimeType": "application/vnd.ms-word.document.macroEnabled.12",
         "role": "Editor"
       },
       {
-        "ext": ["dotx", "dotm"],
+        "ext": [
+          "dotx",
+          "dotm"
+        ],
         "name": "Word Template",
         "description": "Word Template",
         "mimeType": "application/vnd.openxmlformats-officedocument.wordprocessingml.template",
         "role": "Editor"
       },
       {
-        "ext": ["doc"],
+        "ext": [
+          "doc"
+        ],
         "name": "Word 97-2003 Document",
         "description": "Word 97-2003 Document",
         "mimeType": "application/msword",
         "role": "Viewer"
       },
       {
-        "ext": ["rtf"],
+        "ext": [
+          "rtf"
+        ],
         "name": "Rich Text Document",
         "description": "Rich Text Document",
         "mimeType": "application/rtf",
         "role": "Viewer"
       },
       {
-        "ext": ["odt"],
+        "ext": [
+          "odt"
+        ],
         "name": "OpenDocument Text",
         "description": "OpenDocument Text",
         "mimeType": "application/vnd.oasis.opendocument.text",

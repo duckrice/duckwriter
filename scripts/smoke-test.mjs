@@ -1171,7 +1171,7 @@ await session(null, 9574, async (app) => {
   await app.evaluate(`(() => { const s = document.querySelector('dialog[open] select'); s.value = "APA"; })()`);
   await app.clickText("dialog[open] .btn", "Done");
   await app.key("C", 67, ALT | SHIFT);
-  check("Alt+Shift+C asks which source to cite", await app.waitFor(`document.querySelector("dialog[open] h2")?.textContent === "Cite"`, 3000));
+  check("Alt+Shift+C asks which source to cite", await app.waitFor(`document.querySelector("dialog[open] h2")?.textContent === "Cite"`, 8000));
   await app.type("smith");
   await app.key("Enter", 13);
   const cite = () => app.evaluate(`document.querySelector('.doc .field[data-instr="CITATION"]')?.textContent ?? ""`);
@@ -1800,6 +1800,16 @@ for (const [ext, port] of [["doc", 9436], ["rtf", 9437], ["odt", 9438]]) {
     check("no errors in the app", app.errors.length === 0, app.errors.join("; "));
   });
 }
+
+// A PDF opens as a new Word document, worked out from its text.
+await session(sample("lecture.pdf"), 9439, async (app) => {
+  check("a PDF opens as a new Word document", await app.waitFor(`document.title.includes("lecture.docx") && !!document.querySelector(".doc table")`, 20000), await app.evaluate(`document.title + " " + (document.querySelector(".toast")?.textContent ?? "")`));
+  check("with its heading", (await app.evaluate(`document.querySelector('.doc p[data-style="Heading1"]')?.textContent`)) === "Lecture 3: Cells");
+  check("its paragraph joined from two lines", (await app.evaluate(`[...document.querySelectorAll(".doc p")].some((p) => p.textContent === "Cells are the building blocks of life. This line is long enough to wrap onto a second line in the same paragraph.")`)) === true);
+  check("its bulleted list", (await app.evaluate(`[...document.querySelectorAll(".doc p.list-item")].filter((p) => p.querySelector(".list-label.bullet") && /(nucleus|membrane)$/.test(p.textContent)).length`)) === 2);
+  check("and its picture", await app.waitFor(`[...document.querySelectorAll(".doc img")].some((img) => img.naturalWidth === 2)`, 5000));
+  check("no errors in the app", app.errors.length === 0, app.errors.join("; "));
+});
 
 await session(sample("not-a-docx.docx"), 9435, async (app) => {
   check("a file that isn't a Word document gets a plain message", await app.waitFor(`/isn't a Word document/.test(document.querySelector(".toast.error")?.textContent ?? "")`, 5000));

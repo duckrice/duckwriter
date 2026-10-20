@@ -200,4 +200,30 @@ const reviewDoc = new docx.Document({
   ],
 });
 writeFileSync(join(out, "review.docx"), await docx.Packer.toBuffer(reviewDoc));
+
+// A PDF to open as a Word document: a heading, a paragraph over two lines, a
+// list, a table and a picture.
+{
+  const { PDFDocument, StandardFonts } = await import("pdf-lib");
+  const pdf = await PDFDocument.create();
+  const page = pdf.addPage([595, 842]);
+  const regular = await pdf.embedFont(StandardFonts.Helvetica);
+  const bold = await pdf.embedFont(StandardFonts.HelveticaBold);
+  const draw = (text, x, top, size = 11, font = regular) => page.drawText(text, { x, y: 842 - top, size, font });
+  draw("Lecture 3: Cells", 72, 90, 24, bold);
+  draw("Cells are the building blocks of life. This line is long enough", 72, 130);
+  draw("to wrap onto a second line in the same paragraph.", 72, 144);
+  draw("•", 80, 170);
+  draw("nucleus", 92, 170);
+  draw("•", 80, 184);
+  draw("membrane", 92, 184);
+  draw("Part", 72, 220);
+  draw("Job", 260, 220);
+  draw("Nucleus", 72, 236);
+  draw("Holds DNA", 260, 236);
+  // A 2 × 2 picture, drawn 120 points wide.
+  const png = await pdf.embedPng(Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAIAAAD91JpzAAAAFklEQVR4nGP4z8DAwMDAxMDAwMDAAAANHQEDasKb6QAAAABJRU5ErkJggg==", "base64"));
+  page.drawImage(png, { x: 72, y: 842 - 400, width: 120, height: 120 });
+  writeFileSync(join(out, "lecture.pdf"), await pdf.save());
+}
 console.log(`Wrote samples to ${out}`);

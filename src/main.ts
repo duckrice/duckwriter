@@ -1078,7 +1078,27 @@ class App {
     await this.load(new Uint8Array(await file.arrayBuffer()), file.name, null);
   }
 
+  /** A PDF, worked out into a new Word document: text, headings, lists, tables and pictures (saving asks where). */
+  private async importPdf(bytes: Uint8Array, name: string) {
+    try {
+      this.toast(`Turning ${name} into a Word document…`);
+      const { convertPdf } = await import("./convert/pdfjs");
+      const docx = await convertPdf(bytes);
+      const { doc, context } = await readDocx(docx);
+      this.leaveSharing();
+      this.base = docx;
+      this.show(doc, context, name.replace(/\.pdf$/i, ".docx"), null);
+      // Not saved as a Word document yet.
+      this.savedDoc = schema.nodes.doc.create(null, schema.nodes.paragraph.create());
+      this.changed(true);
+      this.toast(`Opened ${name} as a new Word document`);
+    } catch (error) {
+      this.toast(`Couldn't open ${name}: ${message(error)}`, "error");
+    }
+  }
+
   private async load(bytes: Uint8Array, name: string, path: string | null) {
+    if (/\.pdf$/i.test(name)) return this.importPdf(bytes, name);
     const format = textFormat(name);
     if (format) return this.importText(bytes, name, format);
     if (!isWordFile(name)) {
@@ -1399,7 +1419,7 @@ class App {
     const languages = this.spellLanguages.map((tag) => names.of(tag) ?? tag).join(", ");
     this.spellStatus.hidden = !this.spellLanguages.length;
     this.spellStatus.textContent = spellingOn() ? "Spelling on" : "Spelling off";
-    this.spellStatus.title = `${spellingOn() ? "Checking spelling" : "Not checking spelling"} in ${languages} (Ctrl+F7 to switch; F7 for the next mistake).\nThe languages are the ones in Windows' language settings.`;
+    this.spellStatus.title = `${spellingOn() ? "Checking spelling" : "Not checking spelling"} in ${languages} (Ctrl+F7 to switch; F7 for the next mistake).\nThe languages are the ones in Windows' language settings, and English.`;
   }
 
   /** Zooms in (1), out (-1) or back to 100% (0). */
