@@ -775,7 +775,7 @@ dependencies = [
 
 [[package]]
 name = "duckwriter"
-version = "1.1.2"
+version = "1.1.3"
 dependencies = [
  "futures-util",
  "percent-encoding",
