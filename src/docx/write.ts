@@ -295,6 +295,16 @@ class BodyWriter {
     }
     if (a.align) props.push(tag("w:jc", { "w:val": a.align === "justify" ? "both" : a.align }));
     const extras = splitElements(a.extra);
+    if (a.mark) {
+      // The paragraph mark's own formatting, in its place before a section break.
+      const rPr = this.runProps((a.mark as object[]).map((m) => schema.markFromJSON(m)));
+      const old = extras.findIndex((e) => localName(e) === "rPr");
+      if (old >= 0) extras.splice(old, 1);
+      if (rPr && rPr !== "<w:rPr></w:rPr>") {
+        const sect = extras.findIndex((e) => localName(e) === "sectPr");
+        extras.splice(sect < 0 ? extras.length : sect, 0, rPr);
+      }
+    }
     if (a.change) {
       // A tracked change to the paragraph mark lives in the mark's run properties, first.
       const c = a.change as { kind: "ins" | "del"; id: string; author: string; date: string | null };

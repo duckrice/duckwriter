@@ -1,6 +1,6 @@
 import JSZip from "jszip";
 import type { Node } from "prosemirror-model";
-import { EditorState, TextSelection, type Command } from "prosemirror-state";
+import { AllSelection, EditorState, TextSelection, type Command } from "prosemirror-state";
 import { describe, expect, it } from "vitest";
 import type { DocContext } from "../src/docx/model";
 import { readDocx } from "../src/docx/read";
@@ -153,5 +153,52 @@ describe("saving edits", () => {
     expect(numbering.match(/<w:abstractNum /g)).toHaveLength(1);
     const rels = await twice.file("word/_rels/document.xml.rels")!.async("string");
     expect(rels.match(/duckrice\.example/g)).toHaveLength(1);
+  });
+});
+
+describe("the paragraph mark keeps formatting, as in Word", () => {
+  const typeText = (state: EditorState, text: string) => state.apply(state.tr.insertText(text));
+  const fontAt = (state: EditorState, pos: number) => schema.marks.font.isInSet(state.doc.resolve(pos).marks())?.attrs.family;
+
+  it("an empty line keeps the font everything was changed to, even after clicking away", async () => {
+    const ctx = await blank();
+    let state = stateWith(ctx, [p("First"), p(""), p("Third")]);
+    state = state.apply(state.tr.setSelection(new AllSelection(state.doc)));
+    state = run(state, setMark(schema.marks.font, { family: "Times New Roman" }));
+    state = run(state, setMark(schema.marks.size, { pt: 12 }));
+    // Somewhere else, then into the empty line.
+    state = select(state, 2);
+    state = select(state, 8);
+    expect(state.selection.$from.parent.content.size).toBe(0);
+    state = typeText(state, "new");
+    const typed = state.doc.child(1).firstChild!;
+    expect(schema.marks.font.isInSet(typed.marks)?.attrs.family).toBe("Times New Roman");
+    expect(schema.marks.size.isInSet(typed.marks)?.attrs.pt).toBe(12);
+  });
+
+  it("Enter carries the font on, also from a line that's still empty", async () => {
+    const ctx = await blank();
+    let state = stateWith(ctx, [p("Text")]);
+    state = state.apply(state.tr.setSelection(new AllSelection(state.doc)));
+    state = run(state, setMark(schema.marks.font, { family: "Times New Roman" }));
+    state = select(state, 5);
+    state = run(state, newParagraph(ctx));
+    state = run(state, newParagraph(ctx));
+    // Away and back: the new empty lines still know their font.
+    state = select(state, 2);
+    state = select(state, state.doc.content.size - 1);
+    state = typeText(state, "more");
+    expect(fontAt(state, state.doc.content.size - 2)).toBe("Times New Roman");
+  });
+
+  it("is saved to Word and read back", async () => {
+    const ctx = await blank();
+    const tnr = schema.marks.font.create({ family: "Times New Roman" });
+    const doc = schema.nodes.doc.create(null, [schema.nodes.paragraph.create({ mark: [tnr.toJSON()] })]);
+    const bytes = await writeDocx(doc, ctx);
+    const xml = await (await JSZip.loadAsync(bytes)).file("word/document.xml")!.async("string");
+    expect(xml).toMatch(/<w:pPr><w:rPr><w:rFonts w:ascii="Times New Roman"/);
+    const back = await readDocx(bytes);
+    expect(back.doc.firstChild!.attrs.mark?.[0]?.attrs.family).toBe("Times New Roman");
   });
 });

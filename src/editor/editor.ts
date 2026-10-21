@@ -21,6 +21,7 @@ import { reviewPlugin } from "./review";
 import { trackPlugin } from "./track";
 import { pastePlugin } from "./paste";
 import { autoFormatPlugin } from "./autoformat";
+import { paraMarkPlugin } from "./paramark";
 import { citationsPlugin } from "./citations";
 import { authorName } from "../author";
 import { ImageView, type PictureHooks } from "./imageview";
@@ -100,6 +101,7 @@ export function createState(doc: Node, ctx: () => DocContext, pages?: Omit<Pagin
       trackPlugin({ on: () => !!ctx().trackChanges, author: authorName, context: ctx }),
       pastePlugin(ctx),
       citationsPlugin(ctx),
+      paraMarkPlugin,
       ...(pages ? [paginationPlugin({ context: ctx, ...pages }), sectionWidthPlugin(ctx)] : []),
       dropCursor({ color: "#0f766e", width: 2 }),
       gapCursor(),

@@ -8,6 +8,14 @@ import { TextSelection, type Command, type EditorState, type Transaction } from 
 import { resolvedPara, resolvedRun, styleChain, type DocContext, type ParaProps, type RunProps } from "../docx/model";
 import { listOf, listPluginKey, selectedParagraphs } from "./lists";
 import { schema } from "./schema";
+import { markAttr, paraMarks, updateParaMarks } from "./paramark";
+
+/** Formatting chosen with the cursor in an empty line is kept on that line's paragraph mark, as in Word. */
+function rememberInEmptyLine(tr: Transaction, state: EditorState, marks: readonly Mark[]): Transaction {
+  const { $from } = state.selection;
+  if ($from.parent.type === schema.nodes.paragraph && !$from.parent.content.size) tr.setNodeMarkup($from.before(), undefined, { ...$from.parent.attrs, mark: markAttr(marks) });
+  return tr;
+}
 
 /** The character formatting a piece of text ends up with. */
 export function effectiveRun(ctx: DocContext, para: Node | null, marks: readonly Mark[]): RunProps {
@@ -104,7 +112,7 @@ export function toggleFormat(ctx: DocContext, name: Toggle): Command {
         const paraWants = resolvedRun(ctx.styles, $from.parent.attrs.style)[name] ?? false;
         let marks = type.removeFromSet(state.storedMarks ?? $from.marks());
         if (!current !== paraWants) marks = type.create({ on: !current }).addToSet(marks);
-        dispatch(state.tr.setStoredMarks(marks));
+        dispatch(rememberInEmptyLine(state.tr.setStoredMarks(marks), state, marks));
       }
       return true;
     }
@@ -119,6 +127,10 @@ export function toggleFormat(ctx: DocContext, name: Toggle): Command {
         const fromStyle = effectiveRun(ctx, r.para, r.node.marks.filter((m) => m.type !== type))[name] ?? false;
         if (fromStyle !== turnOn) tr.addMark(r.from, r.to, type.create({ on: turnOn }));
       }
+      updateParaMarks(tr, state.selection.from, state.selection.to, (marks, para) => {
+        const rest = type.removeFromSet(marks);
+        return (resolvedRun(ctx.styles, para.attrs.style)[name] ?? false) === turnOn ? rest : type.create({ on: turnOn }).addToSet(rest);
+      });
       dispatch(tr.scrollIntoView());
     }
     return true;
@@ -133,11 +145,13 @@ export function setMark(type: MarkType, attrs: Record<string, unknown> | null): 
     if (empty) {
       let marks = type.removeFromSet(state.storedMarks ?? $from.marks());
       if (attrs) marks = type.create(attrs).addToSet(marks);
-      dispatch(state.tr.setStoredMarks(marks));
+      dispatch(rememberInEmptyLine(state.tr.setStoredMarks(marks), state, marks));
       return true;
     }
     const tr = state.tr.removeMark(from, to, type);
     if (attrs) tr.addMark(from, to, type.create(attrs));
+    // Paragraphs selected to their end take it on their paragraph mark too, so their empty lines and new lines keep it.
+    updateParaMarks(tr, from, to, (marks) => (attrs ? type.create(attrs).addToSet(type.removeFromSet(marks)) : type.removeFromSet(marks)));
     dispatch(tr.scrollIntoView());
     return true;
   };
@@ -225,7 +239,8 @@ export function clearFormatting(ctx: DocContext): Command {
     const tr = state.tr;
     if (!empty) {
       for (const type of Object.values(schema.marks)) if (type !== schema.marks.link) tr.removeMark(from, to, type);
-    } else tr.setStoredMarks([]);
+      updateParaMarks(tr, from, to, () => []);
+    } else rememberInEmptyLine(tr.setStoredMarks([]), state, []);
     const reset = setStyle(ctx, null);
     reset(state.apply(tr), (next) => {
       for (const step of next.steps) tr.step(step);
@@ -258,7 +273,7 @@ export function newParagraph(ctx: DocContext): Command {
     }
     if (!dispatch) return true;
     // A new paragraph goes on in the same formatting, but not as a link.
-    const marks = withoutLink(state.storedMarks ?? ($from.parentOffset > 0 ? $from.marks() : (para.firstChild?.marks ?? [])));
+    const marks = withoutLink(state.storedMarks ?? ($from.parentOffset > 0 ? $from.marks() : (para.firstChild?.marks ?? paraMarks(para.attrs))));
     const atEnd = $to.parentOffset === para.content.size;
     const style = para.attrs.style ?? ctx.styles.defaultParagraph;
     const next = style ? ctx.styles.byId.get(style)?.next : undefined;
@@ -267,9 +282,10 @@ export function newParagraph(ctx: DocContext): Command {
     if (atEnd && next && next !== style && !listOf(ctx, para)) {
       attrs = { ...schema.nodes.paragraph.create().attrs, style: next === ctx.styles.defaultParagraph ? null : next };
     }
+    const carried = atEnd && attrs !== para.attrs ? [] : marks;
     const tr = state.tr.deleteSelection();
-    tr.split(tr.mapping.map($from.pos), 1, [{ type: schema.nodes.paragraph, attrs }]);
-    tr.setStoredMarks(atEnd && attrs !== para.attrs ? [] : marks);
+    tr.split(tr.mapping.map($from.pos), 1, [{ type: schema.nodes.paragraph, attrs: { ...attrs, mark: markAttr(carried) } }]);
+    tr.setStoredMarks(carried);
     dispatch(tr.setMeta(listPluginKey, true).scrollIntoView());
     return true;
   };

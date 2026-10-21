@@ -100,6 +100,11 @@ export const schema = new Schema(clipboardReady({
         ilvl: { default: 0 },
         /** Paragraph properties DuckWriter doesn't handle, as XML, written back unchanged. */
         extra: { default: "" },
+        /**
+         * The paragraph mark's own formatting (Word's w:pPr/w:rPr), as marks in JSON: an empty
+         * line keeps the font it was given, and Enter passes it on. Null for none.
+         */
+        mark: { default: null },
         /** A tracked change to the paragraph mark: { kind: "ins" | "del", id, author, date }, or null. */
         change: { default: null },
         /** Its formatting changed while changes were tracked (w:pPrChange): { id, author, date, before } (before: the old pPr, as XML). */

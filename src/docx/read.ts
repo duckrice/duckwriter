@@ -707,7 +707,7 @@ class BodyReader {
     const pPr = child(p, "pPr");
     const props = readParaProps(pPr);
     const extra = pPr ? children(pPr).filter((c) => !(c.namespaceURI === NS.w && KNOWN_PPR.has(c.localName))).map(this.raw).join("") : "";
-    // The paragraph mark's own formatting (pPr/rPr) is kept with the extras; a tracked change to it is read apart.
+    // The paragraph mark's own formatting (pPr/rPr) is read as marks; a tracked change to it is read apart.
     let markRPr = child(pPr, "rPr");
     let change: { kind: "ins" | "del"; id: string; author: string; date: string | null } | null = null;
     const changeEl = markRPr && children(markRPr).find((c) => isW(c, "ins") || isW(c, "del") || isW(c, "moveTo") || isW(c, "moveFrom"));
@@ -730,7 +730,8 @@ class BodyReader {
       indentFirst: props.indentFirst ?? null,
       numId: props.numId ?? null,
       ilvl: props.ilvl ?? 0,
-      extra: extra + (markRPr ? this.raw(markRPr) : ""),
+      extra,
+      mark: markRPr ? this.runMarks(markRPr, []).map((m) => m.toJSON()) : null,
       change,
       propsChange: propsChangeOf(child(pPr, "pPrChange"), this.raw),
     };
