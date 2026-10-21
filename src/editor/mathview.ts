@@ -1,4 +1,6 @@
-// Shows an equation in the text as typeset math; clicking it opens the editor.
+// Shows an equation in the text as typeset math. A click selects it, as in
+// Word, so it can be formatted with the text; a double-click (or Enter while
+// it's selected) opens the editor.
 
 import type { Node } from "prosemirror-model";
 import type { EditorView, NodeView } from "prosemirror-view";
@@ -17,8 +19,7 @@ export class MathView implements NodeView {
     private edit: EditMath,
   ) {
     this.dom = document.createElement("span");
-    this.dom.addEventListener("mousedown", (event) => {
-      if (event.button !== 0) return;
+    this.dom.addEventListener("dblclick", (event) => {
       event.preventDefault();
       const pos = this.getPos();
       if (pos !== undefined && this.view.editable) this.edit(pos);
@@ -29,7 +30,7 @@ export class MathView implements NodeView {
   private draw() {
     const { latex, display } = this.node.attrs;
     this.dom.className = `math${display ? " display" : ""}`;
-    this.dom.title = "Click to edit the equation";
+    this.dom.title = "Double-click to edit the equation";
     this.dom.replaceChildren();
     if (!latex.trim()) {
       this.dom.classList.add("empty");
@@ -41,7 +42,7 @@ export class MathView implements NodeView {
     } catch (error) {
       this.dom.classList.add("error");
       this.dom.textContent = latex;
-      this.dom.title = error instanceof MathSyntaxError ? `${error.message}. Click to fix.` : "Click to edit the equation";
+      this.dom.title = error instanceof MathSyntaxError ? `${error.message}. Double-click to fix.` : "Double-click to edit the equation";
     }
   }
 
@@ -66,6 +67,6 @@ export class MathView implements NodeView {
   }
 
   stopEvent(event: Event) {
-    return event.type === "mousedown";
+    return event.type === "dblclick";
   }
 }

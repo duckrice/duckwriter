@@ -7,7 +7,7 @@ import { gapCursor } from "prosemirror-gapcursor";
 import { history } from "prosemirror-history";
 import { keymap } from "prosemirror-keymap";
 import type { Node } from "prosemirror-model";
-import { EditorState, Plugin, TextSelection, type Command, type Transaction } from "prosemirror-state";
+import { EditorState, NodeSelection, Plugin, TextSelection, type Command, type Transaction } from "prosemirror-state";
 import { EditorView } from "prosemirror-view";
 import type { DocContext } from "../docx/model";
 import { addRowAfter, columnResizing, goToNextCell, isInTable, tableEditing } from "prosemirror-tables";
@@ -64,7 +64,13 @@ export function createState(doc: Node, ctx: () => DocContext, pages?: Omit<Pagin
           if (dispatch) dispatch(state.tr.replaceSelectionWith(state.schema.nodes.hard_break.create()).scrollIntoView());
           return true;
         }),
-        Enter: c((x) => newParagraph(x)),
+        // Enter on a selected equation opens it for editing; otherwise a new paragraph.
+        Enter: chainCommands((state, _dispatch, view) => {
+          const sel = state.selection;
+          if (!(sel instanceof NodeSelection) || sel.node.type !== schema.nodes.math || !view) return false;
+          editEquation(view, sel.from);
+          return true;
+        }, c((x) => newParagraph(x))),
         // In a table, Tab goes to the next cell; in the last one it adds a row, as in Word.
         Tab: chainCommands(
           goToNextCell(1),

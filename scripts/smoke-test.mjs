@@ -415,6 +415,18 @@ await session(null, 9436, async (app) => {
   check("it shows the equation while typing", await app.waitFor(`!!document.querySelector(".eq-preview msup")`, 3000));
   await app.key("Enter", 13);
   check("Enter puts it in the text as typeset maths", await app.waitFor(`!!document.querySelector(".doc .math math msup") && !document.querySelector(".eq-editor")`, 3000));
+  // As in Word: a click selects the equation (for formatting), a double-click opens it.
+  const eq = await app.center(".doc .math");
+  await app.click(eq[0], eq[1]);
+  check("clicking an equation selects it, without opening it", await app.waitFor(`document.querySelector(".doc .math").classList.contains("selected") && !document.querySelector(".eq-editor")`, 2000));
+  await app.clickOn(".combo-arrow");
+  await app.evaluate(`[...document.querySelectorAll(".combo-item")].find((i) => i.textContent === "Times New Roman").dispatchEvent(new MouseEvent("mousedown", { bubbles: true }))`);
+  check("a font from the list keeps it typeset", await app.waitFor(`!!document.querySelector(".doc .math math msup") && !!document.querySelector(".doc .math").closest('[style*="Times New Roman"]')`, 2000));
+  await app.mouse("mousePressed", eq[0], eq[1], { clickCount: 2 });
+  await app.mouse("mouseReleased", eq[0], eq[1], { clickCount: 2 });
+  check("double-clicking opens it for editing", await app.waitFor(`!!document.querySelector(".eq-editor")`, 2000));
+  await app.key("Escape", 27);
+  await app.key("End", 35);
   await app.type(" and the sum is");
   await app.key("Enter", 13);
   await app.clickOn(`.tb[title="Equation (Alt+=)"]`);
