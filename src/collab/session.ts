@@ -36,6 +36,8 @@ export interface CollabApp {
   toast(text: string, kind?: "info" | "error"): void;
   /** Who is here changed, or the session started or ended. */
   sharingChanged(): void;
+  /** Writing together has ended, for the reason given; shown until dismissed. */
+  sharingEnded(why: string, role: "host" | "guest"): void;
   commentsUpdated(): void;
   /** Footnotes, headers or footers came from someone else. */
   sideUpdated(): void;
@@ -293,7 +295,7 @@ export class CollabSession {
     else if (m.t === "media") this.addMedia(m.key, m.ext, m.data);
     else if (m.t === "notes" || m.t === "stories") this.takeSide(m);
     else if (m.t === "sources") this.setSources(m.sources, m.style);
-    else if (m.t === "end") this.end("The person sharing stopped. Your copy stays open; save it to keep it.");
+    else if (m.t === "end") this.end(`${this.hostName} stopped sharing.`);
   }
 
   private async welcomed(m: Extract<Message, { t: "welcome" }>) {
@@ -450,7 +452,7 @@ export class CollabSession {
   }
 
   private left(peer: string) {
-    if (peer === "host" && this.role === "guest") return this.end("The person sharing has gone. Your copy stays open; save it to keep it.");
+    if (peer === "host" && this.role === "guest") return this.end(`${this.hostName} closed the document or lost the connection.`);
     const person = this.people.get(peer);
     this.people.delete(peer);
     const view = this.app.body;
@@ -465,12 +467,17 @@ export class CollabSession {
     if (this.ended) return;
     if (this.role === "host") void this.send("all", { t: "end" }).then(() => setTimeout(() => this.hub.close(), 300));
     else this.hub.close();
+    this.app.sharingEnded(this.role === "host" ? "You stopped sharing." : "You left.", this.role);
     this.finish();
+  }
+
+  private get hostName(): string {
+    return this.people.get("host")?.name || "The person sharing";
   }
 
   private end(reason: string) {
     if (this.ended) return;
-    this.app.toast(reason);
+    this.app.sharingEnded(reason, this.role);
     this.hub.close();
     this.finish();
   }

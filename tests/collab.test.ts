@@ -88,6 +88,10 @@ class FakeApp implements CollabApp {
   }
   toast() {}
   sharingChanged() {}
+  ended: string[] = [];
+  sharingEnded(why: string) {
+    this.ended.push(why);
+  }
   commentsUpdated() {}
   sideUpdated() {}
   type(at: number, text: string) {

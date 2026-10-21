@@ -2226,6 +2226,24 @@ kbd {
 
 /* ---- writing together ---------------------------------------------------------------------- */
 
+.ended-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 14px;
+  border-bottom: 1px solid #f59e0b;
+  background: #fef3c7;
+  color: #78350f;
+}
+
+.ended-bar[hidden] {
+  display: none;
+}
+
+.ended-text {
+  flex: 1;
+}
+
 .doc .peer-caret {
   position: relative;
   margin-left: -1px;

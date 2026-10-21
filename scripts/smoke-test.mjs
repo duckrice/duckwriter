@@ -1461,6 +1461,10 @@ for (const [method, place, ports] of [
       if (method === "lan") await kari.shoot("writing-together");
       await kari.evaluate(`window.__dw.collab.stop()`);
       check(`${method}: when the sharer stops, the other keeps their copy`, await ola.waitFor(`document.querySelector(".share-status").hidden && window.__dw.body.state.doc.textContent === "Dear Kari: Hello, world"`, 8000));
+      await ola.waitFor(`!document.querySelector(".ended-bar").hidden`, 5000);
+      const ended = await ola.evaluate(`(() => { const bar = document.querySelector(".ended-bar"); return bar.hidden ? "hidden: " + bar.textContent : bar.textContent; })()`);
+      check(`${method}: and a bar tells them it has ended, and who ended it`, ended.includes("Writing together has ended") && ended.includes("Kari stopped sharing") && ended.includes("Save a copy"), ended);
+      check(`${method}: the sharer sees it has ended too`, (await kari.evaluate(`document.querySelector(".ended-bar").textContent`)).includes("You stopped sharing"));
       check(`${method}: no errors in either app`, kari.errors.length === 0 && ola.errors.length === 0, [...kari.errors, ...ola.errors].join("; "));
     }, { profileDir: otherProfile });
   }, { profileDir: kariProfile });

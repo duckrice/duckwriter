@@ -95,6 +95,8 @@ class App {
   collab: CollabSession | null = null;
   /** The file as last opened or saved: someone joining starts from it. */
   private base: Uint8Array | null = null;
+  /** Says, until dismissed, that writing together has ended. */
+  private endedBar = h("div", { class: "ended-bar", role: "alert", hidden: true });
   private shareStatus = h("button", { type: "button", class: "status-button share-status", hidden: true, title: "Writing together (Alt+Shift+W)" });
   private navigation: NavigationPane;
   private navButton = h("button", { type: "button", class: "status-button nav-button", title: "Headings: the navigation pane (Alt+Shift+N)" }, "☰ Headings");
@@ -239,7 +241,7 @@ class App {
     this.words.addEventListener("click", () => this.wordCount());
     const status = h("footer", { class: "statusbar" }, this.navButton, this.pageCount, this.words, h("span", { class: "status-spacer" }), this.shareStatus, this.trackStatus, this.spellStatus, this.saveStatus, zoomOut, this.zoomLabel, zoomIn);
     document.head.append(this.styleEl, this.pageRule);
-    root.append(this.toolbar.el, h("div", { class: "main-row" }, this.navigation.el, this.workspace), status, this.toasts);
+    root.append(this.toolbar.el, this.endedBar, h("div", { class: "main-row" }, this.navigation.el, this.workspace), status, this.toasts);
 
     // Ctrl+wheel zooms; Alt+wheel makes the selected text a size bigger or smaller per notch.
     let altWheel = 0;
@@ -1002,8 +1004,28 @@ class App {
     this.body.updateState(state.reconfigure({ plugins: [...state.plugins.filter((p) => !remove.includes(p)), ...add] }));
   }
 
+  sharingEnded(why: string, role: "host" | "guest") {
+    const now =
+      role === "guest"
+        ? "What you see is now your own copy: nothing you type reaches the others. Save it to keep it."
+        : "The document stays open with everything written together; the others keep their own copies.";
+    const close = () => {
+      this.endedBar.hidden = true;
+      this.body.focus();
+    };
+    const button = (label: string, run: () => void, primary = false) => h("button", { type: "button", class: primary ? "btn primary small" : "btn small", onclick: run }, label);
+    this.endedBar.replaceChildren(
+      h("span", { class: "ended-icon", "aria-hidden": "true" }, "⏹"),
+      h("span", { class: "ended-text" }, h("strong", {}, "Writing together has ended. "), `${why} ${now}`),
+      role === "guest" ? button("Save a copy…", () => void this.save(true).then((saved) => saved && close()), true) : button("Share again…", () => (close(), showSharing(this))),
+      button("OK", close),
+    );
+    this.endedBar.hidden = false;
+  }
+
   sharingChanged() {
     const session = this.collab?.active ? this.collab : null;
+    if (session) this.endedBar.hidden = true;
     this.shareStatus.hidden = !session;
     if (session) this.shareStatus.textContent = `👥 ${session.role === "host" ? "Sharing" : "Shared"} · ${session.people.size}`;
     this.toolbar.update();
