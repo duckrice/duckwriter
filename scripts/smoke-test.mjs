@@ -121,6 +121,7 @@ async function session(files, port, run, { profileDir = profile, keepAutoSave = 
     errors,
     pid: child.pid,
     exited: () => child.exitCode !== null,
+    send,
     async evaluate(expression) {
       const { result } = await send("Runtime.evaluate", { expression, awaitPromise: true, returnByValue: true });
       if (result.exceptionDetails) throw new Error(result.exceptionDetails.exception?.description ?? "evaluate failed");
@@ -803,6 +804,38 @@ await session(null, 9470, async (app) => {
 
 await session(withPictures, 9471, async (app) => {
   check("the saved picture opens again where it was", await app.waitFor(`(() => { const img = document.querySelector(".doc .picture-box.floating img"); return !!img && img.naturalWidth === 400; })()`, 5000));
+
+  // Copying a picture puts the picture itself on the clipboard, which other programs (and DuckWriter) can paste.
+  await app.send("Browser.grantPermissions", { permissions: ["clipboardReadWrite", "clipboardSanitizedWrite"] });
+  const picture = await app.center(".picture-box img");
+  await app.click(picture[0], picture[1]);
+  check("clicking a picture selects it", (await app.evaluate(`window.__dw.body.state.selection.node?.type.name`)) === "image");
+  await app.send("Runtime.evaluate", { expression: `document.execCommand("copy")`, userGesture: true });
+  const copied = await app.evaluate(`(async () => {
+    for (let i = 0; i < 30; i++) {
+      const items = await navigator.clipboard.read().catch(() => []);
+      const item = items.find((it) => it.types.includes("image/png"));
+      if (item) {
+        const bitmap = await createImageBitmap(await item.getType("image/png"));
+        return bitmap.width + "x" + bitmap.height;
+      }
+      await new Promise((r) => setTimeout(r, 100));
+    }
+    return "nothing";
+  })()`);
+  check("copying a picture puts the picture itself on the clipboard", copied === "400x300", copied);
+  // Pasting HTML with a picture in it (as when pictures are copied with text) gives it its own copy.
+  await app.key("End", 35, 2);
+  const pasted = await app.evaluate(`(async () => {
+    const view = window.__dw.body;
+    const blob = await (await fetch(document.querySelector(".doc .picture-box img").src)).blob();
+    const url = await new Promise((r) => { const f = new FileReader(); f.onload = () => r(f.result); f.readAsDataURL(blob); });
+    view.pasteHTML('<p>Copied <img src="' + url + '" style="width:30pt;height:22.5pt"> here</p>');
+    let media = null;
+    view.state.doc.descendants((n) => { if (n.type.name === "image" && n.attrs.width === 30) media = n.attrs.media; });
+    return !!media && window.__dw.ctx.media.get(media)?.bytes.length === new Uint8Array(await blob.arrayBuffer()).length;
+  })()`);
+  check("pasting HTML with a picture in it keeps the picture", pasted === true);
 });
 rmSync(withPictures, { force: true });
 

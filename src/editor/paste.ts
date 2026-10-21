@@ -6,6 +6,7 @@ import { Fragment, Slice, type Node } from "prosemirror-model";
 import { Plugin } from "prosemirror-state";
 import type { DocContext } from "../docx/model";
 import { createList } from "./lists";
+import { pastedPictures } from "./copy";
 import { schema } from "./schema";
 
 /** Rewrites pasted HTML so each list item is a paragraph saying which list and level it is in. */
@@ -71,7 +72,7 @@ export function pastePlugin(ctx: () => DocContext) {
     props: {
       transformPastedHTML: flattenPastedLists,
       transformPasted: (slice) => {
-        const content = realLists(slice.content, ctx(), {});
+        const content = realLists(pastedPictures(slice.content, ctx()), ctx(), {});
         const first = content.firstChild;
         firstList = slice.openStart > 0 && first?.type === schema.nodes.paragraph && first.attrs.numId ? { numId: first.attrs.numId, ilvl: first.attrs.ilvl, style: first.attrs.style } : null;
         return new Slice(content, slice.openStart, slice.openEnd);

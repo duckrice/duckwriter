@@ -19,6 +19,7 @@ import { findPlugin } from "./find";
 import { spellingPlugin } from "./spelling";
 import { reviewPlugin } from "./review";
 import { trackPlugin } from "./track";
+import { copyPictures } from "./copy";
 import { pastePlugin } from "./paste";
 import { autoFormatPlugin } from "./autoformat";
 import { paraMarkPlugin } from "./paramark";
@@ -114,6 +115,14 @@ export function createState(doc: Node, ctx: () => DocContext, pages?: Omit<Pagin
       new Plugin({
         props: {
           handleDOMEvents: {
+            copy(view) {
+              copyPictures(view);
+              return false;
+            },
+            cut(view) {
+              copyPictures(view);
+              return false;
+            },
             // Links are followed only with Ctrl held, as in Word, and never inside the app's own window.
             click(view, event) {
               const endnote = (event.target as HTMLElement).closest<HTMLElement>(".endnote-ref");

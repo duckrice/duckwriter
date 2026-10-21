@@ -276,6 +276,22 @@ export const schema = new Schema(clipboardReady({
         original: { default: null },
       },
       toDOM: (node) => ["img", { class: "picture", src: node.attrs.src, alt: node.attrs.alt, style: `width:${node.attrs.width}pt;height:${node.attrs.height}pt` }],
+      // Pasted pictures; the paste plugin gives them their own copy (or leaves out ones it can't read).
+      parseDOM: [
+        {
+          tag: "img[src]",
+          getAttrs: (dom) => {
+            const img = dom as HTMLImageElement;
+            // Points from the style DuckWriter writes, else pixels (three quarters of a point).
+            const size = (name: "width" | "height") => {
+              const style = new RegExp(`${name}:\\s*([\\d.]+)(pt|px)`).exec(img.getAttribute("style") ?? "");
+              if (style) return Number(style[1]) * (style[2] === "px" ? 0.75 : 1);
+              return Number(img.getAttribute(name)) * 0.75 || (name === "width" ? img.naturalWidth : img.naturalHeight) * 0.75 || 150;
+            };
+            return { src: img.getAttribute("src"), alt: img.getAttribute("alt") ?? "", width: size("width"), height: size("height") };
+          },
+        },
+      ],
     },
 
     /**
