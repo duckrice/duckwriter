@@ -5,7 +5,6 @@ made for scientific writing: equations, footnotes, captions and
 cross-references, citations and a reference list, tracked changes and comments.
 Part of the duckware family, next to [Duckument](https://github.com/duckrice/duckument).
 
-See [PLAN.md](PLAN.md) for what it does and what's coming.
 
 ## Install
 
