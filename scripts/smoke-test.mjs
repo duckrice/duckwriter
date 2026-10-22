@@ -1293,6 +1293,13 @@ await session(versioned, 9590, async (app) => {
   await app.key("L", 76, ALT | SHIFT);
   check("then none", (await app.count(".line-number")) === 0);
 
+  // Insert → Date and time: today, in the chosen form.
+  await app.evaluate(`(() => { const v = window.__dw.body; v.dispatch(v.state.tr.setSelection(window.__dw.body.state.selection.constructor.atEnd(v.state.doc))); v.focus(); })()`);
+  await app.clickOn('.split-arrow[title^="Today\'s date"]');
+  const longDate = await app.evaluate(`new Date().toLocaleDateString(undefined, { day: "numeric", month: "long", year: "numeric" })`);
+  await app.clickText(".menu .menu-item", longDate);
+  check("Insert → Date and time puts today's date in", await app.waitFor(`window.__dw.body.state.doc.textContent.includes(${JSON.stringify(longDate)})`, 3000), longDate);
+
   // Page numbers in the footer.
   await app.clickOn('.split-arrow[title^="Header and footer"]');
   await app.clickText(".menu .menu-item", "At the bottom, centred");

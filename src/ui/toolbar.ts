@@ -243,6 +243,7 @@ export class Toolbar {
             this.splitButton("equation", "Equation (Alt+=)", null, () => insertEquation(this.host.view), () => this.equationMenu()),
             this.splitButton("symbol", "Symbol (Ctrl+Shift+Y)", null, () => this.symbolMenu(), () => this.symbolMenu()),
             this.button("link", "Link (Ctrl+K)", () => editLink(this.host.view, this.host.ctx)),
+            this.splitButton("calendar", "Today's date (the arrow: other forms, and the time)", null, () => this.insertNow(new Date().toLocaleDateString()), () => this.dateMenu()),
           ),
           group(
             this.button("pageBreak", "Page break (Ctrl+Enter)", () => this.run(insertPageBreak())),
@@ -743,6 +744,32 @@ export class Toolbar {
       this.simpleItem("All markup", () => this.host.setMarkup("all"), m === "all"),
       this.simpleItem("Final: as if all changes were accepted", () => this.host.setMarkup("final"), m === "final"),
       this.simpleItem("Original: as before the changes", () => this.host.setMarkup("original"), m === "original"),
+    );
+  }
+
+  private insertNow(text: string) {
+    const view = this.host.view;
+    view.dispatch(view.state.tr.insertText(text).scrollIntoView());
+    view.focus();
+  }
+
+  /** Date and time, as Word's Insert → Date & Time: today in a few ways, put in as text. */
+  private dateMenu(): HTMLElement {
+    const now = new Date();
+    const forms = [
+      now.toLocaleDateString(),
+      now.toLocaleDateString(undefined, { day: "numeric", month: "long", year: "numeric" }),
+      now.toLocaleDateString(undefined, { weekday: "long", day: "numeric", month: "long", year: "numeric" }),
+      now.toISOString().slice(0, 10),
+      now.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+      `${now.toLocaleDateString()} ${now.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`,
+    ];
+    return h(
+      "div",
+      { class: "menu date-menu" },
+      ...forms.map((text) =>
+        this.simpleItem(text, () => this.insertNow(text)),
+      ),
     );
   }
 

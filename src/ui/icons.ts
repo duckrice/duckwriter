@@ -36,6 +36,7 @@ const PATHS = {
   caret: '<path d="m7 10 5 5 5-5"/>',
   pageBreak: '<path d="M6 3v5h12V3M6 21v-5h12v5M3 12h3M9 12h2M13 12h2M18 12h3"/>',
   equation: '<path d="M5 6h12M7 6v12M15 6v10a2 2 0 0 0 2 2h1"/>',
+  calendar: '<rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4M7 14h2M11 14h2M15 14h2M7 17h2M11 17h2"/>',
   symbol: '<path d="M5 19h4v-2.500A6.500 6.500 0 1 1 15 16.500V19h4"/>',
   header: '<rect x="4" y="3" width="16" height="18" rx="2"/><path d="M4 8h16M4 16h16M8 12h8"/>',
   footnote: '<path d="M4 6h10M4 10h14M4 14h8"/><path d="M15 13h3v-4" stroke-width="1.500"/><path d="M4 19h7" stroke-width="1.200"/>',
