@@ -31,6 +31,7 @@ import {
   stepSize,
   toggleFormat,
   toggleVertAlign,
+  sortParagraphs,
 } from "../editor/commands";
 import { changeListLevel, kindOf, listOf, toggleList } from "../editor/lists";
 import { reviewers } from "../editor/review";
@@ -230,6 +231,7 @@ export class Toolbar {
             this.button("indentLess", "Decrease indent (Ctrl+Shift+M)", () => this.indent(-1)),
             this.button("indentMore", "Increase indent (Ctrl+M)", () => this.indent(1)),
             this.splitButton("lineSpacing", "Line spacing (Ctrl+1, Ctrl+5, Ctrl+2)", null, () => this.spacingMenu(), () => this.spacingMenu()),
+            this.splitButton("sort", "Sort the selected lines A to Z (the arrow: Z to A)", null, () => this.run(sortParagraphs()), () => h("div", { class: "menu" }, this.simpleItem("A to Z", () => this.run(sortParagraphs())), this.simpleItem("Z to A", () => this.run(sortParagraphs(true))))),
           ),
         ],
       },

@@ -219,6 +219,36 @@ export function setAlign(align: "left" | "center" | "right" | "justify"): Comman
   return setParagraphs(() => ({ align }));
 }
 
+/**
+ * Sorts the paragraphs the selection touches by their text, A to Z (or Z to A), as Word's Sort:
+ * numbers in order of size, letters as the language orders them (æ, ø and å last in Norwegian).
+ */
+export function sortParagraphs(descending = false): Command {
+  return (state, dispatch) => {
+    const { $from, $to } = state.selection;
+    // The paragraphs' parent: the document (also for Select all), or a table cell.
+    const depth = Math.max(0, Math.min($from.depth, $to.depth) - 1);
+    if ($from.node(depth) !== $to.node(depth)) return false;
+    const parent = $from.node(depth);
+    const first = $from.index(depth);
+    const last = Math.min($to.index(depth), parent.childCount - 1);
+    if (last <= first) return false;
+    const blocks: import("prosemirror-model").Node[] = [];
+    let start = depth === 0 ? 0 : $from.start(depth);
+    for (let i = 0; i < first; i++) start += parent.child(i).nodeSize;
+    let end = start;
+    for (let i = first; i <= last; i++) {
+      blocks.push(parent.child(i));
+      end += parent.child(i).nodeSize;
+    }
+    if (blocks.some((b) => !b.isTextblock)) return false;
+    const collator = new Intl.Collator(undefined, { numeric: true, sensitivity: "base" });
+    const sorted = [...blocks].sort((a, b) => collator.compare(a.textContent, b.textContent) * (descending ? -1 : 1));
+    if (dispatch) dispatch(state.tr.replaceWith(start, end, sorted).scrollIntoView());
+    return true;
+  };
+}
+
 export function setLineSpacing(multiple: number): Command {
   return setParagraphs(() => ({ lineSpacing: multiple, lineHeight: null, lineRule: null }));
 }
