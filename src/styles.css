@@ -776,6 +776,15 @@ body {
   cursor: text;
 }
 
+/* The page border: drawn on the paper, behind the text. */
+.page-sheet.bordered::after {
+  content: "";
+  position: absolute;
+  inset: var(--border-inset);
+  border: var(--border);
+  pointer-events: none;
+}
+
 .sheet .doc {
   position: relative;
   z-index: 1;

@@ -110,6 +110,19 @@ export interface PageSetup {
   lineGrid: number | null;
   /** Line numbers in the margin (Word's lnNumType), as journals ask for in manuscripts; or null. */
   lineNumbers?: { countBy: number; restart: "continuous" | "newPage" } | null;
+  /** A line round every page (Word's pgBorders), as its top side has it; or null. */
+  border?: PageBorder | null;
+}
+
+export interface PageBorder {
+  /** Word's line style: single, double, dotted, dashed, thick, or a picture border's name. */
+  kind: string;
+  /** Width in points. */
+  size: number;
+  color: string;
+  /** Distance in points from the edge of the page, or from the text when `fromText`. */
+  space: number;
+  fromText: boolean;
 }
 
 /** A header or footer: its own little document, in its own part of the file. */
@@ -214,6 +227,8 @@ export interface DocContext {
   titlePage: boolean;
   /** The line grid was switched on or off, so the section properties need updating. */
   lineGridChanged?: boolean;
+  /** The page border was changed, so the section properties need updating. */
+  borderChanged?: boolean;
   /** The paper size or margins were changed, so the section properties need updating. */
   pageChanged?: boolean;
   footnotes: Footnotes;

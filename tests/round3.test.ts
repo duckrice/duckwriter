@@ -85,6 +85,18 @@ describe("lists of figures, numbered equations, line numbers", () => {
     expect(await part(saved, "word/document.xml")).toContain('<w:lnNumType w:countBy="5" w:restart="newPage"/>');
     expect((await readDocx(saved)).context.page.lineNumbers).toEqual({ countBy: 5, restart: "newPage" });
   });
+
+  it("saves a page border as Word's pgBorders, and reads it back", async () => {
+    const { doc, context } = await readDocx(await blankDocx());
+    context.page = { ...context.page, border: { kind: "double", size: 0.75, color: "#1F4E79", space: 24, fromText: false } };
+    context.borderChanged = true;
+    const saved = await writeDocx(doc, context);
+    const xml = await part(saved, "word/document.xml");
+    expect(xml).toContain('<w:pgBorders w:offsetFrom="page"><w:top w:val="double" w:sz="6" w:space="24" w:color="1F4E79"/>');
+    // In Word's order: after the margins, before the columns.
+    expect(xml.indexOf("<w:pgBorders")).toBeGreaterThan(xml.indexOf("<w:pgMar"));
+    expect((await readDocx(saved)).context.page.border).toEqual({ kind: "double", size: 0.75, color: "#1F4E79", space: 24, fromText: false });
+  });
 });
 
 describe("change case", () => {

@@ -1293,6 +1293,14 @@ await session(versioned, 9590, async (app) => {
   await app.key("L", 76, ALT | SHIFT);
   check("then none", (await app.count(".line-number")) === 0);
 
+  // A page border: a line round every page, 24 pt in from the edge.
+  await app.evaluate(`window.__dw.setPageBorder("double")`);
+  const border = await app.evaluate(`(() => { const s = document.querySelector(".page-sheet"); const a = getComputedStyle(s, "::after"); return [s.classList.contains("bordered"), a.borderTopStyle, a.top, document.querySelectorAll(".page-sheet.bordered").length === document.querySelectorAll(".page-sheet").length]; })()`);
+  check("a page border goes round every page", border[0] && border[1] === "double" && border[2] === "32px" && border[3], JSON.stringify(border));
+  await app.shoot("page-border");
+  await app.evaluate(`window.__dw.setPageBorder(null)`);
+  check("and comes off again", (await app.count(".page-sheet.bordered")) === 0);
+
   // Insert → Date and time: today, in the chosen form.
   await app.evaluate(`(() => { const v = window.__dw.body; v.dispatch(v.state.tr.setSelection(window.__dw.body.state.selection.constructor.atEnd(v.state.doc))); v.focus(); })()`);
   await app.clickOn('.split-arrow[title^="Today\'s date"]');

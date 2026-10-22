@@ -68,6 +68,7 @@ export interface ToolbarHost {
   pageNumbers(where: "bottom-center" | "bottom-right" | "top-right"): void;
   styleChanged(id: string): void;
   setLineNumbers(restart: "continuous" | "newPage" | null): void;
+  setPageBorder(kind: "single" | "double" | "thick" | null): void;
   share(): void;
   openRecent(path: string): void;
   versions(): void;
@@ -608,6 +609,12 @@ export class Toolbar {
       this.simpleItem("None", () => this.host.setLineNumbers(null), !this.host.ctx.page.lineNumbers),
       this.simpleItem("Through the document", () => this.host.setLineNumbers("continuous"), this.host.ctx.page.lineNumbers?.restart === "continuous"),
       this.simpleItem("From 1 on each page", () => this.host.setLineNumbers("newPage"), this.host.ctx.page.lineNumbers?.restart === "newPage"),
+      h("div", { class: "menu-separator" }),
+      h("div", { class: "menu-title" }, "Page border"),
+      this.simpleItem("None", () => this.host.setPageBorder(null), !this.host.ctx.page.border),
+      this.simpleItem("Thin line", () => this.host.setPageBorder("single"), this.host.ctx.page.border?.kind === "single"),
+      this.simpleItem("Double line", () => this.host.setPageBorder("double"), this.host.ctx.page.border?.kind === "double"),
+      this.simpleItem("Thick line", () => this.host.setPageBorder("thick"), this.host.ctx.page.border?.kind === "thick"),
       h("div", { class: "menu-separator" }),
       snap,
       h("div", { class: "menu-hint" }, "Pictures line up on a half-centimetre grid and with the margins when moved or resized. Hold Alt to place freely."),

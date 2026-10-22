@@ -3,7 +3,7 @@ import type { Node } from "prosemirror-model";
 import { TextSelection } from "prosemirror-state";
 import type { EditorView } from "prosemirror-view";
 import { h } from "./dom";
-import { resolvedPara, resolvedRun, type DocContext } from "./docx/model";
+import { resolvedPara, resolvedRun, type DocContext, type PageSetup } from "./docx/model";
 import { readDocx } from "./docx/read";
 import { ensureStyles } from "./docx/builtins";
 import { blankDocx } from "./docx/template";
@@ -59,6 +59,19 @@ import { icon } from "./ui/icons";
 import { Toolbar } from "./ui/toolbar";
 
 const ZOOMS = [0.5, 0.67, 0.75, 0.9, 1, 1.1, 1.25, 1.5, 1.75, 2, 2.5, 3];
+
+/** Draws the page border (if any) on a sheet of paper, as Word places it. */
+function drawBorder(sheet: HTMLElement, page: PageSetup) {
+  const b = page.border;
+  sheet.classList.toggle("bordered", !!b);
+  if (!b) return;
+  const line = b.kind === "double" ? "double" : b.kind === "dotted" ? "dotted" : b.kind.startsWith("dash") ? "dashed" : "solid";
+  // Double lines need room for two lines and the gap between.
+  const width = line === "double" ? Math.max(b.size * 3, 2.25) : b.kind === "thick" ? Math.max(b.size, 2.25) : b.size;
+  const inset = (margin: number) => (b.fromText ? Math.max(0, margin - b.space - width) : b.space);
+  sheet.style.setProperty("--border", `${width}pt ${line} ${b.color}`);
+  sheet.style.setProperty("--border-inset", `${inset(page.marginTop)}pt ${inset(page.marginRight)}pt ${inset(page.marginBottom)}pt ${inset(page.marginLeft)}pt`);
+}
 
 class App {
   ctx!: DocContext;
@@ -467,6 +480,15 @@ class App {
     this.setLineNumbers(!now ? "continuous" : now.restart === "continuous" ? "newPage" : null);
   }
 
+  /** A line round every page, or none. */
+  setPageBorder(kind: "single" | "double" | "thick" | null) {
+    this.ctx.page = { ...this.ctx.page, border: kind && { kind, size: kind === "double" ? 0.75 : kind === "thick" ? 2.25 : 1, color: this.ctx.page.border?.color ?? "#000000", space: 24, fromText: false } };
+    this.ctx.borderChanged = true;
+    if (this.lastLayout) this.drawPages(this.lastLayout);
+    this.changed(false, true);
+    this.toast(kind ? "Every page has a border" : "No page border");
+  }
+
   setLineNumbers(restart: "continuous" | "newPage" | null) {
     this.ctx.page = { ...this.ctx.page, lineNumbers: restart ? { countBy: this.ctx.page.lineNumbers?.countBy ?? 1, restart } : null };
     this.ctx.pageChanged = true;
@@ -836,6 +858,8 @@ class App {
       sheet.style.height = `${setup.height}pt`;
       sheet.style.width = setup.width === p.width ? "" : `${setup.width}pt`;
       sheet.style.left = setup.width === p.width ? "" : `${pageOffset(setup, p)}pt`;
+      // shortcut: one border for the whole document; sections with borders of their own show this one.
+      drawBorder(sheet, { ...setup, border: p.border });
       height += setup.height;
     });
     const last = pageBox(layout, layout.count - 1, p);

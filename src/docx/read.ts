@@ -561,11 +561,26 @@ function readPage(sectPr: Element | null): PageSetup {
     footerDistance: Math.max(0, get(margin, "footer", DEFAULT_PAGE.footerDistance)),
     lineGrid: lineGridOf(child(sectPr, "docGrid")),
     lineNumbers: lineNumbersOf(child(sectPr, "lnNumType")),
+    border: borderOf(child(sectPr, "pgBorders")),
   };
   // Margins that leave no room for text: the usual ones instead.
   if (page.marginTop + page.marginBottom > page.height - 36) Object.assign(page, { marginTop: Math.min(72, page.height / 4), marginBottom: Math.min(72, page.height / 4) });
   if (page.marginLeft + page.marginRight > page.width - 36) Object.assign(page, { marginLeft: Math.min(72, page.width / 4), marginRight: Math.min(72, page.width / 4) });
   return page;
+}
+
+function borderOf(el: Element | null): PageSetup["border"] {
+  const side = ["top", "left", "bottom", "right"].map((name) => child(el, name)).find((s) => s && attr(s, "val") && attr(s, "val") !== "none" && attr(s, "val") !== "nil");
+  if (!el || !side) return null;
+  const color = attr(side, "color");
+  return {
+    kind: attr(side, "val")!,
+    // In eighths of a point; Word allows 1/4 to 6 points for lines.
+    size: Math.min(31, Math.max(0.25, (numAttr(side, "sz") ?? 4) / 8)),
+    color: color && /^[0-9a-f]{6}$/i.test(color) ? `#${color}` : "#000000",
+    space: Math.min(31, Math.max(0, numAttr(side, "space") ?? 24)),
+    fromText: attr(el, "offsetFrom") !== "page",
+  };
 }
 
 function lineNumbersOf(el: Element | null): PageSetup["lineNumbers"] {

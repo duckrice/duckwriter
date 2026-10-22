@@ -1002,6 +1002,15 @@ function updateSectPr(ctx: DocContext) {
     if (p.lineNumbers) parts.push(tag("w:lnNumType", { "w:countBy": p.lineNumbers.countBy, "w:restart": p.lineNumbers.restart }));
     ctx.pageChanged = false;
   }
+  if (ctx.borderChanged) {
+    parts = parts.filter((p) => localName(p) !== "pgBorders");
+    const b = ctx.page.border;
+    if (b) {
+      const side = (name: string) => tag(`w:${name}`, { "w:val": b.kind, "w:sz": Math.round(b.size * 8), "w:space": Math.round(b.space), "w:color": b.color.replace("#", "").toUpperCase() });
+      parts.push(`<w:pgBorders w:offsetFrom="${b.fromText ? "text" : "page"}">${["top", "left", "bottom", "right"].map(side).join("")}</w:pgBorders>`);
+    }
+    ctx.borderChanged = false;
+  }
   if (ctx.lineGridChanged) {
     parts = parts.filter((p) => localName(p) !== "docGrid");
     parts.push(ctx.page.lineGrid ? `<w:docGrid w:type="lines" w:linePitch="${Math.round(ctx.page.lineGrid * TWIPS_PER_POINT)}"/>` : '<w:docGrid w:linePitch="360"/>');
