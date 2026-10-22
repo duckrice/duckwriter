@@ -9,6 +9,7 @@ import { armPainter, painterArmed } from "./painter";
 import { recentFiles } from "../recent";
 import { baseName } from "../platform";
 import { editLink } from "./links";
+import { watermarkText } from "../watermark";
 // The formatting toolbar. It shows the formatting at the cursor and applies
 // changes through the editor's commands.
 
@@ -69,6 +70,7 @@ export interface ToolbarHost {
   styleChanged(id: string): void;
   setLineNumbers(restart: "continuous" | "newPage" | null): void;
   setPageBorder(kind: "single" | "double" | "thick" | null): void;
+  setWatermark(text: string | null): void;
   share(): void;
   openRecent(path: string): void;
   versions(): void;
@@ -615,6 +617,10 @@ export class Toolbar {
       this.simpleItem("Thin line", () => this.host.setPageBorder("single"), this.host.ctx.page.border?.kind === "single"),
       this.simpleItem("Double line", () => this.host.setPageBorder("double"), this.host.ctx.page.border?.kind === "double"),
       this.simpleItem("Thick line", () => this.host.setPageBorder("thick"), this.host.ctx.page.border?.kind === "thick"),
+      h("div", { class: "menu-separator" }),
+      h("div", { class: "menu-title" }, "Watermark"),
+      this.simpleItem("None", () => this.host.setWatermark(null), !watermarkText(this.host.ctx)),
+      ...["DRAFT", "CONFIDENTIAL", "COPY", "SAMPLE", "UTKAST", "KONFIDENSIELT"].map((words) => this.simpleItem(words, () => this.host.setWatermark(words), watermarkText(this.host.ctx) === words)),
       h("div", { class: "menu-separator" }),
       snap,
       h("div", { class: "menu-hint" }, "Pictures line up on a half-centimetre grid and with the margins when moved or resized. Hold Alt to place freely."),

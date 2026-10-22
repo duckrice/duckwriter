@@ -1300,6 +1300,11 @@ await session(versioned, 9590, async (app) => {
   await app.shoot("page-border");
   await app.evaluate(`window.__dw.setPageBorder(null)`);
   check("and comes off again", (await app.count(".page-sheet.bordered")) === 0);
+  await app.evaluate(`window.__dw.setWatermark("DRAFT")`);
+  check("a watermark goes across every page", (await app.count('.page-sheet[data-watermark="DRAFT"]')) === (await app.count(".page-sheet")));
+  await app.shoot("watermark");
+  await app.evaluate(`window.__dw.setWatermark(null)`);
+  check("and comes off again", (await app.count(".page-sheet[data-watermark]")) === 0);
 
   // Insert → Date and time: today, in the chosen form.
   await app.evaluate(`(() => { const v = window.__dw.body; v.dispatch(v.state.tr.setSelection(window.__dw.body.state.selection.constructor.atEnd(v.state.doc))); v.focus(); })()`);

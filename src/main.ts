@@ -23,6 +23,7 @@ import type { CollabSession } from "./collab/session";
 import { joinSharing, showSharing, startSharing, stopSharing } from "./ui/share";
 import type { Method } from "./collab/invite";
 import { schema } from "./editor/schema";
+import { setWatermark, watermarkText } from "./watermark";
 import { PAGE_GAP, pageAt, pageBox, pageOffset, relayout, setPageGap, type PageLayout } from "./editor/pagination";
 import { invoke } from "@tauri-apps/api/core";
 import { stylesheetFor } from "./editor/stylesheet";
@@ -480,6 +481,14 @@ class App {
     this.setLineNumbers(!now ? "continuous" : now.restart === "continuous" ? "newPage" : null);
   }
 
+  /** Big see-through words across every page (as Word's watermark), or none. */
+  setWatermark(text: string | null) {
+    setWatermark(this.ctx, text);
+    if (this.lastLayout) this.drawPages(this.lastLayout);
+    this.changed(false, true);
+    this.toast(text ? `Every page says ${text}` : "No watermark");
+  }
+
   /** A line round every page, or none. */
   setPageBorder(kind: "single" | "double" | "thick" | null) {
     this.ctx.page = { ...this.ctx.page, border: kind && { kind, size: kind === "double" ? 0.75 : kind === "thick" ? 2.25 : 1, color: this.ctx.page.border?.color ?? "#000000", space: 24, fromText: false } };
@@ -850,6 +859,7 @@ class App {
     while (this.pagesLayer.children.length < layout.count) this.pagesLayer.append(h("div", { class: "page-sheet" }));
     while (this.pagesLayer.children.length > layout.count) this.pagesLayer.lastElementChild!.remove();
     let height = 0;
+    const mark = watermarkText(this.ctx);
     [...this.pagesLayer.children].forEach((el, i) => {
       const sheet = el as HTMLElement;
       // A section may have pages of its own size (a landscape table).
@@ -860,6 +870,9 @@ class App {
       sheet.style.left = setup.width === p.width ? "" : `${pageOffset(setup, p)}pt`;
       // shortcut: one border for the whole document; sections with borders of their own show this one.
       drawBorder(sheet, { ...setup, border: p.border });
+      if (mark) sheet.dataset.watermark = mark;
+      else delete sheet.dataset.watermark;
+      sheet.style.setProperty("--watermark-size", `${Math.round(Math.min(110, 760 / Math.max(4, mark?.length ?? 4)))}pt`);
       height += setup.height;
     });
     const last = pageBox(layout, layout.count - 1, p);

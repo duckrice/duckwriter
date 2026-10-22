@@ -127,3 +127,18 @@ describe("templates", () => {
     }
   });
 });
+
+describe("watermarks", () => {
+  it("are saved in the header as Word's watermark shape, and found again", async () => {
+    const { setWatermark, watermarkText } = await import("../src/watermark");
+    const { doc, context } = await readDocx(await blankDocx());
+    setWatermark(context, "DRAFT & CO");
+    expect(watermarkText(context)).toBe("DRAFT & CO");
+    const saved = await writeDocx(doc, context);
+    const again = await readDocx(saved);
+    expect(watermarkText(again.context)).toBe("DRAFT & CO");
+    setWatermark(again.context, "COPY");
+    setWatermark(again.context, null);
+    expect(watermarkText(again.context)).toBeNull();
+  });
+});

@@ -779,6 +779,21 @@ body {
   cursor: text;
 }
 
+/* A watermark: big grey words turned across the middle of the paper, behind the text. */
+.page-sheet[data-watermark]::before {
+  content: attr(data-watermark);
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transform: rotate(-45deg);
+  color: rgb(192 192 192 / 0.5);
+  font: bold var(--watermark-size, 96pt) Calibri, "Segoe UI", sans-serif;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
 /* The page border: drawn on the paper, behind the text. */
 .page-sheet.bordered::after {
   content: "";
@@ -2647,4 +2662,9 @@ kbd {
 .menu-remove:hover {
   background: var(--hover);
   color: var(--text);
+}
+
+/* The turned words stay on the paper (no sideways scrollbar). */
+.page-sheet[data-watermark] {
+  overflow: hidden;
 }
