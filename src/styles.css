@@ -307,6 +307,9 @@ body {
 .workspace {
   flex: 1;
   overflow: auto;
+  /* The page layout redraws page gaps and pictures as you type; the browser's scroll anchoring
+     would then nudge the view up and down at every key. The editor keeps the cursor in view itself. */
+  overflow-anchor: none;
   background: var(--workspace);
   padding: 28px 24px 60px;
 }
