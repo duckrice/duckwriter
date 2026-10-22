@@ -210,7 +210,7 @@ describe("sorting lines, as Word's Sort", () => {
     const { context } = await readDocx(await blankDocx());
     let state = createState(schema.node("doc", null, words.map((w) => schema.node("paragraph", null, [schema.text(w)]))), () => context);
     state = state.apply(state.tr.setSelection(new AllSelection(state.doc)));
-    expect(sortParagraphs()(state, (tr) => (state = state.apply(tr)))).toBe(true);
+    expect(sortParagraphs(false, "nb")(state, (tr) => (state = state.apply(tr)))).toBe(true);
     const sorted = [];
     state.doc.forEach((p) => sorted.push(p.textContent));
     expect(sorted.slice(0, 4)).toEqual(["2 pærer", "10 epler", "Abbor", "banan"]);

@@ -221,9 +221,9 @@ export function setAlign(align: "left" | "center" | "right" | "justify"): Comman
 
 /**
  * Sorts the paragraphs the selection touches by their text, A to Z (or Z to A), as Word's Sort:
- * numbers in order of size, letters as the language orders them (æ, ø and å last in Norwegian).
+ * numbers in order of size, letters as `locale` orders them (the computer's language if not given; æ, ø and å last in Norwegian).
  */
-export function sortParagraphs(descending = false): Command {
+export function sortParagraphs(descending = false, locale?: string): Command {
   return (state, dispatch) => {
     const { $from, $to } = state.selection;
     // The paragraphs' parent: the document (also for Select all), or a table cell.
@@ -242,7 +242,7 @@ export function sortParagraphs(descending = false): Command {
       end += parent.child(i).nodeSize;
     }
     if (blocks.some((b) => !b.isTextblock)) return false;
-    const collator = new Intl.Collator(undefined, { numeric: true, sensitivity: "base" });
+    const collator = new Intl.Collator(locale, { numeric: true, sensitivity: "base" });
     const sorted = [...blocks].sort((a, b) => collator.compare(a.textContent, b.textContent) * (descending ? -1 : 1));
     if (dispatch) dispatch(state.tr.replaceWith(start, end, sorted).scrollIntoView());
     return true;
