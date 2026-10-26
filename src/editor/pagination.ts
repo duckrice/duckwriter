@@ -9,7 +9,7 @@ import type { Node } from "prosemirror-model";
 import { Plugin, PluginKey, type EditorState } from "prosemirror-state";
 import { Decoration, DecorationSet, type EditorView } from "prosemirror-view";
 import { TableMap } from "prosemirror-tables";
-import { resolvedPara, type DocContext, type PageSetup } from "../docx/model";
+import { resolvedPara, type DocContext, type PageSetup, type ParaProps } from "../docx/model";
 import { pageFromSectPr } from "../docx/read";
 import { schema } from "./schema";
 
@@ -31,7 +31,7 @@ export interface PageLayout {
   /** Each page's number as headers and footers show it (sections can restart it, or count i, ii, iii). */
   labels?: string[];
   /** The sections: the page each starts on, and its properties (w:sectPr). */
-  sections?: { firstPage: number; xml: string }[];
+  sections?: { firstPage: number; type?: string; xml: string }[];
   /** Each page: where it starts (pixels from the top of the first) and its size and margins. */
   pages?: { top: number; setup: PageSetup }[];
 }
@@ -219,6 +219,10 @@ function layout(view: EditorView, hooks: PaginationHooks) {
   // Each section's page (size, orientation, margins): the last section's is the document's.
   const sectionOf: number[] = [];
   const setups: PageSetup[] = [];
+  // How each section starts (next page, odd page, continuous…): Word keeps that in the section's own
+  // properties, which come at its end, so it's known here before the layout reaches the section.
+  const starts: string[] = [];
+  const startOf = (xml: string) => /<w:type\b[^>]*w:val="(\w+)"/.exec(xml)?.[1] ?? "nextPage";
   {
     let s = 0;
     view.state.doc.forEach((node) => {
@@ -227,10 +231,12 @@ function layout(view: EditorView, hooks: PaginationHooks) {
       if (end) {
         // On paper (PDF, printing) every page has the document's size: one paper size per print.
         setups[s] = (!onPaper() && pageFromSectPr(end.xml)) || ctx.page;
+        starts[s] = startOf(end.xml);
         s++;
       }
     });
     setups[s] = ctx.page;
+    starts[s] = startOf(ctx.sectPr ?? "");
   }
 
   // The pages, made as the text reaches them; a section that starts a page sets that page's size.
@@ -311,7 +317,16 @@ function layout(view: EditorView, hooks: PaginationHooks) {
     if (r.height === 0 && r.width === 0) return;
     blocks.push({ node, pos, el, top: y(r.top), bottom: y(r.bottom) });
   });
-  const props = (node: Node) => (node.type === schema.nodes.paragraph ? resolvedPara(ctx.styles, node.attrs.style) : {});
+  const props = (node: Node): ParaProps => {
+    if (node.type !== schema.nodes.paragraph) return {};
+    const style = resolvedPara(ctx.styles, node.attrs.style);
+    // Set on the paragraph itself, these are kept in its raw properties and outrank its style's.
+    const own = (name: string) => {
+      const m = new RegExp(`<w:${name}\\b([^>]*)>`).exec(node.attrs.extra ?? "");
+      return m ? !/w:val="(0|false|off)"/.test(m[1]) : undefined;
+    };
+    return { ...style, keepNext: own("keepNext") ?? style.keepNext, pageBreakBefore: own("pageBreakBefore") ?? style.pageBreakBefore };
+  };
 
   // Footnotes take room at the bottom of the page their mark is on.
   const reserved: number[] = [];
@@ -337,7 +352,7 @@ function layout(view: EditorView, hooks: PaginationHooks) {
 
   const pageOfBlock = new Map<number, number>();
   // Sections: where each starts (its first page) and its properties (Word keeps them at its end).
-  const sections: { firstPage: number; restarts: boolean; xml: string }[] = [{ firstPage: 0, restarts: true, xml: "" }];
+  const sections: { firstPage: number; restarts: boolean; type?: string; xml: string }[] = [{ firstPage: 0, restarts: true, xml: "" }];
   let broke: SectionBreak | null = null;
   for (let i = 0; i < blocks.length; i++) {
     const b = blocks[i];
@@ -349,12 +364,13 @@ function layout(view: EditorView, hooks: PaginationHooks) {
       shift += down;
     }
     let k = pageOf(top());
-    const newSection = broke !== null && broke.type !== "continuous";
+    const start = broke ? starts[sectionOf[i]] : null;
+    const newSection = start !== null && start !== "continuous";
     if (newSection) {
       // A section that starts a page: on the next page (or this one, if it is at its top), with
-      // the section's own page size; an odd- or even-page section may need a blank page first.
-      let at = top() > contentTop(k) + 1 ? k + 1 : k;
-      if ((broke!.type === "oddPage" && at % 2 === 1) || (broke!.type === "evenPage" && at % 2 === 0)) at++;
+      // the section's own page size. An odd- or even-page section skips a page number, as Word
+      // shows it (the blank page is only printed), so that is done in pageLabels.
+      const at = top() > contentTop(k) + 1 ? k + 1 : k;
       startPages(at, setups[sectionOf[i]] ?? setup);
       const down = contentTop(at) - top();
       if (down > 0.5) {
@@ -367,7 +383,7 @@ function layout(view: EditorView, hooks: PaginationHooks) {
       add(b.pos, top(), false);
       k = pageOf(top());
     }
-    if (broke) sections.push({ firstPage: k, restarts: broke.type !== "continuous", xml: "" });
+    if (broke) sections.push({ firstPage: k, restarts: start !== "continuous", type: start ?? undefined, xml: "" });
     broke = sectionBreak(b.node);
     if (broke) sections[sections.length - 1].xml = broke.xml;
 
@@ -638,7 +654,7 @@ export function formatPageNumber(n: number, format: string): string {
 }
 
 /** Each page's number as shown in headers and footers: numbering restarts or changes format by section. */
-export function pageLabels(count: number, sections: { firstPage: number; restarts: boolean; xml: string }[]): string[] {
+export function pageLabels(count: number, sections: { firstPage: number; restarts: boolean; type?: string; xml: string }[]): string[] {
   const labels: string[] = [];
   let n = 0;
   let s = 0;
@@ -651,6 +667,7 @@ export function pageLabels(count: number, sections: { firstPage: number; restart
       format = /w:fmt="(\w+)"/.exec(numType)?.[1] ?? "decimal";
       const start = /w:start="(\d+)"/.exec(numType)?.[1];
       n = start && (section.restarts || k === 0) ? Number(start) : n + 1;
+      if ((section.type === "oddPage" && n % 2 === 0) || (section.type === "evenPage" && n % 2 === 1)) n++;
     } else n++;
     labels.push(formatPageNumber(n, format));
   }

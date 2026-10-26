@@ -25,7 +25,7 @@ import type { Method } from "./collab/invite";
 import { schema } from "./editor/schema";
 import { setWatermark, watermarkText } from "./watermark";
 import { PAGE_GAP, pageAt, pageBox, pageOffset, relayout, setPageGap, type PageLayout } from "./editor/pagination";
-import { invoke } from "@tauri-apps/api/core";
+import { convertFileSrc, invoke } from "@tauri-apps/api/core";
 import { stylesheetFor } from "./editor/stylesheet";
 import { pickExportPath, setFullscreen } from "./platform";
 import { compareDocs, countChanges } from "./editor/compare";
@@ -1624,6 +1624,14 @@ function ask(title: string, text: string, buttons: { label: string; value: strin
     dialog.showModal();
     (dialog.querySelector(".btn.primary") as HTMLElement | null)?.focus();
   });
+}
+
+/**
+ * Office's own copies of fonts like Aptos, Word's default (see officefonts.rs), so text breaks into
+ * lines and pages as in Word. Each is only read from disk once a document uses it.
+ */
+for (const font of await invoke<{ family: string; weight: number; italic: boolean; path: string }[]>("office_fonts").catch(() => [])) {
+  document.fonts.add(new FontFace(font.family, `url("${convertFileSrc(font.path)}")`, { weight: String(font.weight), style: font.italic ? "italic" : "normal" }));
 }
 
 const app = new App(document.querySelector<HTMLElement>("#app")!);

@@ -336,6 +336,59 @@ export function leaveListAtStart(ctx: DocContext): Command {
   };
 }
 
+export type SectionStart = "nextPage" | "continuous" | "oddPage" | "evenPage";
+
+/** Section properties (w:sectPr) saying how the section starts; a new page is Word's default, so it isn't written. */
+export function withSectionStart(xml: string, start: SectionStart): string {
+  const open = xml.match(/^<w:sectPr\b[^>]*?\/>$/) ? xml.replace(/\/>$/, "></w:sectPr>") : xml || "<w:sectPr></w:sectPr>";
+  const plain = open.replace(/<w:type\b[^>]*\/>/g, "");
+  if (start === "nextPage") return plain;
+  const type = `<w:type w:val="${start}"/>`;
+  // In Word's order: after the header, footer and note settings, before the page size.
+  const at = plain.search(/<w:(pgSz|pgMar|paperSrc|pgBorders|lnNumType|pgNumType|cols|formProt|vAlign|noEndnote|titlePg|textDirection|bidi|rtlGutter|docGrid|printerSettings|sectPrChange)\b|<\/w:sectPr>/);
+  return plain.slice(0, at) + type + plain.slice(at);
+}
+
+/**
+ * A section break at the cursor, as Word's Layout → Breaks: the text before it ends a section with
+ * the same page setup and headers, and what follows starts as `start` says (a new page, the next
+ * odd or even page, or straight on). Only in the body's own paragraphs, as in Word.
+ */
+export function insertSectionBreak(ctx: DocContext, start: SectionStart): Command {
+  return (state, dispatch) => {
+    const { $from } = state.selection;
+    if ($from.depth !== 1 || $from.parent.type !== schema.nodes.paragraph) return false;
+    if (!dispatch) return true;
+    // The section the cursor is in ends at the next paragraph holding section properties, or the document's end.
+    let next = -1;
+    state.doc.forEach((node, pos) => {
+      if (next < 0 && pos >= $from.before(1) && sectPrOf(node)) next = pos;
+    });
+    const current = next >= 0 ? sectPrOf(state.doc.nodeAt(next)!)! : ctx.sectPr || "<w:sectPr></w:sectPr>";
+    const tr = state.tr;
+    if (state.selection.empty === false) tr.deleteSelection();
+    const cut = tr.selection.from;
+    tr.split(cut);
+    // The paragraph before the break ends the new, earlier section: same setup, and it starts as the section did.
+    const first = tr.doc.resolve(cut).before(1);
+    const para = tr.doc.nodeAt(first)!;
+    tr.setNodeMarkup(first, undefined, { ...para.attrs, extra: `${(para.attrs.extra ?? "").replace(/<w:sectPr\b[\s\S]*?<\/w:sectPr>|<w:sectPr\b[^>]*\/>/, "")}${current}` });
+    // The section after it starts as asked.
+    if (next >= 0) {
+      const at = tr.mapping.map(next);
+      const end = tr.doc.nodeAt(at)!;
+      tr.setNodeMarkup(at, undefined, { ...end.attrs, extra: end.attrs.extra.replace(current, withSectionStart(current, start)) });
+    } else {
+      // shortcut: the document's last section lives outside the text, so Undo doesn't change it back; fine until someone misses it.
+      ctx.sectPr = withSectionStart(current, start);
+    }
+    dispatch(tr.setSelection(TextSelection.create(tr.doc, cut + 2)).scrollIntoView());
+    return true;
+  };
+}
+
+const sectPrOf = (node: Node) => (node.type === schema.nodes.paragraph ? /<w:sectPr\b[\s\S]*?<\/w:sectPr>|<w:sectPr\b[^>]*\/>/.exec(node.attrs.extra ?? "")?.[0] ?? null : null);
+
 export function insertPageBreak(): Command {
   return (state, dispatch) => {
     if (dispatch) {

@@ -762,20 +762,29 @@ async function writeComments(doc: Node, ctx: DocContext) {
   cm.savedIds = ids.join(",");
 }
 
-/** Whether Word should go on tracking changes when it opens the document. */
+/** The order Word requires for the elements of settings.xml (the part DuckWriter may add to). */
+const SETTINGS_ORDER = ["writeProtection", "view", "zoom", "removePersonalInformation", "removeDateAndTime", "doNotDisplayPageBoundaries", "displayBackgroundShape", "printPostScriptOverText", "printFractionalCharacterWidth", "printFormsData", "embedTrueTypeFonts", "embedSystemFonts", "saveSubsetFonts", "saveFormsData", "mirrorMargins", "alignBordersAndEdges", "bordersDoNotSurroundHeader", "bordersDoNotSurroundFooter", "gutterAtTop", "hideSpellingErrors", "hideGrammaticalErrors", "activeWritingStyle", "proofState", "formsDesign", "attachedTemplate", "linkStyles", "stylePaneFormatFilter", "stylePaneSortMethod", "documentType", "mailMerge", "revisionView", "trackRevisions", "doNotTrackMoves", "doNotTrackFormatting", "documentProtection", "autoFormatOverride", "styleLockTheme", "styleLockQFSet", "defaultTabStop", "autoHyphenation", "consecutiveHyphenLimit", "hyphenationZone", "doNotHyphenateCaps", "showEnvelope", "summaryLength", "clickAndTypeStyle", "defaultTableStyle", "evenAndOddHeaders", "bookFoldRevPrinting", "bookFoldPrinting", "bookFoldPrintingSheets", "drawingGridHorizontalSpacing", "drawingGridVerticalSpacing", "displayHorizontalDrawingGridEvery", "displayVerticalDrawingGridEvery", "doNotUseMarginsForDrawingGridOrigin", "drawingGridHorizontalOrigin", "drawingGridVerticalOrigin", "doNotShadeFormData", "noPunctuationKerning", "characterSpacingControl", "printTwoOnOne", "strictFirstAndLastChars", "noLineBreaksAfter", "noLineBreaksBefore", "savePreviewPicture", "doNotValidateAgainstSchema", "saveInvalidXml", "ignoreMixedContent", "alwaysShowPlaceholderText", "doNotDemarcateInvalidXml", "saveXmlDataOnly", "useXSLTWhenSaving", "saveThroughXslt", "showXMLTags", "alwaysMergeEmptyNamespace", "updateFields", "hdrShapeDefaults", "footnotePr", "endnotePr", "compat", "docVars", "rsids", "mathPr", "attachedSchema", "themeFontLang", "clrSchemeMapping", "doNotIncludeSubdocsInStats", "doNotAutoCompressPictures", "forceUpgrade", "captions", "readModeInkLockDown", "smartTagType", "schemaLibrary", "shapeDefaults", "doNotEmbedSmartTags", "decimalSymbol", "listSeparator"];
+
+/** settings.xml with an on/off setting (an empty element such as <w:trackRevisions/>) switched, in Word's order. */
+function switchSetting(xml: string, name: string, on: boolean): string {
+  const out = xml.replace(new RegExp(`<w:${name}\\b[^>]*\\/>`, "g"), "");
+  if (!on) return out;
+  const later = SETTINGS_ORDER.slice(SETTINGS_ORDER.indexOf(name) + 1);
+  const at = out.search(new RegExp(`<w:(${later.join("|")})\\b`));
+  const end = out.lastIndexOf("</w:settings>");
+  return at >= 0 ? out.slice(0, at) + `<w:${name}/>` + out.slice(at) : out.slice(0, end) + `<w:${name}/>` + out.slice(end);
+}
+
+/** Whether Word should go on tracking changes when it opens the document, and whether even pages have their own headers. */
 async function writeTrackSetting(ctx: DocContext) {
-  if (ctx.trackChanges === ctx.trackChangesSaved) return;
+  const evenAndOdd = !!ctx.evenAndOdd;
+  if (ctx.trackChanges === ctx.trackChangesSaved && evenAndOdd === !!ctx.evenAndOddSaved) return;
   const path = `${documentDir(ctx)}settings.xml`;
   const xml = await ctx.zip.file(path)?.async("string");
   if (!xml) return;
-  let out = xml.replace(/<w:trackRevisions\b[^>]*\/>/g, "");
-  if (ctx.trackChanges) {
-    const at = out.search(/<w:(doNotTrackMoves|doNotTrackFormatting|documentProtection|autoFormatOverride|styleLockTheme|styleLockQFSet|defaultTabStop|autoHyphenation|consecutiveHyphenLimit|hyphenationZone|doNotHyphenateCaps|showEnvelope|summaryLength|clickAndTypeStyle|defaultTableStyle|evenAndOddHeaders|bookFoldRevPrinting|bookFoldPrinting|bookFoldPrintingSheets|drawingGridHorizontalSpacing|drawingGridVerticalSpacing|displayHorizontalDrawingGridEvery|displayVerticalDrawingGridEvery|doNotUseMarginsForDrawingGridOrigin|drawingGridHorizontalOrigin|drawingGridVerticalOrigin|doNotShadeFormData|noPunctuationKerning|characterSpacingControl|printTwoOnOne|strictFirstAndLastChars|noLineBreaksAfter|noLineBreaksBefore|savePreviewPicture|doNotValidateAgainstSchema|saveInvalidXml|ignoreMixedContent|alwaysShowPlaceholderText|doNotDemarcateInvalidXml|saveXmlDataOnly|useXSLTWhenSaving|saveThroughXslt|showXMLTags|alwaysMergeEmptyNamespace|updateFields|hdrShapeDefaults|footnotePr|endnotePr|compat|docVars|rsids|mathPr|attachedSchema|themeFontLang|clrSchemeMapping|doNotIncludeSubdocsInStats|doNotAutoCompressPictures|forceUpgrade|captions|readModeInkLockDown|smartTagType|schemaLibrary|shapeDefaults|doNotEmbedSmartTags|decimalSymbol|listSeparator)\b/);
-    const end = out.lastIndexOf("</w:settings>");
-    out = at >= 0 ? out.slice(0, at) + "<w:trackRevisions/>" + out.slice(at) : out.slice(0, end) + "<w:trackRevisions/>" + out.slice(end);
-  }
-  ctx.zip.file(path, out);
+  ctx.zip.file(path, switchSetting(switchSetting(xml, "trackRevisions", ctx.trackChanges), "evenAndOddHeaders", evenAndOdd));
   ctx.trackChangesSaved = ctx.trackChanges;
+  ctx.evenAndOddSaved = evenAndOdd;
 }
 
 // ---- endnotes -------------------------------------------------------------------------

@@ -27,6 +27,7 @@ export class HeadersAndFooters {
   readonly layer = h("div", { class: "hf-layer" });
   private bar: HTMLElement;
   private firstPageBox = h("input", { type: "checkbox" }) as HTMLInputElement;
+  private evenBox = h("input", { type: "checkbox" }) as HTMLInputElement;
   private barLabel = h("span", { class: "hf-bar-label" });
   private pageCount = 1;
   private editing: { kind: Kind; page: number; story: Story; view: EditorView; isNew: boolean } | null = null;
@@ -41,6 +42,15 @@ export class HeadersAndFooters {
       b.addEventListener("click", onClick);
       return b;
     };
+    this.evenBox.addEventListener("change", () => {
+      this.host.ctx.evenAndOdd = this.evenBox.checked;
+      const editing = this.editing;
+      if (editing) {
+        this.stop();
+        this.start(editing.kind, editing.page);
+      }
+      this.host.storiesChanged();
+    });
     this.firstPageBox.addEventListener("change", () => {
       this.host.ctx.titlePage = this.firstPageBox.checked;
       const editing = this.editing;
@@ -57,6 +67,7 @@ export class HeadersAndFooters {
       button("Page number", "Insert the page number", () => this.insertField(" PAGE ", "1")),
       button("Number of pages", "Insert the number of pages", () => this.insertField(" NUMPAGES ", String(this.pageCount))),
       h("label", { class: "hf-check" }, this.firstPageBox, "Different first page"),
+      h("label", { class: "hf-check" }, this.evenBox, "Different odd & even pages"),
       button("Close", "Back to the text (Esc)", () => this.stop()),
     );
     barParent.prepend(this.bar);
@@ -83,7 +94,7 @@ export class HeadersAndFooters {
       // An earlier section: its own references, or else the section before's (as Word does).
       const xml = this.sections[s].xml;
       const first = /<w:titlePg[ />]/.test(xml) && !/<w:titlePg[^>]*w:val="(0|false)"/.test(xml) && page === this.sections[s].firstPage;
-      const type = first ? "first" : "default";
+      const type = first ? "first" : this.even(page) ? "even" : "default";
       for (let j = s; j >= 0; j--) {
         // The section's references of this kind: <w:headerReference w:type="default" r:id="rId8"/>.
         const tags = this.sections[j].xml.split(`<w:${kind}Reference`).slice(1).map((t) => t.slice(0, t.indexOf(">")));
@@ -93,8 +104,15 @@ export class HeadersAndFooters {
       }
       return undefined;
     }
-    const type = titlePage && page === 0 ? "first" : "default";
+    const type = titlePage && page === 0 ? "first" : this.even(page) ? "even" : "default";
     return stories.find((s) => s.kind === kind && s.type === type);
+  }
+
+  /** Whether a page gets the even-page header and footer: by the number it shows, as in Word. */
+  private even(page: number): boolean {
+    if (!this.host.ctx.evenAndOdd) return false;
+    const shown = Number(this.labels[page]);
+    return (Number.isFinite(shown) ? shown : page + 1) % 2 === 0;
   }
 
   /** Draws the headers and footers of `count` pages. */
@@ -171,7 +189,7 @@ export class HeadersAndFooters {
       ensureStyles(ctx, style);
       story = {
         kind,
-        type: ctx.titlePage && page === 0 ? "first" : "default",
+        type: ctx.titlePage && page === 0 ? "first" : this.even(page) ? "even" : "default",
         path: null,
         rid: null,
         rootStart: null,
@@ -209,6 +227,7 @@ export class HeadersAndFooters {
     this.editing = { kind, page, story: s, view, isNew };
     this.layer.parentElement?.classList.add("editing-hf");
     this.firstPageBox.checked = ctx.titlePage;
+    this.evenBox.checked = !!ctx.evenAndOdd;
     this.barLabel.textContent = `${kind === "header" ? "Header" : "Footer"}${s.type === "first" ? " (first page)" : ""}`;
     this.bar.hidden = false;
     view.focus();

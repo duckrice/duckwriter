@@ -217,6 +217,8 @@ export async function readDocx(bytes: Uint8Array): Promise<OpenedDocument> {
     stories,
     sectionStories,
     titlePage: !!toggle(finalSectPr, "titlePg"),
+    evenAndOdd: !!settings && /<w:evenAndOddHeaders(?:\s*\/>|\s+w:val="(?:1|true|on)")/.test(settings),
+    evenAndOddSaved: !!settings && /<w:evenAndOddHeaders(?:\s*\/>|\s+w:val="(?:1|true|on)")/.test(settings),
     footnotes,
     endnotes,
     addedStyles: [],

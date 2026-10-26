@@ -2,6 +2,7 @@ mod collab;
 mod versions;
 mod spelling;
 mod zotero;
+mod officefonts;
 
 use std::{
     fs,
@@ -223,7 +224,7 @@ pub fn run() {
             build_window(tauri::WebviewWindowBuilder::from_config(app.handle(), config)?)?;
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![startup_files, read_file, write_file, recovery_dir, recovery_files, delete_recovery, save_pdf, spelling::spell_languages, spelling::spell_check, spelling::spell_suggest, open_url, open_window, collab::lan_host_start, collab::lan_host_stop, collab::folder_append, collab::folder_read, collab::folder_list, versions::versions_keep, versions::versions_list, versions::templates_dir, versions::templates_list, versions::templates_remove, zotero::zotero_search])
+        .invoke_handler(tauri::generate_handler![startup_files, read_file, write_file, recovery_dir, recovery_files, delete_recovery, save_pdf, spelling::spell_languages, spelling::spell_check, spelling::spell_suggest, open_url, open_window, collab::lan_host_start, collab::lan_host_stop, collab::folder_append, collab::folder_read, collab::folder_list, versions::versions_keep, versions::versions_list, versions::templates_dir, versions::templates_list, versions::templates_remove, zotero::zotero_search, officefonts::office_fonts])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

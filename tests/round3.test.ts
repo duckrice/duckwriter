@@ -142,3 +142,50 @@ describe("watermarks", () => {
     expect(watermarkText(again.context)).toBeNull();
   });
 });
+
+describe("section breaks", () => {
+  it("end a section at the cursor, with the next starting as asked, as Word saves them", async () => {
+    const { insertSectionBreak } = await import("../src/editor/commands");
+    const { doc, context } = await readDocx(await blankDocx());
+    const start = schema.nodes.doc.create(null, [schema.nodes.paragraph.create(null, schema.text("Before after")), schema.nodes.paragraph.create(null, schema.text("Last"))]);
+    let state = createState(start, () => context);
+    state = state.apply(state.tr.setSelection(TextSelection.create(state.doc, 8)));
+    expect(insertSectionBreak(context, "oddPage")(state, (tr) => (state = state.apply(tr)))).toBe(true);
+    const texts: string[] = [];
+    state.doc.forEach((p) => texts.push(p.textContent));
+    expect(texts).toEqual(["Before ", "after", "Last"]);
+    expect(state.doc.child(0).attrs.extra).toMatch(/<w:sectPr\b/);
+    expect(context.sectPr).toContain('<w:type w:val="oddPage"/>');
+    const saved = await writeDocx(state.doc, context);
+    const xml = await part(saved, "word/document.xml");
+    expect(xml.match(/<w:sectPr\b/g)?.length).toBe(2);
+    expect(xml.indexOf("<w:sectPr")).toBeLessThan(xml.indexOf(">after<"));
+    void doc;
+  });
+});
+
+describe("page numbers by section", () => {
+  it("skip a number for a section that must start on an odd or even page, as Word shows it", async () => {
+    const { pageLabels } = await import("../src/editor/pagination");
+    const sections = [
+      { firstPage: 0, restarts: true, xml: "" },
+      { firstPage: 2, restarts: true, type: "nextPage", xml: '<w:pgNumType w:fmt="lowerRoman" w:start="1"/>' },
+      { firstPage: 4, restarts: true, type: "oddPage", xml: '<w:pgNumType w:start="10"/>' },
+      { firstPage: 6, restarts: true, type: "evenPage", xml: "" },
+    ];
+    expect(pageLabels(8, sections)).toEqual(["1", "2", "i", "ii", "11", "12", "14", "15"]);
+  });
+});
+
+describe("odd and even page headers", () => {
+  it("are switched on in Word's settings, and read back", async () => {
+    const { doc, context } = await readDocx(await blankDocx());
+    context.evenAndOdd = true;
+    const saved = await writeDocx(doc, context);
+    expect(await part(saved, "word/settings.xml")).toContain("<w:evenAndOddHeaders/>");
+    const again = (await readDocx(saved)).context;
+    expect(again.evenAndOdd).toBe(true);
+    again.evenAndOdd = false;
+    expect(await part(await writeDocx(doc, again), "word/settings.xml")).not.toContain("evenAndOddHeaders");
+  });
+});

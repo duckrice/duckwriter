@@ -225,6 +225,9 @@ export interface DocContext {
   stories: Story[];
   /** The first page has its own header and footer. */
   titlePage: boolean;
+  /** Even pages have headers and footers of their own (Word's evenAndOddHeaders setting). */
+  evenAndOdd?: boolean;
+  evenAndOddSaved?: boolean;
   /** The line grid was switched on or off, so the section properties need updating. */
   lineGridChanged?: boolean;
   /** The page border was changed, so the section properties need updating. */
