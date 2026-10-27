@@ -2730,3 +2730,11 @@ kbd {
     display: none !important;
   }
 }
+
+/* Pages of several sizes on one big paper: shifted right so the widest isn't cut off (see onPaper). */
+@media print {
+  .printing-mixed .sheet {
+    margin-left: var(--paper-shift) !important;
+    overflow: visible !important;
+  }
+}

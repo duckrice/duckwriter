@@ -22,6 +22,15 @@ export let PAGE_GAP = 24;
 export function setPageGap(px: number) {
   PAGE_GAP = px;
 }
+
+/**
+ * On paper, for a PDF with pages of several sizes: each page keeps its own size, in a slot this
+ * tall (pixels) on paper big enough for any of them; the PDF's pages are cropped to size afterwards.
+ */
+let paperSlot: number | null = null;
+export function setPaperSlot(px: number | null) {
+  paperSlot = px;
+}
 const PX = 4 / 3;
 
 export interface PageLayout {
@@ -234,7 +243,7 @@ function layout(view: EditorView, hooks: PaginationHooks) {
       const end = sectionBreak(node);
       if (end) {
         // On paper (PDF, printing) every page has the document's size: one paper size per print.
-        setups[s] = (!onPaper() && pageFromSectPr(end.xml)) || ctx.page;
+        setups[s] = ((!onPaper() || paperSlot !== null) && pageFromSectPr(end.xml)) || ctx.page;
         starts[s] = startOf(end.xml);
         columns[s] = columnsOf(end.xml, textWidth(setups[s]));
         s++;
@@ -254,7 +263,7 @@ function layout(view: EditorView, hooks: PaginationHooks) {
   const ensure = (k: number) => {
     while (pageSetups.length <= k) {
       const n = pageSetups.length;
-      pageTops.push(n === 0 ? 0 : pageTops[n - 1] + pageSetups[n - 1].height * PX + PAGE_GAP);
+      pageTops.push(n === 0 ? 0 : pageTops[n - 1] + (paperSlot ?? pageSetups[n - 1].height * PX) + PAGE_GAP);
       pageSetups.push(setup);
     }
   };
@@ -629,7 +638,7 @@ export function sectionWidthPlugin(context: () => DocContext) {
       decorations(state) {
         const main = context().page;
         const last = context().sectPr ?? "";
-        const key = JSON.stringify(main) + onPaper() + last;
+        const key = JSON.stringify(main) + onPaper() + paperSlot + last;
         if (cached && cached.doc === state.doc && cached.page === key) return cached.set;
         // Each section's blocks, with the setup found at the section's end.
         const decorations: Decoration[] = [];
@@ -637,7 +646,7 @@ export function sectionWidthPlugin(context: () => DocContext) {
         const section = (xml: string, own: boolean) => {
           if (own && !setups.has(xml)) setups.set(xml, pageFromSectPr(xml));
           // On paper every page has the document's size (see layout).
-          const p = own && !onPaper() ? setups.get(xml) : null;
+          const p = own && (!onPaper() || paperSlot !== null) ? setups.get(xml) : null;
           // A page of another width is centred on the document's, as Word shows it.
           const shift = p ? pageOffset(p, main) : 0;
           const left = p ? shift + p.marginLeft - main.marginLeft : 0;

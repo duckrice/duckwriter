@@ -25,7 +25,7 @@ import { joinSharing, showSharing, startSharing, stopSharing } from "./ui/share"
 import type { Method } from "./collab/invite";
 import { schema } from "./editor/schema";
 import { setWatermark, watermarkText } from "./watermark";
-import { PAGE_GAP, pageAt, pageBox, pageOffset, relayout, setPageGap, type PageLayout } from "./editor/pagination";
+import { PAGE_GAP, pageAt, pageBox, pageOffset, relayout, setPageGap, setPaperSlot, type PageLayout } from "./editor/pagination";
 import { convertFileSrc, invoke } from "@tauri-apps/api/core";
 import { stylesheetFor } from "./editor/stylesheet";
 import { pickExportPath, setFullscreen } from "./platform";
@@ -48,6 +48,7 @@ import { baseName, isDesktop, onCloseRequested, openWindow, pickDocument, pickPd
 import { Footnotes } from "./ui/footnotes";
 import { headingLevel, updateTocs } from "./ui/references";
 import { addBookmarks, type Bookmark } from "./convert/bookmarks";
+import { cropPages } from "./convert/crop";
 import { insertPictureFiles, setSnap, snapOn } from "./ui/pictures";
 import { handleShortcuts, showShortcutHelp } from "./ui/shortcuts";
 import { AutoSave } from "./autosave";
@@ -1326,13 +1327,21 @@ class App {
    * Lays the pages out for paper (no gaps between them, nothing that only
    * belongs on screen), runs `job`, and puts the screen back.
    */
-  private async onPaper(job: () => Promise<void>) {
+  /** Lays the pages out for paper and runs `job`; `paper` is a bigger sheet for pages of several sizes. */
+  private async onPaper(job: () => Promise<void>, paper?: { width: number; height: number }) {
     this.headers.stop();
     this.footnotes.stop();
     const zoom = this.zoom;
     const p = this.ctx.page;
-    this.pageRule.textContent = `@page { size: ${p.width}pt ${p.height}pt; margin: 0 }`;
+    const size = paper ?? p;
+    this.pageRule.textContent = `@page { size: ${size.width}pt ${size.height}pt; margin: 0 }`;
     document.documentElement.classList.add("printing");
+    if (paper) {
+      // Every page on its own slot of the big paper, wider ones not cut off on the left.
+      setPaperSlot(paper.height * (4 / 3));
+      document.documentElement.classList.add("printing-mixed");
+      document.documentElement.style.setProperty("--paper-shift", `${(paper.width - p.width) / 2}pt`);
+    }
     // No blinking cursor on paper.
     (document.activeElement as HTMLElement | null)?.blur();
     this.setZoom(1);
@@ -1345,7 +1354,8 @@ class App {
     try {
       await job();
     } finally {
-      document.documentElement.classList.remove("printing");
+      document.documentElement.classList.remove("printing", "printing-mixed");
+      setPaperSlot(null);
       setPageGap(24);
       this.setZoom(zoom);
       relayout(this.body);
@@ -1383,7 +1393,12 @@ class App {
     const p = this.ctx.page;
     try {
       const marks = this.bookmarks();
-      await this.onPaper(() => invoke("save_pdf", { path, width: p.width / 72, height: p.height / 72 }));
+      // Pages of several sizes (a landscape section): printed on paper that fits them all, then each cut to its size.
+      const sizes = (this.lastLayout?.pages ?? []).map((page) => ({ width: page.setup.width, height: page.setup.height }));
+      const mixed = new Set(sizes.map((s) => `${s.width}x${s.height}`)).size > 1;
+      const paper = mixed ? { width: Math.max(...sizes.map((s) => s.width)), height: Math.max(...sizes.map((s) => s.height)) } : undefined;
+      await this.onPaper(() => invoke("save_pdf", { path, width: (paper ?? p).width / 72, height: (paper ?? p).height / 72 }), paper);
+      if (paper) await writePath(path, await cropPages((await readPath(path)).bytes, sizes, paper));
       if (marks.length) {
         try {
           await writePath(path, await addBookmarks((await readPath(path)).bytes, marks));

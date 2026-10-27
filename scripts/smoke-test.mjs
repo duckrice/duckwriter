@@ -1754,14 +1754,23 @@ rmSync(texOut, { force: true });
     })()`);
     check("each section's text and footer are on its own page", placed === "0,1,2 | 0:Portrait,1:Landscape,2:Portrait", placed);
     await app.shoot("landscape-section");
-    // On paper, one size for all pages: three pages still, and back to landscape on screen afterwards.
+    // On paper too: three pages, the middle one landscape, each with its own text; then the screen as it was.
     await app.debugHandle();
     const widePdf = join(tmpdir(), "duckwriter-smoke-wide.pdf");
     rmSync(widePdf, { force: true });
     await app.evaluate(`window.__dw.savePdfTo(${JSON.stringify(widePdf)})`);
     await app.waitFor(`/Saved duckwriter-smoke-wide.pdf/.test(document.querySelector(".toasts").textContent)`, 20000);
-    const pdfPages = (readFileSync(widePdf).toString("latin1").match(/\/Type\s*\/Page(?![a-z])/g) ?? []).length;
-    check("a PDF of it has its three pages", pdfPages === 3, String(pdfPages));
+    const wide = await pdfjs.getDocument({ data: new Uint8Array(readFileSync(widePdf)) }).promise;
+    check("a PDF of it has its three pages", wide.numPages === 3, String(wide.numPages));
+    const shape = [];
+    for (let n = 1; n <= wide.numPages; n++) {
+      const page = await wide.getPage(n);
+      const [x1, y1, x2, y2] = page.view;
+      const [w, h] = [x2 - x1, y2 - y1];
+      const words = (await page.getTextContent()).items.map((i) => i.str).join(" ");
+      shape.push(`${w > h ? "landscape" : "portrait"}:${/Before the table/.test(words) ? "before" : /A wide table/.test(words) ? "table" : /After the table/.test(words) ? "after" : "?"}`);
+    }
+    check("its middle page is landscape in the PDF too, each page with its own text", shape.join(",") === "portrait:before,landscape:table,portrait:after", shape.join(","));
     rmSync(widePdf, { force: true });
     const after = await app.evaluate(`(() => { const r = document.querySelectorAll(".page-sheet")[1].getBoundingClientRect(); return r.width > r.height; })()`);
     check("and the screen shows the landscape page again", after);

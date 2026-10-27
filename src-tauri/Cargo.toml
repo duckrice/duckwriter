@@ -1,6 +1,6 @@
 [package]
 name = "duckwriter"
-version = "1.8.1"
+version = "1.9.0"
 description = "A free word processor that opens and saves Word documents"
 authors = ["Duckrice"]
 edition = "2021"

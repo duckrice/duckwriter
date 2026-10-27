@@ -32,7 +32,9 @@ export async function addBookmarks(bytes: Uint8Array, bookmarks: Bookmark[]): Pr
   const path: Entry[] = [top];
   for (const b of wanted) {
     const page = pages[b.page];
-    const y = page.getHeight() * (1 - Math.min(1, Math.max(0, b.down)));
+    // From the page's own box, which may be cut from bigger paper.
+    const box = page.getMediaBox();
+    const y = box.y + box.height * (1 - Math.min(1, Math.max(0, b.down)));
     const dict = context.obj({}) as PDFDict;
     dict.set(PDFName.of("Title"), PDFHexString.fromText(b.title.trim()));
     dict.set(PDFName.of("Dest"), context.obj([page.ref, PDFName.of("XYZ"), PDFNull, PDFNumber.of(Math.round(y)), PDFNull]));

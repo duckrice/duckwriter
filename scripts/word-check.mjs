@@ -87,7 +87,8 @@ async function duckwriterPages(docx, port) {
       const sheets = [...document.querySelectorAll(".page-sheet")].map((s) => s.getBoundingClientRect());
       const pages = sheets.map((r) => ({ ids: [], header: "", footer: "", landscape: r.width > r.height }));
       for (const p of document.querySelectorAll(".doc p")) {
-        const id = /^P\\d\\d/.exec(p.textContent)?.[0];
+        // Near the start: a list item's bullet or number may come first.
+        const id = /P\\d\\d/.exec(p.textContent.slice(0, 12))?.[0];
         if (!id) continue;
         const range = document.createRange();
         range.selectNodeContents(p);
