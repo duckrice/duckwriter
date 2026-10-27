@@ -12,6 +12,7 @@ import { tmpdir } from "node:os";
 import { basename, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import JSZip from "jszip";
+import * as pdfjs from "pdfjs-dist/legacy/build/pdf.mjs";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const exe = join(root, "src-tauri", "target", "release", "duckwriter.exe");
@@ -1765,6 +1766,18 @@ await session(null, 9560, async (app) => {
 
 // ---- reviewing: tracked changes and comments ------------------------------------------------------
 
+// The reviewing pane lists every change, to accept or reject one by one.
+await session(sample("review.docx"), 9621, async (app) => {
+  await app.debugHandle();
+  await app.evaluate(`[...document.querySelectorAll(".status-button")].find((b) => b.textContent.includes("Changes")).click()`);
+  const items = () => app.evaluate(`[...document.querySelectorAll(".review-item")].map((i) => i.querySelector(".review-who").textContent + ": " + i.querySelector(".review-text").textContent)`);
+  check("the reviewing pane lists the tracked changes, with who made them", await app.waitFor(`document.querySelectorAll(".review-item").length === 4`, 3000) && /^4 changes: 2 inserted, 2 deleted/.test(await app.evaluate(`document.querySelector(".review-summary").textContent`)), JSON.stringify(await items()));
+  await app.evaluate(`document.querySelector(".review-item .btn").click()`);
+  check("accepting one there takes it off the list and out of the text", await app.waitFor(`document.querySelectorAll(".review-item").length === 3`, 3000) && (await app.count(".doc del.tc-del")) + (await app.count(".doc ins.tc-ins")) === 3, JSON.stringify(await items()));
+  await app.evaluate(`[...document.querySelectorAll(".status-button")].find((b) => b.textContent.includes("Changes")).click()`);
+  check("no errors in the app", app.errors.length === 0, app.errors.join("; "));
+});
+
 const reviewed = join(tmpdir(), "duckwriter-smoke-review.docx");
 rmSync(reviewed, { force: true });
 
@@ -1858,6 +1871,10 @@ await session(sample("long.docx"), 9530, async (app) => {
   const pdfPages = (pdf.match(/\/Type\s*\/Page(?![a-z])/g) ?? []).length;
   const box = /\/MediaBox\s*\[\s*0\s+0\s+([\d.]+)\s+([\d.]+)/.exec(pdf);
   check("the PDF has the same pages as the screen, at the document's page size (A4)", pdf.startsWith("%PDF") && pdfPages === pages && !!box && Math.abs(Number(box[1]) - 595.3) < 2 && Math.abs(Number(box[2]) - 841.9) < 2, `${pdfPages} pages in the PDF, ${pages} on screen, ${box?.[1]} × ${box?.[2]}`);
+  const headings = await app.evaluate(`[...document.querySelectorAll('.doc [data-style^="Heading"]')].map((h) => h.textContent).filter(Boolean)`);
+  const outline = await (await pdfjs.getDocument({ data: new Uint8Array(readFileSync(pdfPath)) }).promise).getOutline();
+  const flat = (items) => (items ?? []).flatMap((i) => [i.title, ...flat(i.items)]);
+  check("the PDF has a bookmark for each heading", headings.length > 0 && JSON.stringify(flat(outline)) === JSON.stringify(headings), `${JSON.stringify(flat(outline)).slice(0, 200)} vs ${JSON.stringify(headings).slice(0, 200)}`);
   check("the screen goes back to normal afterwards", (await app.evaluate(`!document.documentElement.classList.contains("printing") && document.querySelectorAll(".page-sheet").length`)) === pages);
   check("no errors in the app", app.errors.length === 0, app.errors.join("; "));
 });

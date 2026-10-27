@@ -16,6 +16,7 @@ import { pageSetup } from "./ui/pagesetup";
 import { showVersions, type Version } from "./ui/versions";
 import { TEMPLATES, templateDoc, type TemplateKind } from "./templates";
 import { NavigationPane } from "./ui/navigation";
+import { ReviewingPane } from "./ui/reviewing";
 import { count, showCounts } from "./ui/wordcount";
 import { offerUpdate } from "./updates";
 import type { Plugin } from "prosemirror-state";
@@ -45,7 +46,8 @@ import { asPackage, convertPackage, isWordFile, packageKind, toFlatOpc, wordXml 
 import { htmlToDoc, markdownToHtml, textFormat, textToHtml } from "./convert/import";
 import { baseName, isDesktop, onCloseRequested, openWindow, pickDocument, pickPdfPath, pickSavePath, readPath, setTitle, startupFiles, windowOpening, windowsSpelling, writePath } from "./platform";
 import { Footnotes } from "./ui/footnotes";
-import { updateTocs } from "./ui/references";
+import { headingLevel, updateTocs } from "./ui/references";
+import { addBookmarks, type Bookmark } from "./convert/bookmarks";
 import { insertPictureFiles, setSnap, snapOn } from "./ui/pictures";
 import { handleShortcuts, showShortcutHelp } from "./ui/shortcuts";
 import { AutoSave } from "./autosave";
@@ -114,6 +116,8 @@ class App {
   private shareStatus = h("button", { type: "button", class: "status-button share-status", hidden: true, title: "Writing together (Alt+Shift+W)" });
   private navigation: NavigationPane;
   private navButton = h("button", { type: "button", class: "status-button nav-button", title: "Headings: the navigation pane (Alt+Shift+N)" }, "☰ Headings");
+  private reviewing: ReviewingPane;
+  private reviewButton = h("button", { type: "button", class: "status-button nav-button", title: "Tracked changes: every change, to accept or reject one by one (the reviewing pane)" }, "✎ Changes");
   private trackStatus = h("button", { type: "button", class: "status-button track-status", hidden: true, title: "Changes are tracked (Ctrl+Shift+E to stop)" }, "Tracking changes");
   /** The page size for printing, as an @page rule. */
   private pageRule = h("style");
@@ -182,6 +186,19 @@ class App {
       goTo: (pos) => this.goTo(pos),
       run: (command) => command(this.body.state, this.body.dispatch, this.body),
     });
+    this.reviewing = new ReviewingPane({
+      get body() {
+        return app.body;
+      },
+      get ctx() {
+        return app.ctx;
+      },
+    });
+    this.reviewButton.addEventListener("click", () => {
+      this.reviewing.toggle();
+      this.reviewButton.classList.toggle("active", this.reviewing.open);
+    });
+    this.reviewButton.classList.toggle("active", this.reviewing.open);
     this.navButton.addEventListener("click", () => this.toggleNavigation());
     this.navButton.classList.toggle("active", this.navigation.open);
     this.trackStatus.addEventListener("click", () => this.toggleTracking());
@@ -253,9 +270,9 @@ class App {
     this.zoomLabel.addEventListener("click", () => this.cycleZoomFit());
     this.zoomLabel.title = "100% → page width → whole page (Alt+Shift+Z)";
     this.words.addEventListener("click", () => this.wordCount());
-    const status = h("footer", { class: "statusbar" }, this.navButton, this.pageCount, this.words, h("span", { class: "status-spacer" }), this.shareStatus, this.trackStatus, this.spellStatus, this.saveStatus, zoomOut, this.zoomLabel, zoomIn);
+    const status = h("footer", { class: "statusbar" }, this.navButton, this.reviewButton, this.pageCount, this.words, h("span", { class: "status-spacer" }), this.shareStatus, this.trackStatus, this.spellStatus, this.saveStatus, zoomOut, this.zoomLabel, zoomIn);
     document.head.append(this.styleEl, this.pageRule);
-    root.append(this.toolbar.el, this.endedBar, h("div", { class: "main-row" }, this.navigation.el, this.workspace), status, this.toasts);
+    root.append(this.toolbar.el, this.endedBar, h("div", { class: "main-row" }, this.navigation.el, this.workspace, this.reviewing.el), status, this.toasts);
 
     // Ctrl+wheel zooms; Alt+wheel makes the selected text a size bigger or smaller per notch.
     let altWheel = 0;
@@ -911,6 +928,7 @@ class App {
     if (this.collab?.active) this.collab.afterChange();
     if (this.body) this.showPage();
     this.navigation?.update(docChanged);
+    this.reviewing?.update(docChanged);
     this.placeSheet();
     this.trackStatus.hidden = !this.ctx?.trackChanges;
     this.refreshStyles();
@@ -1338,6 +1356,23 @@ class App {
     void this.onPaper(async () => window.print());
   }
 
+  /** The headings, with the page each is on and how far down it, for the PDF's bookmarks. */
+  bookmarks(): Bookmark[] {
+    const layout = this.lastLayout;
+    if (!layout) return [];
+    const sheets = [...document.querySelectorAll<HTMLElement>(".page-sheet")];
+    const marks: Bookmark[] = [];
+    this.body.state.doc.forEach((para, pos) => {
+      const level = headingLevel(this.ctx, para);
+      if (!level || !para.textContent.trim()) return;
+      const page = layout.pageOfBlock.get(pos) ?? -1;
+      const sheet = sheets[page]?.getBoundingClientRect();
+      const top = (this.body.nodeDOM(pos) as HTMLElement | null)?.getBoundingClientRect().top;
+      marks.push({ level, title: para.textContent, page, down: sheet && top !== undefined ? (top - sheet.top) / sheet.height : 0 });
+    });
+    return marks;
+  }
+
   /** Asks where, then saves the document as a PDF. */
   async savePdf() {
     const path = await pickPdfPath(this.name.replace(/\.docx$/i, ".pdf"));
@@ -1347,7 +1382,16 @@ class App {
   async savePdfTo(path: string) {
     const p = this.ctx.page;
     try {
+      const marks = this.bookmarks();
       await this.onPaper(() => invoke("save_pdf", { path, width: p.width / 72, height: p.height / 72 }));
+      if (marks.length) {
+        try {
+          await writePath(path, await addBookmarks((await readPath(path)).bytes, marks));
+        } catch (error) {
+          // The PDF is there; only its bookmarks are missing.
+          console.warn("No bookmarks in the PDF:", error);
+        }
+      }
       this.toast(`Saved ${baseName(path)}`);
     } catch (error) {
       this.toast(`Couldn't save the PDF: ${message(error)}`, "error");
