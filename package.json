@@ -1,7 +1,7 @@
 {
   "name": "duckwriter",
   "private": true,
-  "version": "1.8.0",
+  "version": "1.8.1",
   "type": "module",
   "scripts": {
     "dev": "npm run assets && vite",
@@ -14,7 +14,8 @@
     "presmoke": "node scripts/make-samples.mjs",
     "smoke": "node scripts/smoke-test.mjs",
     "smoke:shots": "node scripts/smoke-test.mjs --screenshots",
-    "assets": "node scripts/copy-pdfjs-assets.mjs"
+    "assets": "node scripts/copy-pdfjs-assets.mjs",
+    "word-check": "node scripts/word-check.mjs"
   },
   "dependencies": {
     "@tauri-apps/api": "^2.12.4",

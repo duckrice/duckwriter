@@ -90,12 +90,9 @@ export class HeadersAndFooters {
     const { stories, titlePage, sectionStories } = this.host.ctx;
     let s = this.sections.length - 1;
     while (s > 0 && this.sections[s].firstPage > page) s--;
-    if (s >= 0 && s < this.sections.length - 1) {
-      // An earlier section: its own references, or else the section before's (as Word does).
-      const xml = this.sections[s].xml;
-      const first = /<w:titlePg[ />]/.test(xml) && !/<w:titlePg[^>]*w:val="(0|false)"/.test(xml) && page === this.sections[s].firstPage;
-      const type = first ? "first" : this.even(page) ? "even" : "default";
-      for (let j = s; j >= 0; j--) {
+    /** The story of this type in section j or, failing that, the nearest section before it (as Word does). */
+    const inherited = (from: number, type: string) => {
+      for (let j = from; j >= 0; j--) {
         // The section's references of this kind: <w:headerReference w:type="default" r:id="rId8"/>.
         const tags = this.sections[j].xml.split(`<w:${kind}Reference`).slice(1).map((t) => t.slice(0, t.indexOf(">")));
         const tag = tags.find((t) => (/w:type="([^"]*)"/.exec(t)?.[1] ?? "default") === type);
@@ -103,9 +100,15 @@ export class HeadersAndFooters {
         if (rid) return sectionStories?.get(rid) ?? stories.find((x) => x.rid === rid);
       }
       return undefined;
+    };
+    if (s >= 0 && s < this.sections.length - 1) {
+      const xml = this.sections[s].xml;
+      const first = /<w:titlePg[ />]/.test(xml) && !/<w:titlePg[^>]*w:val="(0|false)"/.test(xml) && page === this.sections[s].firstPage;
+      return inherited(s, first ? "first" : this.even(page) ? "even" : "default");
     }
-    const type = titlePage && page === 0 ? "first" : this.even(page) ? "even" : "default";
-    return stories.find((s) => s.kind === kind && s.type === type);
+    // The last section's are the document's own; without one of this type, an earlier section's.
+    const type = titlePage && page === (this.sections[s]?.firstPage ?? 0) ? "first" : this.even(page) ? "even" : "default";
+    return stories.find((x) => x.kind === kind && x.type === type) ?? (s > 0 ? inherited(s - 1, type) : undefined);
   }
 
   /** Whether a page gets the even-page header and footer: by the number it shows, as in Word. */
