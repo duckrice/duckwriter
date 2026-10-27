@@ -71,8 +71,11 @@ describe("spelling", () => {
     await settle();
     let next = nextMistake(view.state)!;
     expect(next.word).toBe("Teh");
+    // With the word selected, as the menu leaves it: afterwards the cursor is after the corrected word.
+    view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, next.from, next.to)));
     view.dispatch(correct(view.state, next, "The")!);
     expect(view.state.doc.textContent).toBe("The weather is fien and fien.");
+    expect([view.state.selection.empty, view.state.selection.from]).toEqual([true, next.from + 3]);
     expect(marked(view.state)).toEqual(["fien", "fien"]);
     ignoreWord("fien");
     expect(marked(view.state)).toEqual([]);
