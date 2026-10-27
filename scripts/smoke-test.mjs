@@ -840,6 +840,78 @@ await session(withPictures, 9471, async (app) => {
 });
 rmSync(withPictures, { force: true });
 
+// ---- text columns -----------------------------------------------------------------------------
+
+/** The document saved in two columns, and how many pages DuckWriter made of it. */
+let columnPages = null;
+
+await session(sample("long.docx"), 9622, async (app) => {
+  await app.debugHandle();
+  await app.clickOn(`.tb[title="Layout options"]`);
+  await app.clickText(".layout-menu .menu-item", "Two");
+  await sleep(800);
+  // Where every block is, and which page and column it's in.
+  const report = () => app.evaluate(`(() => {
+    const sheets = [...document.querySelectorAll(".page-sheet")].map((s) => s.getBoundingClientRect());
+    const blocks = [...document.querySelectorAll(".doc > p, .doc > table, .doc > div:not(.page-gap)")].map((el) => [el, el.getBoundingClientRect()]).filter(([, r]) => r.height > 0);
+    const docLeft = document.querySelector(".doc").getBoundingClientRect().left;
+    return blocks.map(([el, r]) => {
+      const page = sheets.findIndex((s) => r.top >= s.top - 1 && r.top < s.bottom);
+      // Split between pages (a page break in it, or taller than a column): it has a gap inside.
+      const split = !!el.querySelector(".page-gap");
+      return { page, col: r.left - docLeft > 100 ? 1 : 0, top: r.top - (sheets[page]?.top ?? 0), bottom: r.bottom - (sheets[page]?.top ?? 0), height: (sheets[page]?.height ?? 0), width: r.width, split };
+    });
+  })()`);
+  const placed = await report();
+  const second = placed.filter((b) => b.col === 1);
+  check("Layout → Columns → Two puts the text in two columns", second.length > 3 && placed.every((b) => b.width < 330), JSON.stringify(placed.slice(0, 4)));
+  const firstOf = (page, col) => placed.find((b) => b.page === page && b.col === col);
+  const p0 = firstOf(0, 0);
+  const p1 = firstOf(0, 1);
+  check("the second column starts at the top of the page, beside the first", !!p0 && !!p1 && Math.abs(p0.top - p1.top) < 3, JSON.stringify([p0, p1]));
+  check("no text runs off the bottom of a page", placed.every((b) => b.page >= 0 && (b.split || b.bottom <= b.height - 40)), JSON.stringify(placed.filter((b) => b.page < 0 || (!b.split && b.bottom > b.height - 40)).slice(0, 3)));
+  const overlap = placed.some((b, i) => placed.some((o, j) => j > i && o.page === b.page && o.col === b.col && o.top < b.bottom - 2 && b.top < o.bottom - 2));
+  check("and blocks in a column don't overlap", !overlap);
+  const columnsFile = join(tmpdir(), "duckwriter-smoke-columns.docx");
+  await app.evaluate(`(async () => {
+    const bytes = await window.__dw.build();
+    await window.__TAURI_INTERNALS__.invoke("write_file", bytes, { headers: { "x-path": encodeURIComponent(${JSON.stringify(columnsFile)}) } });
+  })()`);
+  const columnsXml = await (await JSZip.loadAsync(readFileSync(columnsFile))).file("word/document.xml").async("string");
+  check("saved for Word as two columns", /<w:cols w:num="2" w:space="708"\/>/.test(columnsXml));
+  columnPages = [columnsFile, new Set(placed.map((b) => b.page)).size];
+  await app.clickOn(`.tb[title="Layout options"]`);
+  await app.clickText(".layout-menu .menu-item", "One");
+  await sleep(800);
+  check("and One puts it back in one column", (await report()).every((b) => b.col === 0) && (await report()).some((b) => b.width > 400));
+  check("no errors in the app", app.errors.length === 0, app.errors.join("; "));
+});
+
+// The same file in Word (when it's on this computer): two columns, and about as many pages.
+if (columnPages) {
+  const [file, ours] = columnPages;
+  const script = join(tmpdir(), "duckwriter-smoke-columns.ps1");
+  writeFileSync(script, `$ErrorActionPreference = 'Stop'
+$w = New-Object -ComObject Word.Application
+$w.Visible = $false
+try {
+  $d = $w.Documents.Open('${file}', $false, $true)
+  "$($d.Sections(1).PageSetup.TextColumns.Count)|$($d.ComputeStatistics(2))"
+  $d.Close(0)
+} finally { $w.Quit() }`);
+  let word = null;
+  try {
+    word = execFileSync("powershell", ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", script], { encoding: "utf8", timeout: 120000 }).trim();
+  } catch {
+    console.log("(Word isn't here to compare the columns with)");
+  }
+  if (word) {
+    const [count, pages] = word.split("|").map(Number);
+    // shortcut: paragraphs move to the next column whole, so a page more than Word's is allowed.
+    check("Word opens it in two columns, on about as many pages", count === 2 && Math.abs(pages - ours) <= Math.max(1, Math.round(pages * 0.15)), `Word: ${word}, DuckWriter: ${ours} pages`);
+  }
+}
+
 // ---- the line grid ----------------------------------------------------------------------------
 
 await session(sample("long.docx"), 9480, async (app) => {

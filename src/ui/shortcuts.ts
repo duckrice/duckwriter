@@ -17,6 +17,7 @@ import type { DocContext } from "../docx/model";
 import {
   clearFormatting,
   insertPageBreak,
+  insertColumnBreak,
   setAlign,
   setLineSpacing,
   setParagraphs,
@@ -172,6 +173,7 @@ export const SHORTCUTS: Shortcut[] = [
   { group: "Editing", label: "Select to the start of this paragraph, or the one before", keys: ["Ctrl+Shift+ArrowUp"], run: plain(moveByParagraph(-1, true)) },
   { group: "Editing", label: "Select to the start of the next paragraph", keys: ["Ctrl+Shift+ArrowDown"], run: plain(moveByParagraph(1, true)) },
   { group: "Editing", label: "Page break", keys: ["Ctrl+Enter"], run: plain(insertPageBreak()) },
+  { group: "Editing", label: "Column break", keys: ["Ctrl+Shift+Enter"], run: plain(insertColumnBreak()) },
   { group: "Headings and outline", label: "Move this section (the heading and what is under it) up", keys: ["Alt+Shift+ArrowUp"], run: cmd((ctx) => moveSection(ctx, -1)) },
   { group: "Headings and outline", label: "Move this section down", keys: ["Alt+Shift+ArrowDown"], run: cmd((ctx) => moveSection(ctx, 1)) },
   { group: "Headings and outline", label: "Take this section's headings a level up (Heading 2 → 1)", keys: ["Alt+Shift+ArrowLeft"], run: cmd((ctx) => shiftSection(ctx, -1)) },

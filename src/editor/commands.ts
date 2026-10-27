@@ -8,6 +8,7 @@ import { TextSelection, type Command, type EditorState, type Transaction } from 
 import { resolvedPara, resolvedRun, styleChain, type DocContext, type ParaProps, type RunProps } from "../docx/model";
 import { listOf, listPluginKey, selectedParagraphs } from "./lists";
 import { schema } from "./schema";
+import { relayout } from "./pagination";
 import { markAttr, paraMarks, updateParaMarks } from "./paramark";
 
 /** Formatting chosen with the cursor in an empty line is kept on that line's paragraph mark, as in Word. */
@@ -388,6 +389,56 @@ export function insertSectionBreak(ctx: DocContext, start: SectionStart): Comman
 }
 
 const sectPrOf = (node: Node) => (node.type === schema.nodes.paragraph ? /<w:sectPr\b[\s\S]*?<\/w:sectPr>|<w:sectPr\b[^>]*\/>/.exec(node.attrs.extra ?? "")?.[0] ?? null : null);
+
+/** Section properties with this many columns (one: none), half an inch apart as Word's default. */
+export function withColumns(sectPr: string, count: number): string {
+  const xml = sectPr.replace(/^<w:sectPr\b([^>]*?)\/>$/, "<w:sectPr$1></w:sectPr>") || "<w:sectPr></w:sectPr>";
+  const cols = count > 1 ? `<w:cols w:num="${count}" w:space="708"/>` : '<w:cols w:space="708"/>';
+  const old = /<w:cols\b[^>]*\/>|<w:cols\b[^>]*>[\s\S]*?<\/w:cols>/;
+  if (old.test(xml)) return xml.replace(old, cols);
+  // In Word's order: before these, or at the end.
+  const after = /<w:(formProt|vAlign|noEndnote|titlePg|textDirection|bidi|rtlGutter|docGrid|printerSettings|sectPrChange)\b/.exec(xml);
+  const at = after ? after.index : xml.lastIndexOf("</w:sectPr>");
+  return xml.slice(0, at) + cols + xml.slice(at);
+}
+
+/** Puts the section the cursor is in into columns (one: back to a single column), as Word's Columns button. */
+export function setColumns(ctx: DocContext, count: number): Command {
+  return (state, dispatch, view) => {
+    if (!dispatch) return true;
+    const here = state.selection.$from.before(1);
+    let end = -1;
+    state.doc.forEach((node, pos) => {
+      if (end < 0 && pos >= here && sectPrOf(node)) end = pos;
+    });
+    const tr = state.tr;
+    if (end >= 0) {
+      const para = state.doc.nodeAt(end)!;
+      const current = sectPrOf(para)!;
+      tr.setNodeMarkup(end, undefined, { ...para.attrs, extra: para.attrs.extra.replace(current, withColumns(current, count)) });
+    } else {
+      // shortcut: the document's last section lives outside the text, so Undo doesn't change it back (as with section breaks).
+      ctx.sectPr = withColumns(ctx.sectPr ?? "", count);
+    }
+    dispatch(tr);
+    // The text didn't change when only the last section's properties did, so the pages are laid out again here.
+    if (view) relayout(view);
+    return true;
+  };
+}
+
+/** A column break, as Word writes it: what follows starts at the top of the next column. */
+export function insertColumnBreak(): Command {
+  return (state, dispatch) => {
+    if (dispatch) {
+      const tr = state.tr.replaceSelectionWith(schema.nodes.raw_inline.create({ xml: '<w:r><w:br w:type="column"/></w:r>', label: "Column break", hidden: false }), true);
+      const pos = tr.selection.from;
+      tr.split(pos);
+      dispatch(tr.setSelection(TextSelection.create(tr.doc, pos + 2)).scrollIntoView());
+    }
+    return true;
+  };
+}
 
 export function insertPageBreak(): Command {
   return (state, dispatch) => {

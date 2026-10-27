@@ -3,7 +3,10 @@
 // top of the next page. Behind the text, page sheets are drawn at the same
 // spacing. Paragraphs split between lines without leaving a single line
 // behind or alone at the top (widow and orphan control), headings stay with
-// what follows them, and page breaks start a new page.
+// what follows them, and page breaks start a new page. A section in columns
+// has its blocks at the column's width; when a column is full, the next block
+// is pulled up to the top of the next column (a negative margin under the
+// block before) and moved across.
 
 import type { Node } from "prosemirror-model";
 import { Plugin, PluginKey, type EditorState } from "prosemirror-state";
@@ -222,6 +225,7 @@ function layout(view: EditorView, hooks: PaginationHooks) {
   // How each section starts (next page, odd page, continuous…): Word keeps that in the section's own
   // properties, which come at its end, so it's known here before the layout reaches the section.
   const starts: string[] = [];
+  const columns: (Columns | null)[] = [];
   const startOf = (xml: string) => /<w:type\b[^>]*w:val="(\w+)"/.exec(xml)?.[1] ?? "nextPage";
   {
     let s = 0;
@@ -232,11 +236,13 @@ function layout(view: EditorView, hooks: PaginationHooks) {
         // On paper (PDF, printing) every page has the document's size: one paper size per print.
         setups[s] = (!onPaper() && pageFromSectPr(end.xml)) || ctx.page;
         starts[s] = startOf(end.xml);
+        columns[s] = columnsOf(end.xml, textWidth(setups[s]));
         s++;
       }
     });
     setups[s] = ctx.page;
     starts[s] = startOf(ctx.sectPr ?? "");
+    columns[s] = columnsOf(ctx.sectPr ?? "", textWidth(ctx.page));
   }
 
   // The pages, made as the text reaches them; a section that starts a page sets that page's size.
@@ -354,6 +360,15 @@ function layout(view: EditorView, hooks: PaginationHooks) {
   // Sections: where each starts (its first page) and its properties (Word keeps them at its end).
   const sections: { firstPage: number; restarts: boolean; type?: string; xml: string }[] = [{ firstPage: 0, restarts: true, xml: "" }];
   let broke: SectionBreak | null = null;
+  // Columns: the section they're in, the column being filled, where the columns on this page start,
+  // and how far down the longest reaches. Blocks pulled up to a column's top are listed in pulls.
+  let colSection = -1;
+  let col = 0;
+  let colTop = 0;
+  let colMax = 0;
+  let columnBreakBefore = false;
+  const colDecos: Decoration[] = [];
+  const pulls: { pos: number; height: number }[] = [];
   for (let i = 0; i < blocks.length; i++) {
     const b = blocks[i];
     const top = () => b.top + shift;
@@ -363,6 +378,16 @@ function layout(view: EditorView, hooks: PaginationHooks) {
       gaps.push({ pos: b.pos, height: down, inline: false });
       shift += down;
     }
+    // After a section in columns, the text goes on under the longest column.
+    if (colSection >= 0 && sectionOf[i] !== colSection) {
+      const under = colMax - top();
+      if (under > 0.5) {
+        gaps.push({ pos: b.pos, height: under, inline: false });
+        shift += under;
+      }
+      colSection = -1;
+    }
+    const cols = columns[sectionOf[i]];
     let k = pageOf(top());
     const start = broke ? starts[sectionOf[i]] : null;
     const newSection = start !== null && start !== "continuous";
@@ -378,7 +403,7 @@ function layout(view: EditorView, hooks: PaginationHooks) {
         shift += down;
       }
       k = at;
-    } else if (top() > contentBottom(k) - 0.5 || (props(b.node).pageBreakBefore && top() > contentTop(k) + 1)) {
+    } else if ((!cols && top() > contentBottom(k) - 0.5) || (props(b.node).pageBreakBefore && top() > contentTop(k) + 1)) {
       // Starting in the space between pages, or asked to start a page.
       add(b.pos, top(), false);
       k = pageOf(top());
@@ -400,6 +425,47 @@ function layout(view: EditorView, hooks: PaginationHooks) {
       });
     }
     const allNotes = notes.map((n) => n.id);
+    if (cols) {
+      if (colSection !== sectionOf[i] || k !== pageOf(colTop)) {
+        // The section's first block, or one a page break sent on: the first column of this page.
+        colSection = sectionOf[i];
+        col = 0;
+        colTop = top();
+        colMax = top();
+      }
+      const full = b.bottom + shift > contentBottom(k) - noteRoom(k, allNotes) + 0.5;
+      // shortcut: a paragraph moves to the next column whole; Word splits it between lines.
+      if ((full || columnBreakBefore) && top() > colTop + 1) {
+        colMax = Math.max(colMax, top());
+        const prev = blocks[i - 1];
+        if (col + 1 < cols.widths.length && prev) {
+          const up = colTop - top();
+          colDecos.push(Decoration.node(prev.pos, prev.pos + prev.node.nodeSize, { style: `margin-bottom:${up}px` }));
+          pulls.push({ pos: b.pos, height: up });
+          shift += up;
+          col++;
+        } else {
+          add(b.pos, top(), false);
+          k = pageOf(top());
+          col = 0;
+          colTop = top();
+          colMax = top();
+        }
+      }
+      columnBreakBefore = hasColumnBreak(b.node);
+      if (col > 0) {
+        let x = 0;
+        for (let c = 0; c < col; c++) x += cols.widths[c] + cols.gaps[c];
+        // shortcut: the line between columns (w:sep) is kept in the file but not drawn.
+        colDecos.push(Decoration.node(b.pos, b.pos + b.node.nodeSize, { style: `position:relative;left:${x}pt` }));
+      }
+      colMax = Math.max(colMax, b.bottom + shift);
+      // Taller than a column, or with page breaks: split between pages as any block is, below.
+      if (!breaks.length && b.bottom + shift <= contentBottom(k) + 0.5) {
+        placeNotes(k, allNotes);
+        continue;
+      }
+    }
     if (!breaks.length && fits(b.bottom + shift, k, allNotes)) {
       placeNotes(k, allNotes);
       continue;
@@ -533,14 +599,14 @@ function layout(view: EditorView, hooks: PaginationHooks) {
   }
 
   const last = blocks[blocks.length - 1];
-  const end = last ? last.bottom + shift : 0;
+  const end = Math.max(last ? last.bottom + shift : 0, colSection >= 0 ? colMax : 0);
   const count = Math.max(1, pageOf(Math.max(0, end - 0.5)) + 1);
   gaps.sort((a, b) => a.pos - b.pos || Number(a.inline) - Number(b.inline));
-  view.dispatch(view.state.tr.setMeta(paginationKey, DecorationSet.create(view.state.doc, gaps.flatMap(gapWidget))).setMeta("addToHistory", false));
+  view.dispatch(view.state.tr.setMeta(paginationKey, DecorationSet.create(view.state.doc, [...gaps.flatMap(gapWidget), ...colDecos])).setMeta("addToHistory", false));
   sheet.style.minHeight = "";
   // Every gap before a block moved it down; its final top is its first line's page.
   let moved = 0;
-  const gapsBefore = [...gaps].sort((a, b) => a.pos - b.pos);
+  const gapsBefore = [...gaps, ...pulls].sort((a, b) => a.pos - b.pos);
   let g = 0;
   for (const b of blocks) {
     while (g < gapsBefore.length && gapsBefore[g].pos <= b.pos) moved += gapsBefore[g++].height;
@@ -562,30 +628,35 @@ export function sectionWidthPlugin(context: () => DocContext) {
     props: {
       decorations(state) {
         const main = context().page;
-        const key = JSON.stringify(main) + onPaper();
+        const last = context().sectPr ?? "";
+        const key = JSON.stringify(main) + onPaper() + last;
         if (cached && cached.doc === state.doc && cached.page === key) return cached.set;
         // Each section's blocks, with the setup found at the section's end.
         const decorations: Decoration[] = [];
-        if (onPaper()) {
-          cached = { doc: state.doc, page: key, set: DecorationSet.empty };
-          return cached.set;
-        }
         let blocks: { pos: number; end: number }[] = [];
-        state.doc.forEach((node, pos) => {
-          blocks.push({ pos, end: pos + node.nodeSize });
-          const end = sectionBreak(node);
-          if (!end) return;
-          if (!setups.has(end.xml)) setups.set(end.xml, pageFromSectPr(end.xml));
-          const p = setups.get(end.xml);
+        const section = (xml: string, own: boolean) => {
+          if (own && !setups.has(xml)) setups.set(xml, pageFromSectPr(xml));
+          // On paper every page has the document's size (see layout).
+          const p = own && !onPaper() ? setups.get(xml) : null;
           // A page of another width is centred on the document's, as Word shows it.
           const shift = p ? pageOffset(p, main) : 0;
           const left = p ? shift + p.marginLeft - main.marginLeft : 0;
           const right = p ? main.width - main.marginRight - (shift + p.width - p.marginRight) : 0;
-          if (Math.abs(left) > 0.5 || Math.abs(right) > 0.5) {
-            for (const b of blocks) decorations.push(Decoration.node(b.pos, b.end, { style: `margin-left:${left}pt;margin-right:${right}pt` }));
+          // In columns, each block is a column wide (the layout moves it across).
+          // shortcut: unequal columns are all as wide as the first; Word gives each its own width.
+          const cols = columnsOf(xml, textWidth(p ?? main));
+          const narrower = cols ? textWidth(p ?? main) - cols.widths[0] : 0;
+          if (Math.abs(left) > 0.5 || Math.abs(right + narrower) > 0.5) {
+            for (const b of blocks) decorations.push(Decoration.node(b.pos, b.end, { style: `margin-left:${left}pt;margin-right:${right + narrower}pt` }));
           }
           blocks = [];
+        };
+        state.doc.forEach((node, pos) => {
+          blocks.push({ pos, end: pos + node.nodeSize });
+          const end = sectionBreak(node);
+          if (end) section(end.xml, true);
         });
+        section(last, false);
         const set = DecorationSet.create(state.doc, decorations);
         cached = { doc: state.doc, page: key, set };
         return set;
@@ -613,6 +684,40 @@ export function pageAt(layout: PageLayout | null | undefined, y: number, page: P
   while (k + 1 < pages.length && pages[k + 1].top <= y) k++;
   return k;
 }
+
+/** A section's columns, in points: each one's width, the space after each but the last, and a line between. */
+export interface Columns {
+  widths: number[];
+  gaps: number[];
+  line: boolean;
+}
+
+/** The columns a section's properties (w:sectPr) ask for, on text this wide (points); null for one. */
+export function columnsOf(xml: string, textWidth: number): Columns | null {
+  const m = /<w:cols\b([^>]*?)(?:\/>|>([\s\S]*?)<\/w:cols>)/.exec(xml);
+  if (!m) return null;
+  const attr = (s: string, name: string) => new RegExp(`w:${name}="([^"]*)"`).exec(s)?.[1];
+  const line = /^(1|true|on)$/.test(attr(m[1], "sep") ?? "");
+  const own = [...(m[2] ?? "").matchAll(/<w:col\b([^>]*?)\/?>/g)].map((c) => ({ w: Number(attr(c[1], "w") ?? 0) / 20, space: Number(attr(c[1], "space") ?? 0) / 20 }));
+  if (attr(m[1], "equalWidth") === "0" && own.length > 1 && own.every((c) => c.w > 0)) return { widths: own.map((c) => c.w), gaps: own.slice(0, -1).map((c) => c.space), line };
+  const num = Math.min(45, Math.round(Number(attr(m[1], "num") ?? 1)));
+  if (!(num >= 2)) return null;
+  // Word's default space is half an inch.
+  const space = Number(attr(m[1], "space") ?? 720) / 20;
+  const width = (textWidth - space * (num - 1)) / num;
+  return width >= 18 ? { widths: Array(num).fill(width), gaps: Array(num - 1).fill(space), line } : null;
+}
+
+/** Whether a paragraph has a column break (kept as Word wrote it) in it. */
+function hasColumnBreak(node: Node): boolean {
+  let found = false;
+  node.forEach((child) => {
+    if (child.type === schema.nodes.raw_inline && /<w:br\b[^>]*w:type="column"/.test(child.attrs.xml ?? "")) found = true;
+  });
+  return found;
+}
+
+const textWidth = (p: PageSetup) => p.width - p.marginLeft - p.marginRight;
 
 interface SectionBreak {
   type: string;
