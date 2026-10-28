@@ -2744,3 +2744,8 @@ kbd {
     overflow: visible !important;
   }
 }
+
+/* A paragraph going on in the next text column: its empty top, where the text above it is. */
+.doc .column-split-gap {
+  display: block;
+}

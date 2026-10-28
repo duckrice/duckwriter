@@ -95,3 +95,18 @@ describe("headers and footers", () => {
     expect(xml).not.toContain("titlePg");
   });
 });
+
+describe("Word's page number box", () => {
+  it("in a footer is read as its text, with the page number counting each page", async () => {
+    const zip = await JSZip.loadAsync(await withHeaderAndFooter());
+    const name = Object.keys(zip.files).find((f) => /^word\/footer\d*\.xml$/.test(f))!;
+    const xml = await zip.file(name)!.async("string");
+    // As Word's Insert → Page Number → Bottom of Page writes it: the paragraph in a gallery content control.
+    zip.file(name, xml.replace(/(<w:p\b[\s\S]*<\/w:p>)/, '<w:sdt><w:sdtPr><w:id w:val="1"/><w:docPartObj><w:docPartGallery w:val="Page Numbers (Bottom of Page)"/><w:docPartUnique/></w:docPartObj></w:sdtPr><w:sdtContent>$1</w:sdtContent></w:sdt>'));
+    const { context } = await readDocx(await zip.generateAsync({ type: "uint8array" }));
+    const footer = context.stories.find((s) => s.kind === "footer")!;
+    const kinds: string[] = [];
+    footer.doc.forEach((n) => kinds.push(n.type.name));
+    expect([kinds, fieldsIn(footer.doc)]).toEqual([["paragraph"], ["PAGE", "NUMPAGES"]]);
+  });
+});

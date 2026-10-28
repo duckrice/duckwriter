@@ -636,7 +636,16 @@ class BodyReader {
         return [this.rawBlock(el, "Table", tablePreview(el))];
       }
     }
-    if (isW(el, "sdt")) return [this.rawBlock(el, "Content control", textOf(el).slice(0, 400))];
+    if (isW(el, "sdt")) {
+      // Word's own gallery parts (the page number it put in a footer, a cover page's blocks): their
+      // text as ordinary paragraphs, so a page number counts each page. A table of contents and a
+      // bibliography are read where they stand, before this.
+      // shortcut: the gallery wrapper itself isn't written back; keep it if Word's galleries ever matter after saving.
+      const gallery = attr(el.getElementsByTagNameNS(NS.w, "docPartGallery")[0], "val");
+      const content = child(el, "sdtContent");
+      if (gallery && content && !["Table of Contents", "Bibliographies"].includes(gallery)) return Array.from(content.children).flatMap((c) => this.block(c));
+      return [this.rawBlock(el, "Content control", textOf(el).slice(0, 400))];
+    }
     if (isW(el, "bookmarkStart") || isW(el, "bookmarkEnd") || isW(el, "proofErr")) return [schema.nodes.raw_block.create({ xml: this.raw(el), hidden: true })];
     return [this.rawBlock(el, el.localName, textOf(el).slice(0, 400))];
   }

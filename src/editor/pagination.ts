@@ -6,7 +6,8 @@
 // what follows them, and page breaks start a new page. A section in columns
 // has its blocks at the column's width; when a column is full, the next block
 // is pulled up to the top of the next column (a negative margin under the
-// block before) and moved across.
+// block before) and moved across. A paragraph that doesn't fit is split: it
+// becomes two columns itself (CSS columns), so its lines go on in the next.
 
 import type { Node } from "prosemirror-model";
 import { Plugin, PluginKey, type EditorState } from "prosemirror-state";
@@ -376,6 +377,8 @@ function layout(view: EditorView, hooks: PaginationHooks) {
   let colTop = 0;
   let colMax = 0;
   let columnBreakBefore = false;
+  /** The blocks in the column being filled, on this page (a paragraph split from it may lie over them). */
+  let inColumn: { pos: number; end: number }[] = [];
   const colDecos: Decoration[] = [];
   const pulls: { pos: number; height: number }[] = [];
   for (let i = 0; i < blocks.length; i++) {
@@ -441,12 +444,54 @@ function layout(view: EditorView, hooks: PaginationHooks) {
         col = 0;
         colTop = top();
         colMax = top();
+        inColumn = [];
       }
       const full = b.bottom + shift > contentBottom(k) - noteRoom(k, allNotes) + 0.5;
-      // shortcut: a paragraph moves to the next column whole; Word splits it between lines.
+      const xOf = (c: number) => cols.widths.slice(0, c).reduce((x, w, j) => x + w + cols.gaps[j], 0);
+      // A paragraph that reaches past the column's foot goes on at the top of the next, as in Word:
+      // it becomes two columns itself, starting at the columns' top with a gap where the text above is.
+      if (full && !columnBreakBefore && col + 1 < cols.widths.length && b.node.type === schema.nodes.paragraph && !allNotes.length && !breaks.length) {
+        const lines = linesOf(b.el, origin.top, scale);
+        const room = contentBottom(k) - top();
+        const fit = lines.filter((line) => line.bottom - b.top <= room + 0.5).length;
+        // The paragraph's spacing above and below (padding) is around both its columns.
+        const style = getComputedStyle(b.el);
+        const [above, below] = [parseFloat(style.paddingTop) || 0, parseFloat(style.paddingBottom) || 0];
+        // The lines that go on in the next column, and how far down it the paragraph then reaches.
+        const rest = fit < lines.length ? lines[lines.length - 1].bottom - lines[fit].top : 0;
+        const reach = above + rest + below;
+        // Its box: from the columns' top to the column's foot, its first column's text ending there.
+        const height = contentBottom(k) - colTop + below;
+        if (fit > 0 && fit < lines.length && reach <= contentBottom(k) - colTop) {
+          const gap = top() - colTop;
+          colDecos.push(
+            Decoration.node(b.pos, b.pos + b.node.nodeSize, {
+              class: "column-split",
+              style: `box-sizing:border-box;columns:2;column-gap:${cols.gaps[col]}pt;column-fill:auto;orphans:1;widows:1;height:${height}px;width:${cols.widths[col] + cols.gaps[col] + cols.widths[col + 1]}pt;margin-top:${-gap}px;margin-bottom:${reach - height}px;position:relative;left:${xOf(col)}pt`,
+            }),
+            Decoration.widget(b.pos + 1, () => {
+              const el = document.createElement("span");
+              el.className = "column-split-gap";
+              el.contentEditable = "false";
+              el.style.height = `${gap}px`;
+              return el;
+            }, { side: -1, key: `colgap:${Math.round(gap * 10)}`, ignoreSelection: true, marks: [] }),
+            // The text above stays clickable through the paragraph's empty top.
+            ...inColumn.map((p) => Decoration.node(p.pos, p.end, { style: "position:relative;z-index:1" })),
+          );
+          shift += colTop + reach - (top() + (b.bottom - b.top));
+          col++;
+          inColumn = [];
+          colMax = Math.max(colMax, contentBottom(k));
+          columnBreakBefore = false;
+          placeNotes(k, allNotes);
+          continue;
+        }
+      }
       if ((full || columnBreakBefore) && top() > colTop + 1) {
         colMax = Math.max(colMax, top());
         const prev = blocks[i - 1];
+        inColumn = [];
         if (col + 1 < cols.widths.length && prev) {
           const up = colTop - top();
           colDecos.push(Decoration.node(prev.pos, prev.pos + prev.node.nodeSize, { style: `margin-bottom:${up}px` }));
@@ -462,12 +507,9 @@ function layout(view: EditorView, hooks: PaginationHooks) {
         }
       }
       columnBreakBefore = hasColumnBreak(b.node);
-      if (col > 0) {
-        let x = 0;
-        for (let c = 0; c < col; c++) x += cols.widths[c] + cols.gaps[c];
-        // shortcut: the line between columns (w:sep) is kept in the file but not drawn.
-        colDecos.push(Decoration.node(b.pos, b.pos + b.node.nodeSize, { style: `position:relative;left:${x}pt` }));
-      }
+      inColumn.push({ pos: b.pos, end: b.pos + b.node.nodeSize });
+      // shortcut: the line between columns (w:sep) is kept in the file but not drawn.
+      if (col > 0) colDecos.push(Decoration.node(b.pos, b.pos + b.node.nodeSize, { style: `position:relative;left:${xOf(col)}pt` }));
       colMax = Math.max(colMax, b.bottom + shift);
       // Taller than a column, or with page breaks: split between pages as any block is, below.
       if (!breaks.length && b.bottom + shift <= contentBottom(k) + 0.5) {

@@ -855,11 +855,27 @@ await session(sample("long.docx"), 9622, async (app) => {
     const sheets = [...document.querySelectorAll(".page-sheet")].map((s) => s.getBoundingClientRect());
     const blocks = [...document.querySelectorAll(".doc > p, .doc > table, .doc > div:not(.page-gap)")].map((el) => [el, el.getBoundingClientRect()]).filter(([, r]) => r.height > 0);
     const docLeft = document.querySelector(".doc").getBoundingClientRect().left;
-    return blocks.map(([el, r]) => {
+    const entry = (r, split, part = false) => {
       const page = sheets.findIndex((s) => r.top >= s.top - 1 && r.top < s.bottom);
+      return { page, col: r.left - docLeft > 100 ? 1 : 0, top: r.top - (sheets[page]?.top ?? 0), bottom: r.bottom - (sheets[page]?.top ?? 0), height: (sheets[page]?.height ?? 0), width: r.width, split, part };
+    };
+    return blocks.flatMap(([el, r]) => {
       // Split between pages (a page break in it, or taller than a column): it has a gap inside.
       const split = !!el.querySelector(".page-gap");
-      return { page, col: r.left - docLeft > 100 ? 1 : 0, top: r.top - (sheets[page]?.top ?? 0), bottom: r.bottom - (sheets[page]?.top ?? 0), height: (sheets[page]?.height ?? 0), width: r.width, split };
+      if (!el.classList.contains("column-split")) return [entry(r, split)];
+      // A paragraph going on in the next column: its two parts, by where its words are (not its empty top).
+      const lines = [];
+      const walk = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+      for (let t = walk.nextNode(); t; t = walk.nextNode()) {
+        const range = document.createRange();
+        range.selectNodeContents(t);
+        lines.push(...[...range.getClientRects()].filter((l) => l.height > 2 && l.width > 0));
+      }
+      return [0, 1].map((col) => {
+        const mine = lines.filter((l) => (l.left - docLeft > 100 ? 1 : 0) === col);
+        const box = { left: Math.min(...mine.map((l) => l.left)), top: Math.min(...mine.map((l) => l.top)), bottom: Math.max(...mine.map((l) => l.bottom)), width: Math.max(...mine.map((l) => l.right)) - Math.min(...mine.map((l) => l.left)) };
+        return entry(box, false, true);
+      });
     });
   })()`);
   const placed = await report();
@@ -868,7 +884,8 @@ await session(sample("long.docx"), 9622, async (app) => {
   const firstOf = (page, col) => placed.find((b) => b.page === page && b.col === col);
   const p0 = firstOf(0, 0);
   const p1 = firstOf(0, 1);
-  check("the second column starts at the top of the page, beside the first", !!p0 && !!p1 && Math.abs(p0.top - p1.top) < 3, JSON.stringify([p0, p1]));
+  check("the second column starts at the top of the page, beside the first", !!p0 && !!p1 && Math.abs(p0.top - p1.top) < 6, JSON.stringify([p0, p1]));
+  check("a paragraph that doesn't fit goes on at the top of the next column, as in Word", placed.some((b) => b.part && b.col === 1 && placed.some((a) => a.page === b.page && a.col === 0 && Math.abs(a.top - b.top) < 6)), JSON.stringify(placed.filter((b) => b.part).slice(0, 4)));
   check("no text runs off the bottom of a page", placed.every((b) => b.page >= 0 && (b.split || b.bottom <= b.height - 40)), JSON.stringify(placed.filter((b) => b.page < 0 || (!b.split && b.bottom > b.height - 40)).slice(0, 3)));
   const overlap = placed.some((b, i) => placed.some((o, j) => j > i && o.page === b.page && o.col === b.col && o.top < b.bottom - 2 && b.top < o.bottom - 2));
   check("and blocks in a column don't overlap", !overlap);
