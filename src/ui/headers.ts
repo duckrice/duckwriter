@@ -99,7 +99,10 @@ export class HeadersAndFooters {
         const rid = tag && /r:id="([^"]*)"/.exec(tag)?.[1];
         if (rid) return sectionStories?.get(rid) ?? stories.find((x) => x.rid === rid);
       }
-      return undefined;
+      // None before it: the document's own, when no earlier section has one of this kind (it is saved so too).
+      const tagOf = new RegExp(`<w:${kind}Reference\\b[^>]*w:type="${type}"|<w:${kind}Reference\\b(?![^>]*w:type=)${type === "default" ? "" : "(?!)"}`);
+      const anyEarlier = this.sections.slice(0, -1).some((sec) => tagOf.test(sec.xml));
+      return anyEarlier ? undefined : stories.find((x) => x.kind === kind && x.type === type);
     };
     if (s >= 0 && s < this.sections.length - 1) {
       const xml = this.sections[s].xml;

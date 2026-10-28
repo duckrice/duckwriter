@@ -10,6 +10,30 @@ import { HIGHLIGHTS } from "../docx/model";
 const pt = (value: number) => `${Math.round(value * 100) / 100}pt`;
 
 /** The CSS for a paragraph's own (direct) formatting. Style formatting comes from the generated stylesheet. */
+/** A Word line shape (a straight connector, as templates rule a cover page with), in points; null for other drawings. */
+export function lineShape(xml: string): { width: number; height: number; thickness: number; color: string; x: number; y: number } | null {
+  if (!/wordprocessingShape/.test(xml) || !/<a:prstGeom prst="(line|straightConnector1)"/.test(xml) || (xml.match(/<wps:wsp\b/g) ?? []).length !== 1) return null;
+  const emu = (v: string | undefined) => (Number(v) || 0) / 12700;
+  const extent = /<wp:extent cx="(\d+)" cy="(\d+)"/.exec(xml);
+  if (!extent) return null;
+  const offset = (axis: "H" | "V", from: RegExp) => {
+    const m = new RegExp(`<wp:position${axis} relativeFrom="(\\w+)">\\s*<wp:posOffset>(-?\\d+)</wp:posOffset>`).exec(xml);
+    return m && from.test(m[1]) ? emu(m[2]) : 0;
+  };
+  const line = /<a:ln\b([^>]*)>([\s\S]*?)<\/a:ln>/.exec(xml);
+  if (line && /<a:noFill\/>/.test(line[2])) return null;
+  return {
+    width: emu(extent[1]),
+    height: emu(extent[2]),
+    // Word's default line is three-quarters of a point.
+    thickness: Math.max(0.5, emu(/w="(\d+)"/.exec(line?.[1] ?? "")?.[1] ?? "9525")),
+    color: `#${/<a:srgbClr val="([0-9A-Fa-f]{6})"/.exec(line?.[2] ?? "")?.[1] ?? "000000"}`,
+    // Across from the column or margin, and down from the paragraph or line it is anchored in.
+    x: offset("H", /^(column|margin)$/),
+    y: offset("V", /^(paragraph|line)$/),
+  };
+}
+
 export function paragraphCss(attrs: Node["attrs"]): string {
   const css: string[] = [];
   if (attrs.align) css.push(`text-align:${attrs.align}`);
@@ -334,6 +358,12 @@ export const schema = new Schema(clipboardReady({
       attrs: { xml: {}, label: { default: "" }, hidden: { default: false } },
       toDOM(node): DOMOutputSpec {
         if (node.attrs.hidden) return ["span", { class: "raw-inline hidden" }];
+        // A line is drawn as one, where it sits below its paragraph's start (it keeps its place in the file as is).
+        const line = lineShape(node.attrs.xml ?? "");
+        if (line) {
+          const across = line.width >= line.height;
+          return ["span", { class: "shape-line", title: "A line (as in Word)", style: `margin-left:${pt(line.x)};margin-top:${pt(line.y)};width:${pt(across ? line.width : line.thickness)};height:${pt(across ? line.thickness : line.height)};background:${line.color}` }];
+        }
         return ["span", { class: "raw-inline", title: `${node.attrs.label} — kept as it is` }, node.attrs.label];
       },
     },

@@ -9,13 +9,14 @@ import { ensureStyles } from "./docx/builtins";
 import { blankDocx } from "./docx/template";
 import { writeDocx } from "./docx/write";
 import { createState, createView, setLinkOpener } from "./editor/editor";
-import { stepSize } from "./editor/commands";
+import { pageNumberingAt, setPageNumbering, stepSize } from "./editor/commands";
 import { bookmarkPosition } from "./ui/references";
 import { addRecent, removeRecent } from "./recent";
 import { pageSetup } from "./ui/pagesetup";
 import { showVersions, type Version } from "./ui/versions";
 import { TEMPLATES, templateDoc, type TemplateKind } from "./templates";
 import { NavigationPane } from "./ui/navigation";
+import { pageNumberFormat } from "./ui/pagenumbers";
 import { ReviewingPane } from "./ui/reviewing";
 import { count, showCounts } from "./ui/wordcount";
 import { offerUpdate } from "./updates";
@@ -798,6 +799,17 @@ class App {
     this.navigation.toggle();
     this.navButton.classList.toggle("active", this.navigation.open);
     this.placeSheet();
+  }
+
+  /** How the section the cursor is in numbers its pages (Insert → Header & footer → Page number format). */
+  pageNumberFormat() {
+    const sections = (this.lastLayout?.sections?.length ?? 1);
+    pageNumberFormat(pageNumberingAt(this.body.state, this.ctx), sections, (n) => {
+      setPageNumbering(this.ctx, n)(this.body.state, this.body.dispatch, this.body);
+      this.headers.stop();
+      this.changed(true, true);
+      this.view.focus();
+    });
   }
 
   /** Paper size, orientation and margins (Alt+P). */

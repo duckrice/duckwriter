@@ -99,7 +99,7 @@ export async function writeDocx(doc: Node, ctx: DocContext): Promise<Uint8Array>
   await writeStyleChanges(ctx);
   updateSectPr(ctx);
   const writer = new BodyWriter(ctx);
-  const body = writer.body(doc);
+  const body = sharedHeadersFooters(writer.body(doc), ctx.sectPr);
   await writeMediaTypes(ctx, writer.mediaExtensions);
 
   const xml = ctx.documentXml;
@@ -964,6 +964,26 @@ async function writeMediaTypes(ctx: DocContext, extensions: Set<string>) {
     xml = xml.slice(0, end) + `<Default Extension="${ext}" ContentType="${imageType(ext)}"/>` + xml.slice(end);
   }
   ctx.zip.file(path, xml);
+}
+
+/**
+ * Headers and footers set for the whole document (the last section's) shown in the sections before
+ * it too: Word only passes them on to later sections, so each kind no earlier section has of its
+ * own is also referenced from the first section. (DuckWriter shows them so; see headers.ts.)
+ */
+export function sharedHeadersFooters(body: string, last: string): string {
+  const sections = [...body.matchAll(/<w:sectPr\b[\s\S]*?<\/w:sectPr>|<w:sectPr\b[^>]*\/>/g)];
+  if (sections.length < 2) return body;
+  const earlier = sections.slice(0, -1).map((m) => m[0]).join("");
+  const kindType = (ref: string) => `${/<w:(header|footer)Reference/.exec(ref)?.[1]}:${/w:type="(\w+)"/.exec(ref)?.[1] ?? "default"}`;
+  const had = new Set((earlier.match(/<w:(header|footer)Reference\b[^>]*\/>/g) ?? []).map(kindType));
+  const add = (last.match(/<w:(header|footer)Reference\b[^>]*\/>/g) ?? []).filter((ref) => !had.has(kindType(ref)));
+  if (!add.length) return body;
+  const first = sections[0];
+  // References come first in section properties.
+  const opened = first[0].replace(/^<w:sectPr\b([^>]*?)\/>$/, "<w:sectPr$1></w:sectPr>");
+  const at = opened.indexOf(">") + 1;
+  return body.slice(0, first.index) + opened.slice(0, at) + add.join("") + opened.slice(at) + body.slice(first.index! + first[0].length);
 }
 
 /** The order Word requires for the elements of section properties. */

@@ -402,15 +402,74 @@ export function withColumns(sectPr: string, count: number): string {
   return xml.slice(0, at) + cols + xml.slice(at);
 }
 
+/** The paragraph ending the section the cursor is in (it holds the section's properties), or -1 for the last section. */
+function sectionEndAt(state: EditorState): number {
+  const here = state.selection.$from.before(1);
+  let end = -1;
+  state.doc.forEach((node, pos) => {
+    if (end < 0 && pos >= here && sectPrOf(node)) end = pos;
+  });
+  return end;
+}
+
+/** Page numbers in a section: their style, the number its first page gets (null: on from the section before), and none on its first page. */
+export interface PageNumbering {
+  format: "decimal" | "lowerRoman" | "upperRoman" | "lowerLetter" | "upperLetter";
+  start: number | null;
+  firstBlank: boolean;
+}
+
+/** The section the cursor is in: its page numbering, as the dialog shows it. */
+export function pageNumberingAt(state: EditorState, ctx: DocContext): PageNumbering {
+  const end = sectionEndAt(state);
+  const xml = end >= 0 ? sectPrOf(state.doc.nodeAt(end)!)! : ctx.sectPr ?? "";
+  const num = /<w:pgNumType\b[^>]*>/.exec(xml)?.[0] ?? "";
+  const format = /w:fmt="(\w+)"/.exec(num)?.[1] as PageNumbering["format"] | undefined;
+  const start = /w:start="(\d+)"/.exec(num)?.[1];
+  const firstBlank = end >= 0 ? /<w:titlePg(?![^>]*w:val="(0|false)")[^>]*>/.test(xml) : ctx.titlePage;
+  return { format: format && ["lowerRoman", "upperRoman", "lowerLetter", "upperLetter"].includes(format) ? format : "decimal", start: start ? Number(start) : null, firstBlank };
+}
+
+/** Section properties with this page numbering, in Word's order (titlePg only when `withTitle`; the last section's is the document's). */
+export function withPageNumbering(sectPr: string, n: PageNumbering, withTitle = true): string {
+  let xml = (sectPr.replace(/^<w:sectPr\b([^>]*?)\/>$/, "<w:sectPr$1></w:sectPr>") || "<w:sectPr></w:sectPr>").replace(/<w:pgNumType\b[^>]*\/>/g, "");
+  if (withTitle) xml = xml.replace(/<w:titlePg\b[^>]*\/>/g, "");
+  const insert = (element: string, before: RegExp) => {
+    const at = before.exec(xml)?.index ?? xml.lastIndexOf("</w:sectPr>");
+    xml = xml.slice(0, at) + element + xml.slice(at);
+  };
+  const attrs = `${n.format !== "decimal" ? ` w:fmt="${n.format}"` : ""}${n.start !== null ? ` w:start="${n.start}"` : ""}`;
+  if (attrs) insert(`<w:pgNumType${attrs}/>`, /<w:(cols|formProt|vAlign|noEndnote|titlePg|textDirection|bidi|rtlGutter|docGrid|printerSettings|sectPrChange)\b/);
+  if (withTitle && n.firstBlank) insert("<w:titlePg/>", /<w:(textDirection|bidi|rtlGutter|docGrid|printerSettings|sectPrChange)\b/);
+  return xml;
+}
+
+/** Sets the page numbering of the section the cursor is in, as Word's Page Number Format and Different First Page. */
+export function setPageNumbering(ctx: DocContext, n: PageNumbering): Command {
+  return (state, dispatch, view) => {
+    if (!dispatch) return true;
+    const end = sectionEndAt(state);
+    const tr = state.tr;
+    if (end >= 0) {
+      const para = state.doc.nodeAt(end)!;
+      const current = sectPrOf(para)!;
+      tr.setNodeMarkup(end, undefined, { ...para.attrs, extra: para.attrs.extra.replace(current, withPageNumbering(current, n)) });
+    } else {
+      // shortcut: the document's last section lives outside the text, so Undo doesn't change it back (as with section breaks).
+      ctx.sectPr = withPageNumbering(ctx.sectPr ?? "", n, false);
+      ctx.titlePage = n.firstBlank;
+    }
+    dispatch(tr);
+    if (view) relayout(view);
+    return true;
+  };
+}
+
 /** Puts the section the cursor is in into columns (one: back to a single column), as Word's Columns button. */
 export function setColumns(ctx: DocContext, count: number): Command {
   return (state, dispatch, view) => {
     if (!dispatch) return true;
-    const here = state.selection.$from.before(1);
-    let end = -1;
-    state.doc.forEach((node, pos) => {
-      if (end < 0 && pos >= here && sectPrOf(node)) end = pos;
-    });
+    const end = sectionEndAt(state);
     const tr = state.tr;
     if (end >= 0) {
       const para = state.doc.nodeAt(end)!;

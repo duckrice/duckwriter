@@ -1698,6 +1698,72 @@ rmSync(texOut, { force: true });
 
 // ---- sections: front matter i, ii, then chapters from 1 -----------------------------------------
 
+// Set up in DuckWriter itself: page numbers, a title page without one, i, ii, then 1 from the first chapter.
+{
+  const docx = await import("docx");
+  const reportFile = join(tmpdir(), "duckwriter-smoke-report-numbers.docx");
+  writeFileSync(
+    reportFile,
+    await docx.Packer.toBuffer(
+      new docx.Document({
+        sections: [
+          { children: [new docx.Paragraph("Title page"), new docx.Paragraph({ text: "Abstract", pageBreakBefore: true })] },
+          { properties: { type: docx.SectionType.NEXT_PAGE }, children: [new docx.Paragraph("Chapter one"), new docx.Paragraph({ text: "Chapter two", pageBreakBefore: true })] },
+        ],
+      }),
+    ),
+  );
+  await session(reportFile, 9642, async (app) => {
+    await app.debugHandle();
+    await app.waitFor(`document.querySelectorAll(".page-sheet").length === 4`, 8000);
+    const footers = () => app.evaluate(`[...document.querySelectorAll(".hf.footer")].map((f) => f.textContent.trim()).join(",")`);
+    await app.clickText(".doc p", "Title page");
+    await app.clickOn('.split-arrow[title^="Header and footer"]');
+    await app.clickText(".menu .menu-item", "At the bottom, right");
+    check("page numbers go on every section's pages", await app.waitFor(`[...document.querySelectorAll(".hf.footer")].map((f) => f.textContent.trim()).join(",") === "1,2,3,4"`, 5000), await footers());
+    const format = async (inside, set) => {
+      await app.clickText(".doc p", inside);
+      await app.clickOn('.split-arrow[title^="Header and footer"]');
+      await app.clickText(".menu .menu-item", "Page number format");
+      await app.waitFor(`!!document.querySelector("dialog[open] select")`, 3000);
+      await app.evaluate(`(() => { const d = document.querySelector("dialog[open]"); ${set}; [...d.querySelectorAll(".btn")].find((b) => b.textContent === "OK").click(); })()`);
+    };
+    await format("Title page", `d.querySelector("select").value = "lowerRoman"; d.querySelectorAll("input[type=radio]")[1].click(); d.querySelector("input[type=checkbox]").checked = true`);
+    await format("Chapter one", `d.querySelector("select").value = "decimal"; d.querySelectorAll("input[type=radio]")[1].click(); d.querySelector("input[type=number]").value = "1"`);
+    check("a blank title page, i, ii in the front matter, then 1, 2 from the first chapter", await app.waitFor(`[...document.querySelectorAll(".hf.footer")].map((f) => f.textContent.trim()).join(",") === ",ii,1,2"`, 5000), await footers());
+    // And Word, opening the saved file, numbers the pages the same.
+    const saved = join(tmpdir(), "duckwriter-smoke-report-numbers-saved.docx");
+    await app.evaluate(`(async () => {
+      const bytes = await window.__dw.build();
+      await window.__TAURI_INTERNALS__.invoke("write_file", bytes, { headers: { "x-path": encodeURIComponent(${JSON.stringify(saved)}) } });
+    })()`);
+    const script = join(tmpdir(), "duckwriter-smoke-report-numbers.ps1");
+    writeFileSync(script, `$ErrorActionPreference = 'Stop'
+$w = New-Object -ComObject Word.Application
+$w.Visible = $false
+try {
+  $d = $w.Documents.Open('${saved}', $false, $true)
+  $d.ExportAsFixedFormat('${saved.replace(/\.docx$/, ".pdf")}', 17)
+  $d.Close(0)
+} finally { $w.Quit() }`);
+    let word = null;
+    try {
+      execFileSync("powershell", ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", script], { stdio: "ignore", timeout: 120000 });
+      const pdf = await pdfjs.getDocument({ data: new Uint8Array(readFileSync(saved.replace(/\.docx$/, ".pdf"))) }).promise;
+      word = [];
+      for (let n = 1; n <= pdf.numPages; n++) {
+        const page = await pdf.getPage(n);
+        word.push((await page.getTextContent()).items.filter((i) => i.transform[5] < page.view[3] * 0.1).map((i) => i.str.trim()).join(""));
+      }
+    } catch {
+      console.log("(Word isn't here to compare the page numbers with)");
+    }
+    if (word) check("Word numbers the saved file's pages the same", word.join(",") === ",ii,1,2", word.join(","));
+    check("no errors in the app", app.errors.length === 0, app.errors.join("; "));
+  });
+  rmSync(reportFile, { force: true });
+}
+
 {
   const docx = await import("docx");
   const thesisFile = join(tmpdir(), "duckwriter-smoke-thesis.docx");

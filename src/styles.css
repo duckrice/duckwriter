@@ -446,6 +446,12 @@ body {
   display: none;
 }
 
+/* A line shape from Word: on a line of its own, text above and below it. */
+.shape-line {
+  display: block;
+  max-width: none;
+}
+
 /* ---- status bar, dialogs, messages ---------------------------------------------- */
 
 .statusbar {

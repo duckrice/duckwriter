@@ -18,3 +18,19 @@ describe("text columns", () => {
     expect(withColumns("<w:sectPr/>", 1)).toBe('<w:sectPr><w:cols w:space="708"/></w:sectPr>');
   });
 });
+
+import { withPageNumbering } from "../src/editor/commands";
+
+describe("page number format", () => {
+  const base = '<w:sectPr><w:footerReference w:type="default" r:id="rId9"/><w:pgSz w:w="11906" w:h="16838"/><w:cols w:space="708"/><w:docGrid w:linePitch="360"/></w:sectPr>';
+  it("writes roman numerals, a restart and a blank first page in Word's order", () => {
+    expect(withPageNumbering(base, { format: "lowerRoman", start: 1, firstBlank: true })).toBe('<w:sectPr><w:footerReference w:type="default" r:id="rId9"/><w:pgSz w:w="11906" w:h="16838"/><w:pgNumType w:fmt="lowerRoman" w:start="1"/><w:cols w:space="708"/><w:titlePg/><w:docGrid w:linePitch="360"/></w:sectPr>');
+  });
+  it("back to plain numbers going on: nothing extra written", () => {
+    const set = withPageNumbering(base, { format: "upperRoman", start: 3, firstBlank: true });
+    expect(withPageNumbering(set, { format: "decimal", start: null, firstBlank: false })).toBe(base);
+  });
+  it("the last section's title page is the document's own setting, so it isn't written there", () => {
+    expect(withPageNumbering(base, { format: "decimal", start: 1, firstBlank: true }, false)).not.toContain("titlePg");
+  });
+});

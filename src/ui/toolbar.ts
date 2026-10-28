@@ -70,6 +70,7 @@ export interface ToolbarHost {
   markup: "all" | "final" | "original";
   setMarkup(mode: "all" | "final" | "original"): void;
   pageNumbers(where: "bottom-center" | "bottom-right" | "top-right"): void;
+  pageNumberFormat(): void;
   styleChanged(id: string): void;
   setLineNumbers(restart: "continuous" | "newPage" | null): void;
   setPageBorder(kind: "single" | "double" | "thick" | null): void;
@@ -812,6 +813,7 @@ export class Toolbar {
       this.simpleItem("At the bottom, centred: Page 2 of 9", () => this.host.pageNumbers("bottom-center")),
       this.simpleItem("At the bottom, right: 2", () => this.host.pageNumbers("bottom-right")),
       this.simpleItem("At the top, right: 2", () => this.host.pageNumbers("top-right")),
+      this.simpleItem("Page number format… (i, ii, iii; start at; none on the first page)", () => this.host.pageNumberFormat()),
     );
   }
 
