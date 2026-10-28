@@ -143,7 +143,24 @@ class BodyWriter {
   /** @param lead XML put at the start of the first paragraph (a footnote's own number). */
   blocks(doc: Node, lead = ""): string {
     let out = "";
+    // Paragraphs of one content control, written inside it once they end.
+    let control: { sdt: { id: string; pr: string; text: string }; xml: string; text: string } | null = null;
+    const close = () => {
+      if (!control) return;
+      // Typed over the placeholder ("Click here to enter text"): no longer a placeholder.
+      const pr = control.text === control.sdt.text ? control.sdt.pr : control.sdt.pr.replace(/<w:showingPlcHdr\b[^>]*\/>/g, "");
+      out += `<w:sdt>${pr}<w:sdtContent>${control.xml}</w:sdtContent></w:sdt>`;
+      control = null;
+    };
     doc.forEach((node, _offset, index) => {
+      const sdt = node.type === schema.nodes.paragraph ? (node.attrs.sdt as { id: string; pr: string; text: string } | null) : null;
+      if (control && control.sdt.id !== sdt?.id) close();
+      if (sdt) {
+        control ??= { sdt, xml: "", text: "" };
+        control.xml += this.paragraph(node, index === 0 ? lead : "");
+        control.text += node.textContent;
+        return;
+      }
       if (node.type === schema.nodes.paragraph) out += this.paragraph(node, index === 0 ? lead : "");
       else if (node.type === schema.nodes.raw_block) out += node.attrs.xml;
       else if (node.type === schema.nodes.toc) out += this.toc(node);
@@ -151,6 +168,7 @@ class BodyWriter {
       // The endnotes list is only shown; the notes themselves go in endnotes.xml.
       else if (node.type === schema.nodes.table) out += this.table(node);
     });
+    close();
     return out;
   }
 

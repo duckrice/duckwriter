@@ -133,6 +133,12 @@ export const schema = new Schema(clipboardReady({
         change: { default: null },
         /** Its formatting changed while changes were tracked (w:pPrChange): { id, author, date, before } (before: the old pPr, as XML). */
         propsChange: { default: null },
+        /**
+         * The Word content control it's in (a form field, a page number box): { id, pr, text }, where
+         * pr is the control's own settings as XML and text what it held when read. Paragraphs with
+         * the same id are written back inside one control.
+         */
+        sdt: { default: null },
       },
       parseDOM: [
         { tag: "p", getAttrs: (el) => pastedParagraph(el as HTMLElement) },

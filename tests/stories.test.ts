@@ -110,3 +110,32 @@ describe("Word's page number box", () => {
     expect([kinds, fieldsIn(footer.doc)]).toEqual([["paragraph"], ["PAGE", "NUMPAGES"]]);
   });
 });
+
+describe("content controls holding paragraphs", () => {
+  const SDT_PR = '<w:sdtPr><w:id w:val="7"/><w:placeholder><w:docPart w:val="DefaultPlaceholder"/></w:placeholder><w:showingPlcHdr/></w:sdtPr>';
+  async function withField(): Promise<Uint8Array> {
+    const zip = await JSZip.loadAsync(await withHeaderAndFooter());
+    const xml = await zip.file("word/document.xml")!.async("string");
+    // A form field as a school template has one: a paragraph in a content control, showing its placeholder.
+    zip.file("word/document.xml", xml.replace(/(<w:body>)/, `$1<w:sdt>${SDT_PR}<w:sdtContent><w:p><w:r><w:t>Click here to enter text.</w:t></w:r></w:p></w:sdtContent></w:sdt>`));
+    return zip.generateAsync({ type: "uint8array" });
+  }
+
+  it("are paragraphs to edit, and keep their control when saved; the page number box too", async () => {
+    const { doc, context } = await readDocx(await withField());
+    expect(doc.firstChild!.textContent).toBe("Click here to enter text.");
+    const zip = await JSZip.loadAsync(await writeDocx(doc, context));
+    const xml = await zip.file("word/document.xml")!.async("string");
+    expect(xml).toContain(`<w:sdt>${SDT_PR}<w:sdtContent><w:p`);
+  });
+
+  it("typed over, the placeholder is no longer a placeholder", async () => {
+    const { doc, context } = await readDocx(await withField());
+    const first = doc.firstChild!;
+    const { Fragment, Slice } = await import("prosemirror-model");
+    // The paragraph, typed over (it keeps its attributes, the control among them).
+    const edited = doc.replace(0, first.nodeSize, new Slice(Fragment.from(first.type.create(first.attrs, schema.text("Kari Nordmann"))), 0, 0));
+    const xml = await (await JSZip.loadAsync(await writeDocx(edited, context))).file("word/document.xml")!.async("string");
+    expect([xml.includes("Kari Nordmann"), xml.includes("<w:showingPlcHdr/>"), /<w:sdt><w:sdtPr><w:id w:val="7"\/>/.test(xml)]).toEqual([true, false, true]);
+  });
+});

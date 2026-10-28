@@ -637,13 +637,16 @@ class BodyReader {
       }
     }
     if (isW(el, "sdt")) {
-      // Word's own gallery parts (the page number it put in a footer, a cover page's blocks): their
-      // text as ordinary paragraphs, so a page number counts each page. A table of contents and a
-      // bibliography are read where they stand, before this.
-      // shortcut: the gallery wrapper itself isn't written back; keep it if Word's galleries ever matter after saving.
-      const gallery = attr(el.getElementsByTagNameNS(NS.w, "docPartGallery")[0], "val");
+      // A content control holding paragraphs (a form field, the page number Word put in a footer):
+      // its paragraphs to edit as any, the control kept on them to be written back around them.
+      // A table of contents and a bibliography are read where they stand, before this.
       const content = child(el, "sdtContent");
-      if (gallery && content && !["Table of Contents", "Bibliographies"].includes(gallery)) return Array.from(content.children).flatMap((c) => this.block(c));
+      const kids = content ? Array.from(content.children) : [];
+      if (kids.length && kids.every((c) => isW(c, "p") || isW(c, "bookmarkStart") || isW(c, "bookmarkEnd") || isW(c, "proofErr"))) {
+        const pr = ["sdtPr", "sdtEndPr"].map((name) => child(el, name)).filter((c): c is Element => !!c).map((c) => this.raw(c)).join("");
+        const sdt = { id: `sdt${this.sdtCount++}`, pr, text: textOf(content!) };
+        return kids.flatMap((c) => this.block(c)).map((n) => (n.type === schema.nodes.paragraph ? n.type.create({ ...n.attrs, sdt }, n.content, n.marks) : n));
+      }
       return [this.rawBlock(el, "Content control", textOf(el).slice(0, 400))];
     }
     if (isW(el, "bookmarkStart") || isW(el, "bookmarkEnd") || isW(el, "proofErr")) return [schema.nodes.raw_block.create({ xml: this.raw(el), hidden: true })];
@@ -724,6 +727,9 @@ class BodyReader {
     originalXml.set(node, this.raw(tbl));
     return node;
   }
+
+  /** Content controls read so far, to tell them apart. */
+  private sdtCount = 0;
 
   private rawBlock(el: Element, label: string, preview: string): Node {
     return schema.nodes.raw_block.create({ xml: this.raw(el), label, preview });

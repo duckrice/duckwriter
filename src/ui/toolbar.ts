@@ -59,7 +59,7 @@ export interface ToolbarHost {
   setLineGrid(on: boolean): void;
   newDocument(): void;
   open(): void;
-  save(): void;
+  save(saveAs?: boolean): void;
   print(): void;
   savePdf(): void;
   editHeader(): void;
@@ -187,6 +187,7 @@ export class Toolbar {
       this.splitButton("newDoc", "New document (Ctrl+N)", null, () => this.host.newDocument(), () => this.newMenu()),
       this.splitButton("open", "Open (Ctrl+O)", null, () => this.host.open(), () => this.recentMenu()),
       this.button("save", "Save (Ctrl+S)", () => this.host.save()),
+      this.button("saveAs", "Save as… another name, place or format (F12)", () => this.host.save(true)),
       this.button("undo", "Undo (Ctrl+Z)", () => this.run(undo)),
       this.button("redo", "Redo (Ctrl+Y)", () => this.run(redo)),
       this.button("find", "Find and replace (Ctrl+F, Ctrl+H)", () => this.host.find(false)),

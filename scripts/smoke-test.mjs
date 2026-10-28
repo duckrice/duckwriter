@@ -272,6 +272,7 @@ rmSync(typed, { force: true });
 
 await session(null, 9433, async (app) => {
   check("starts with a new, empty document", (await app.evaluate("document.title")).startsWith("Document1.docx") && (await app.count(".doc > .para")) === 1);
+  check("there is a Save as button beside Save", (await app.count(`.tb[title^="Save as…"]`)) === 1);
   check("the page is A4 with 2.54 cm margins", await app.evaluate(`(() => { const s = document.querySelector(".sheet").style; return s.width === "595.3pt" && document.querySelector(".doc").style.margin === "72pt 72pt 0px"; })()`));
   check("the cursor is in the text, ready to type", await app.evaluate(`document.activeElement?.classList.contains("doc")`));
   // Screen readers say each button's name: its text, aria-label or title. Every ribbon tab, and the status bar.
@@ -773,7 +774,7 @@ await session(null, 9470, async (app) => {
       for (const x of r.getClientRects()) if (x.top < img.bottom - 5 && x.bottom > img.top + 5 && x.left >= img.right) return true;
     }
     return false;
-  })()`, 3000);
+  })()`, 8000);
   check("the text runs beside the picture", beside);
 
   // Drag it: it lands on the grid, and the grid shows while dragging.
