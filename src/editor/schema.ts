@@ -6,6 +6,7 @@
 import { Schema, type DOMOutputSpec, type Mark, type MarkSpec, type Node, type NodeSpec, type TagParseRule, type StyleParseRule } from "prosemirror-model";
 import { tableNodes } from "prosemirror-tables";
 import { HIGHLIGHTS } from "../docx/model";
+import { drawChart } from "./chart";
 
 const pt = (value: number) => `${Math.round(value * 100) / 100}pt`;
 
@@ -32,6 +33,63 @@ export function lineShape(xml: string): { width: number; height: number; thickne
     x: offset("H", /^(column|margin)$/),
     y: offset("V", /^(paragraph|line)$/),
   };
+}
+
+// shortcut: theme colours are Office 2013–2022's; read the document's theme if a template differs.
+const SCHEME: Record<string, string> = { accent1: "4472C4", accent2: "ED7D31", accent3: "A5A5A5", accent4: "FFC000", accent5: "5B9BD5", accent6: "70AD47", lt1: "FFFFFF", bg1: "FFFFFF", dk1: "000000", tx1: "000000", lt2: "E7E6E6", dk2: "44546A" };
+const colorIn = (xml: string | undefined) => {
+  const m = /<a:(srgbClr|schemeClr|prstClr) val="(\w+)"/.exec(xml ?? "");
+  if (!m) return null;
+  return `#${m[1] === "srgbClr" ? m[2] : m[1] === "schemeClr" ? (SCHEME[m[2]] ?? "4472C4") : m[2] === "white" ? "FFFFFF" : "000000"}`;
+};
+
+/** A Word shape or text box DuckWriter can draw (a box, rounded box, oval or triangle, maybe with text), in points. */
+export function boxShape(xml: string): { kind: string; width: number; height: number; x: number; y: number; fill: string | null; stroke: string | null; thickness: number; text: string[]; front: boolean; middle: boolean; center: boolean } | null {
+  const choice = xml.split("<mc:Fallback")[0];
+  const kind = /<a:prstGeom prst="(rect|roundRect|ellipse|triangle)"/.exec(choice)?.[1];
+  if (!kind || !/wordprocessingShape/.test(choice) || (choice.match(/<wps:wsp\b/g) ?? []).length !== 1) return null;
+  const extent = /<wp:extent cx="(\d+)" cy="(\d+)"/.exec(choice);
+  if (!extent) return null;
+  const emu = (v: string | undefined) => (Number(v) || 0) / 12700;
+  const offset = (axis: "H" | "V", from: RegExp) => {
+    const m = new RegExp(`<wp:position${axis} relativeFrom="(\\w+)">\\s*<wp:posOffset>(-?\\d+)</wp:posOffset>`).exec(choice);
+    return m && from.test(m[1]) ? emu(m[2]) : 0;
+  };
+  const spPr = /<wps:spPr>([\s\S]*?)<\/wps:spPr>/.exec(choice)?.[1] ?? "";
+  const style = /<wps:style>([\s\S]*?)<\/wps:style>/.exec(choice)?.[1] ?? "";
+  const ln = /<a:ln\b([^>]*)>([\s\S]*?)<\/a:ln>/.exec(spPr);
+  const ownFill = spPr.replace(/<a:ln\b[\s\S]*?<\/a:ln>/, "");
+  // Its own fill and outline, or else the shape style's (Word's blue shape with a darker edge).
+  const fill = /<a:noFill\/>/.test(ownFill) ? null : (colorIn(/<a:solidFill>([\s\S]*?)<\/a:solidFill>/.exec(ownFill)?.[1]) ?? colorIn(/<a:fillRef [^>]*>([\s\S]*?)<\/a:fillRef>/.exec(style)?.[1]));
+  const stroke = ln && /<a:noFill\/>/.test(ln[2]) ? null : (colorIn(ln?.[2]) ?? (/<a:lnRef idx="0"/.test(style) ? null : colorIn(/<a:lnRef [^>]*>([\s\S]*?)<\/a:lnRef>/.exec(style)?.[1])));
+  const text = (/<w:txbxContent>([\s\S]*?)<\/w:txbxContent>/.exec(choice)?.[1] ?? "")
+    .split(/<\/w:p>/)
+    .map((p) => [...p.matchAll(/<w:t(?: [^>]*)?>([^<]*)<\/w:t>/g)].map((t) => t[1].replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&amp;/g, "&")).join(""))
+    .slice(0, -1);
+  return {
+    kind,
+    width: emu(extent[1]),
+    height: emu(extent[2]),
+    x: offset("H", /^(column|margin)$/),
+    y: offset("V", /^(paragraph|line)$/),
+    fill,
+    stroke,
+    thickness: emu(/w="(\d+)"/.exec(ln?.[1] ?? "")?.[1] ?? "12700"),
+    text,
+    // In front of (or behind) the text, so the text doesn't make room for it.
+    front: /<wp:anchor\b/.test(choice) && /<wp:wrapNone\/>/.test(choice),
+    middle: /<wps:bodyPr\b[^>]*anchor="ctr"/.test(choice),
+    center: /<w:txbxContent>[\s\S]*<w:jc w:val="center"\/>/.test(choice),
+  };
+}
+
+/** Whether text on this fill should be dark: no fill (the page shows through) or a light one. */
+const light = (fill: string | null) => !fill || [1, 3, 5].reduce((sum, i, k) => sum + parseInt(fill.slice(i, i + 2), 16) * [0.299, 0.587, 0.114][k], 0) > 150;
+
+/** Word's horizontal line (Insert → Horizontal Line), from its VML: its thickness and colour. */
+export function horizontalLine(xml: string): { thickness: number; color: string } | null {
+  if (!/<v:rect\b[^>]*o:hr="t"/.test(xml)) return null;
+  return { thickness: Number(/height:([\d.]+)pt/.exec(xml)?.[1] ?? 1.5), color: /fillcolor="(#[0-9a-fA-F]{6})"/.exec(xml)?.[1] ?? "#a0a0a0" };
 }
 
 export function paragraphCss(attrs: Node["attrs"]): string {
@@ -145,7 +203,8 @@ export const schema = new Schema(clipboardReady({
         ...[1, 2, 3, 4, 5, 6].map((n) => ({ tag: `h${n}`, getAttrs: (el: HTMLElement | string) => ({ ...pastedParagraph(el as HTMLElement), style: `Heading${Math.min(n, 3)}` }) })),
       ],
       toDOM(node): DOMOutputSpec {
-        const attrs: Record<string, string> = { class: "para" };
+        // A drop cap is a paragraph of its own in Word (a frame), floating beside the next one.
+        const attrs: Record<string, string> = { class: /<w:framePr\b[^>]*w:dropCap="(drop|margin)"/.test(node.attrs.extra ?? "") ? "para drop-cap" : "para" };
         if (node.attrs.style) attrs["data-style"] = node.attrs.style;
         const css = paragraphCss(node.attrs);
         if (css) attrs.style = css;
@@ -361,15 +420,40 @@ export const schema = new Schema(clipboardReady({
       group: "inline",
       inline: true,
       atom: true,
-      attrs: { xml: {}, label: { default: "" }, hidden: { default: false } },
+      /** chart: a Word chart's numbers (see chart.ts), to draw it. */
+      attrs: { xml: {}, label: { default: "" }, hidden: { default: false }, chart: { default: null } },
       toDOM(node): DOMOutputSpec {
         if (node.attrs.hidden) return ["span", { class: "raw-inline hidden" }];
+        const extent = /<wp:extent cx="(\d+)" cy="(\d+)"/.exec(node.attrs.xml ?? "");
+        if (node.attrs.chart && extent) {
+          const [w, h] = [Number(extent[1]) / 12700, Number(extent[2]) / 12700];
+          const box = document.createElement("span");
+          box.className = "chart-box";
+          box.title = "A chart (as in Word; kept as it is)";
+          box.style.cssText = `width:${pt(w)};height:${pt(h)}`;
+          box.append(drawChart(node.attrs.chart, w, h));
+          return box;
+        }
         // A line is drawn as one, where it sits below its paragraph's start (it keeps its place in the file as is).
         const line = lineShape(node.attrs.xml ?? "");
         if (line) {
           const across = line.width >= line.height;
           return ["span", { class: "shape-line", title: "A line (as in Word)", style: `margin-left:${pt(line.x)};margin-top:${pt(line.y)};width:${pt(across ? line.width : line.thickness)};height:${pt(across ? line.thickness : line.height)};background:${line.color}` }];
         }
+        const box = boxShape(node.attrs.xml ?? "");
+        if (box) {
+          const r = box.kind === "ellipse" ? "50%" : box.kind === "roundRect" ? `${pt(Math.min(box.width, box.height) / 6)}` : "0";
+          const edge = box.stroke ? `border:${pt(box.thickness)} solid ${box.stroke};` : "";
+          // In front of the text it is placed from the column's left edge; otherwise it is in the text, at its start.
+          const shape = `width:${pt(box.width)};height:${pt(box.height)};${box.front ? `left:${pt(box.x)}` : `margin-left:${pt(box.x)}`};margin-top:${pt(box.y)};border-radius:${r};${box.fill && box.kind !== "triangle" ? `background:${box.fill};` : ""}${box.kind === "triangle" ? "" : edge}`;
+          const lines = box.text.map((t) => ["span", { class: "shape-text-line" }, t || " "] as DOMOutputSpec);
+          const triangle: DOMOutputSpec[] = box.kind === "triangle" ? [["span", { class: "shape-triangle", style: `background:${box.fill ?? box.stroke ?? "#4472C4"}` }]] : [];
+          return ["span", { class: `shape-box${box.front ? " front" : ""}`, title: "A shape (as in Word; kept as it is)", style: `${shape}color:${light(box.fill) ? "#000" : "#fff"}` }, ...triangle, ["span", { class: "shape-text", style: `justify-content:${box.middle ? "center" : "flex-start"};text-align:${box.center ? "center" : "left"}` }, ...lines]];
+        }
+        // A symbol (Insert → Symbol in an old symbol font) reads as the character it is.
+        if (/<w:sym\b/.test(node.attrs.xml ?? "")) return ["span", { class: "sym-char", title: "A symbol (as in Word)" }, node.attrs.label];
+        const hr = horizontalLine(node.attrs.xml ?? "");
+        if (hr) return ["span", { class: "shape-hr", title: "A horizontal line (as in Word)", style: `height:${pt(hr.thickness)};background:${hr.color}` }];
         return ["span", { class: "raw-inline", title: `${node.attrs.label} — kept as it is` }, node.attrs.label];
       },
     },
@@ -497,6 +581,12 @@ function pastedParagraph(el: HTMLElement): Record<string, unknown> {
  */
 function clipboardReady(spec: { nodes: Record<string, NodeSpec>; marks: Record<string, MarkSpec> }) {
   const withData = (out: DOMOutputSpec, kind: string, name: string, attrs: object): DOMOutputSpec => {
+    // A node drawn as an element of its own (a chart) carries its data too, to be copied and pasted.
+    if (typeof Element !== "undefined" && out instanceof Element) {
+      out.setAttribute(kind, name);
+      out.setAttribute("data-pm", JSON.stringify(attrs));
+      return out;
+    }
     if (!Array.isArray(out)) return out;
     const [tag, second, ...rest] = out as [string, unknown, ...unknown[]];
     const data = { [kind]: name, "data-pm": JSON.stringify(attrs) };

@@ -2749,3 +2749,52 @@ kbd {
 .doc .column-split-gap {
   display: block;
 }
+
+/* A Word chart, drawn from its numbers. */
+.chart-box {
+  display: inline-block;
+  vertical-align: bottom;
+}
+.chart-box svg {
+  display: block;
+}
+
+/* Word's shapes and text boxes, drawn where they sit below their paragraph's start. */
+.shape-box {
+  display: block;
+  position: relative;
+  box-sizing: border-box;
+  overflow: hidden;
+  font-size: 11pt;
+  line-height: 1.15;
+}
+/* In front of the text: it doesn't push the text along. */
+.shape-box.front {
+  position: absolute;
+  z-index: 2;
+}
+.shape-text {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  padding: 3.6pt 7.2pt;
+  box-sizing: border-box;
+}
+.shape-text-line {
+  display: block;
+  white-space: pre-wrap;
+}
+.shape-triangle {
+  position: absolute;
+  inset: 0;
+  clip-path: polygon(50% 0, 100% 100%, 0 100%);
+}
+.shape-hr {
+  display: block;
+  width: 100%;
+}
+.para.drop-cap {
+  float: left;
+  margin: 0 4pt 0 0;
+}

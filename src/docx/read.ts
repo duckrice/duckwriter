@@ -6,6 +6,7 @@ import type { Mark, Node } from "prosemirror-model";
 import { schema } from "../editor/schema";
 import { toLatex } from "../math/ast";
 import { MATH_NS, fromOmml } from "../math/omml";
+import { readChart } from "../editor/chart";
 import { imageType, readPicture } from "./drawing";
 import { readBibliography } from "./bibliography";
 import { readProperties } from "./properties";
@@ -294,17 +295,46 @@ function commentParagraphText(p: Element): string {
   return out;
 }
 
-/** The pictures a part (the document, a header…) refers to, by relationship id, ready to show. */
+/** The pictures a part (the document, a header…) refers to, by relationship id, ready to show; its charts as "chart:" + id, their numbers as JSON. */
 async function partImages(zip: JSZip, rels: Map<string, Relationship>, dir: string): Promise<Map<string, string>> {
   const out = new Map<string, string>();
   for (const [rid, rel] of rels) {
-    if (rel.external || !rel.type.endsWith("/image")) continue;
+    if (rel.external) continue;
     const path = resolvePath(dir, rel.target);
+    if (rel.type.endsWith("/chart")) {
+      const chart = readChart((await zip.file(path)?.async("string")) ?? "");
+      if (chart) out.set(`chart:${rid}`, JSON.stringify(chart));
+      continue;
+    }
+    if (!rel.type.endsWith("/image")) continue;
     const bytes = await zip.file(path)?.async("uint8array");
     if (!bytes) continue;
     out.set(rid, imageUrl(bytes, imageType(path.split(".").pop() ?? "")));
   }
   return out;
+}
+
+// Insert → Symbol in the Symbol font: Greek letters and maths signs, as the font draws them.
+const SYMBOL_GREEK = "ΑΒΧΔΕΦΓΗΙϑΚΛΜΝΟΠΘΡΣΤΥςΩΞΨΖ";
+const SYMBOL_GREEK_SMALL = "αβχδεφγηιϕκλμνοπθρστυϖωξψζ";
+const SYMBOL_MORE: Record<number, string> = {
+  0x22: "∀", 0x24: "∃", 0x27: "∋", 0x2a: "∗", 0x2d: "−", 0x40: "≅", 0x5c: "∴", 0x5e: "⊥", 0x7e: "∼",
+  0xa1: "ϒ", 0xa2: "′", 0xa3: "≤", 0xa4: "⁄", 0xa5: "∞", 0xa6: "ƒ", 0xa7: "♣", 0xa8: "♦", 0xa9: "♥", 0xaa: "♠", 0xab: "↔", 0xac: "←", 0xad: "↑", 0xae: "→", 0xaf: "↓",
+  0xb0: "°", 0xb1: "±", 0xb2: "″", 0xb3: "≥", 0xb4: "×", 0xb5: "∝", 0xb6: "∂", 0xb7: "•", 0xb8: "÷", 0xb9: "≠", 0xba: "≡", 0xbb: "≈", 0xbc: "…",
+  0xc0: "ℵ", 0xc4: "⊗", 0xc5: "⊕", 0xc6: "∅", 0xc7: "∩", 0xc8: "∪", 0xc9: "⊃", 0xca: "⊇", 0xcb: "⊄", 0xcc: "⊂", 0xcd: "⊆", 0xce: "∈", 0xcf: "∉",
+  0xd0: "∠", 0xd1: "∇", 0xd5: "∏", 0xd6: "√", 0xd7: "⋅", 0xd8: "¬", 0xd9: "∧", 0xda: "∨", 0xdb: "⇔", 0xdc: "⇐", 0xdd: "⇑", 0xde: "⇒", 0xdf: "⇓", 0xe5: "∑", 0xf2: "∫",
+};
+const WINGDINGS: Record<number, string> = { 0x6f: "☐", 0xa8: "◻", 0xd8: "➢", 0x9f: "•", 0xa7: "▪", 0xfb: "✗", 0xfc: "✓", 0xfd: "☒", 0xfe: "☑" };
+
+/** The character a w:sym shows: Symbol and Wingdings drawn as Unicode; other fonts' codes as they are. */
+export function symbolChar(font: string, code: number): string {
+  if (/^symbol$/i.test(font)) {
+    if (code >= 0x41 && code <= 0x5a) return SYMBOL_GREEK[code - 0x41];
+    if (code >= 0x61 && code <= 0x7a) return SYMBOL_GREEK_SMALL[code - 0x61];
+    return SYMBOL_MORE[code] ?? String.fromCharCode(code);
+  }
+  if (/^wingdings$/i.test(font)) return WINGDINGS[code] ?? "□";
+  return String.fromCharCode(code);
 }
 
 /** A URL to show a picture from. (Outside a browser, as in tests, there may be none.) */
@@ -944,7 +974,10 @@ class BodyReader {
             break;
           }
           flush();
-          out.push(this.runPiece(r, el, "Picture", marks));
+          const chartId = Array.from(el.getElementsByTagNameNS("*", "chart"))[0]?.getAttributeNS(NS.r, "id");
+          const chart = chartId && this.images.get(`chart:${chartId}`);
+          const piece = this.runPiece(r, el, chart ? "Chart" : "Picture", marks);
+          out.push(chart ? schema.nodes.raw_inline.create({ ...piece.attrs, chart: JSON.parse(chart) }, null, marks) : piece);
           break;
         }
         case "endnoteRef":
@@ -989,7 +1022,7 @@ class BodyReader {
               : el.localName === "footnoteReference" || el.localName === "endnoteReference"
                 ? "Note"
                 : el.localName === "sym"
-                  ? String.fromCharCode(parseInt(attr(el, "char") ?? "3F", 16) & 0xff)
+                  ? symbolChar(attr(el, "font") ?? "", parseInt(attr(el, "char") ?? "3F", 16) & 0xff)
                   : "";
           out.push(this.runPiece(r, el, label, marks));
         }
