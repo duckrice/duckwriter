@@ -7,6 +7,7 @@ import { schema } from "../editor/schema";
 import { toLatex } from "../math/ast";
 import { MATH_NS, fromOmml } from "../math/omml";
 import { readChart } from "../editor/chart";
+import { readDiagram } from "../editor/shapes";
 import { imageType, readPicture } from "./drawing";
 import { readBibliography } from "./bibliography";
 import { readProperties } from "./properties";
@@ -304,6 +305,14 @@ async function partImages(zip: JSZip, rels: Map<string, Relationship>, dir: stri
     if (rel.type.endsWith("/chart")) {
       const chart = readChart((await zip.file(path)?.async("string")) ?? "");
       if (chart) out.set(`chart:${rid}`, JSON.stringify(chart));
+      continue;
+    }
+    // A SmartArt diagram: its data names the drawing Word made of it, which is what's shown.
+    if (rel.type.endsWith("/diagramData")) {
+      const drawingRid = /<dsp:dataModelExt\b[^>]*\brelId="([^"]+)"/.exec((await zip.file(path)?.async("string")) ?? "")?.[1];
+      const drawing = drawingRid && rels.get(drawingRid);
+      const shapes = drawing ? readDiagram((await zip.file(resolvePath(dir, drawing.target))?.async("string")) ?? "") : [];
+      if (shapes.length) out.set(`diagram:${rid}`, JSON.stringify(shapes));
       continue;
     }
     if (!rel.type.endsWith("/image")) continue;
@@ -976,8 +985,10 @@ class BodyReader {
           flush();
           const chartId = Array.from(el.getElementsByTagNameNS("*", "chart"))[0]?.getAttributeNS(NS.r, "id");
           const chart = chartId && this.images.get(`chart:${chartId}`);
-          const piece = this.runPiece(r, el, chart ? "Chart" : "Picture", marks);
-          out.push(chart ? schema.nodes.raw_inline.create({ ...piece.attrs, chart: JSON.parse(chart) }, null, marks) : piece);
+          const diagramId = Array.from(el.getElementsByTagNameNS("*", "relIds"))[0]?.getAttributeNS(NS.r, "dm");
+          const diagram = diagramId && this.images.get(`diagram:${diagramId}`);
+          const piece = this.runPiece(r, el, chart ? "Chart" : diagram ? "SmartArt" : "Picture", marks);
+          out.push(chart || diagram ? schema.nodes.raw_inline.create({ ...piece.attrs, chart: chart ? JSON.parse(chart) : null, diagram: diagram ? JSON.parse(diagram) : null }, null, marks) : piece);
           break;
         }
         case "endnoteRef":

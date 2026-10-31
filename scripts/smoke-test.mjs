@@ -906,7 +906,8 @@ await session(sample("long.docx"), 9622, async (app) => {
 });
 
 // The same file in Word (when it's on this computer): two columns, and about as many pages.
-if (columnPages) {
+// (NO_WORD=1 leaves Word out, for when it is busy or stuck.)
+if (columnPages && !process.env.NO_WORD) {
   const [file, ours] = columnPages;
   const script = join(tmpdir(), "duckwriter-smoke-columns.ps1");
   writeFileSync(script, `$ErrorActionPreference = 'Stop'

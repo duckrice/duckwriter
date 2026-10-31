@@ -7,6 +7,7 @@ import { Schema, type DOMOutputSpec, type Mark, type MarkSpec, type Node, type N
 import { tableNodes } from "prosemirror-tables";
 import { HIGHLIGHTS } from "../docx/model";
 import { drawChart } from "./chart";
+import { colorIn, drawShapes, presetPath } from "./shapes";
 
 const pt = (value: number) => `${Math.round(value * 100) / 100}pt`;
 
@@ -35,19 +36,12 @@ export function lineShape(xml: string): { width: number; height: number; thickne
   };
 }
 
-// shortcut: theme colours are Office 2013–2022's; read the document's theme if a template differs.
-const SCHEME: Record<string, string> = { accent1: "4472C4", accent2: "ED7D31", accent3: "A5A5A5", accent4: "FFC000", accent5: "5B9BD5", accent6: "70AD47", lt1: "FFFFFF", bg1: "FFFFFF", dk1: "000000", tx1: "000000", lt2: "E7E6E6", dk2: "44546A" };
-const colorIn = (xml: string | undefined) => {
-  const m = /<a:(srgbClr|schemeClr|prstClr) val="(\w+)"/.exec(xml ?? "");
-  if (!m) return null;
-  return `#${m[1] === "srgbClr" ? m[2] : m[1] === "schemeClr" ? (SCHEME[m[2]] ?? "4472C4") : m[2] === "white" ? "FFFFFF" : "000000"}`;
-};
-
-/** A Word shape or text box DuckWriter can draw (a box, rounded box, oval or triangle, maybe with text), in points. */
+/** A Word shape or text box DuckWriter can draw (a box, oval, arrow, star … maybe with text), in points. */
 export function boxShape(xml: string): { kind: string; width: number; height: number; x: number; y: number; fill: string | null; stroke: string | null; thickness: number; text: string[]; front: boolean; middle: boolean; center: boolean } | null {
   const choice = xml.split("<mc:Fallback")[0];
-  const kind = /<a:prstGeom prst="(rect|roundRect|ellipse|triangle)"/.exec(choice)?.[1];
-  if (!kind || !/wordprocessingShape/.test(choice) || (choice.match(/<wps:wsp\b/g) ?? []).length !== 1) return null;
+  const kind = /<a:prstGeom prst="(\w+)"/.exec(choice)?.[1];
+  if (!kind || presetPath(kind, 1, 1) === null || /^(line|straightConnector1)$/.test(kind)) return null;
+  if (!/wordprocessingShape/.test(choice) || (choice.match(/<wps:wsp\b/g) ?? []).length !== 1) return null;
   const extent = /<wp:extent cx="(\d+)" cy="(\d+)"/.exec(choice);
   if (!extent) return null;
   const emu = (v: string | undefined) => (Number(v) || 0) / 12700;
@@ -420,8 +414,8 @@ export const schema = new Schema(clipboardReady({
       group: "inline",
       inline: true,
       atom: true,
-      /** chart: a Word chart's numbers (see chart.ts), to draw it. */
-      attrs: { xml: {}, label: { default: "" }, hidden: { default: false }, chart: { default: null } },
+      /** chart: a Word chart's numbers (see chart.ts), to draw it; diagram: a SmartArt diagram's shapes (see shapes.ts). */
+      attrs: { xml: {}, label: { default: "" }, hidden: { default: false }, chart: { default: null }, diagram: { default: null } },
       toDOM(node): DOMOutputSpec {
         if (node.attrs.hidden) return ["span", { class: "raw-inline hidden" }];
         const extent = /<wp:extent cx="(\d+)" cy="(\d+)"/.exec(node.attrs.xml ?? "");
@@ -442,14 +436,26 @@ export const schema = new Schema(clipboardReady({
         }
         const box = boxShape(node.attrs.xml ?? "");
         if (box) {
+          // Boxes and ovals in CSS; every other outline (arrows, stars …) as an SVG path behind the text.
+          const css = box.kind === "rect" || box.kind === "roundRect" || box.kind === "ellipse";
           const r = box.kind === "ellipse" ? "50%" : box.kind === "roundRect" ? `${pt(Math.min(box.width, box.height) / 6)}` : "0";
           const edge = box.stroke ? `border:${pt(box.thickness)} solid ${box.stroke};` : "";
           // In front of the text it is placed from the column's left edge; otherwise it is in the text, at its start.
-          const shape = `width:${pt(box.width)};height:${pt(box.height)};${box.front ? `left:${pt(box.x)}` : `margin-left:${pt(box.x)}`};margin-top:${pt(box.y)};border-radius:${r};${box.fill && box.kind !== "triangle" ? `background:${box.fill};` : ""}${box.kind === "triangle" ? "" : edge}`;
+          const shape = `width:${pt(box.width)};height:${pt(box.height)};${box.front ? `left:${pt(box.x)}` : `margin-left:${pt(box.x)}`};margin-top:${pt(box.y)};${css ? `border-radius:${r};${box.fill ? `background:${box.fill};` : ""}${edge}` : ""}`;
           const lines = box.text.map((t) => ["span", { class: "shape-text-line" }, t || " "] as DOMOutputSpec);
-          const triangle: DOMOutputSpec[] = box.kind === "triangle" ? [["span", { class: "shape-triangle", style: `background:${box.fill ?? box.stroke ?? "#4472C4"}` }]] : [];
-          return ["span", { class: `shape-box${box.front ? " front" : ""}`, title: "A shape (as in Word; kept as it is)", style: `${shape}color:${light(box.fill) ? "#000" : "#fff"}` }, ...triangle, ["span", { class: "shape-text", style: `justify-content:${box.middle ? "center" : "flex-start"};text-align:${box.center ? "center" : "left"}` }, ...lines]];
+          const outline: DOMOutputSpec[] = css
+            ? []
+            : [
+                [
+                  "http://www.w3.org/2000/svg svg",
+                  { class: "shape-outline", viewBox: `0 0 ${box.width} ${box.height}`, preserveAspectRatio: "none" },
+                  ["http://www.w3.org/2000/svg path", { d: presetPath(box.kind, box.width, box.height)!, fill: box.fill ?? "none", ...(box.stroke ? { stroke: box.stroke, "stroke-width": String(box.thickness) } : {}) }],
+                ],
+              ];
+          return ["span", { class: `shape-box${box.front ? " front" : ""}`, title: "A shape (as in Word; kept as it is)", style: `${shape}color:${light(box.fill) ? "#000" : "#fff"}` }, ...outline, ["span", { class: "shape-text", style: `justify-content:${box.middle ? "center" : "flex-start"};text-align:${box.center ? "center" : "left"}` }, ...lines]];
         }
+        // A SmartArt diagram, drawn from the shapes Word keeps with it.
+        if (node.attrs.diagram && extent) return drawShapes(node.attrs.diagram, Number(extent[1]) / 12700, Number(extent[2]) / 12700);
         // A symbol (Insert → Symbol in an old symbol font) reads as the character it is.
         if (/<w:sym\b/.test(node.attrs.xml ?? "")) return ["span", { class: "sym-char", title: "A symbol (as in Word)" }, node.attrs.label];
         const hr = horizontalLine(node.attrs.xml ?? "");
