@@ -45,7 +45,7 @@ import { stamped } from "./docx/properties";
 import { checkPackage } from "./docx/check";
 import { asPackage, convertPackage, isWordFile, packageKind, toFlatOpc, wordXml } from "./docx/package";
 import { htmlToDoc, markdownToHtml, textFormat, textToHtml } from "./convert/import";
-import { baseName, isDesktop, onCloseRequested, openWindow, pickDocument, pickPdfPath, pickSavePath, readPath, setTitle, startupFiles, windowOpening, windowsSpelling, writePath } from "./platform";
+import { baseName, isDesktop, isLinux, onCloseRequested, openWindow, pickDocument, pickPdfPath, pickSavePath, readPath, setTitle, startupFiles, windowOpening, windowsSpelling, writePath } from "./platform";
 import { Footnotes } from "./ui/footnotes";
 import { headingLevel, updateTocs } from "./ui/references";
 import { addBookmarks, type Bookmark } from "./convert/bookmarks";
@@ -716,7 +716,7 @@ class App {
       if (!on) this.toast("Stopped reading aloud");
     });
     if (started) this.toast("Reading aloud; Ctrl+Alt+Space stops");
-    else if (!isReading() && !window.speechSynthesis) this.toast("Windows has no voice to read with", "error");
+    else if (!isReading() && !window.speechSynthesis) this.toast("This computer has no voice to read with", "error");
   }
 
   /** Title, author, keywords… (Alt+Shift+P). */
@@ -1549,7 +1549,7 @@ class App {
     const languages = this.spellLanguages.map((tag) => names.of(tag) ?? tag).join(", ");
     this.spellStatus.hidden = !this.spellLanguages.length;
     this.spellStatus.textContent = spellingOn() ? "Spelling on" : "Spelling off";
-    this.spellStatus.title = `${spellingOn() ? "Checking spelling" : "Not checking spelling"} in ${languages} (Ctrl+F7 to switch; F7 for the next mistake).\nThe languages are the ones in Windows' language settings, and English.`;
+    this.spellStatus.title = `${spellingOn() ? "Checking spelling" : "Not checking spelling"} in ${languages} (Ctrl+F7 to switch; F7 for the next mistake).\nThe languages are ${isLinux ? "your system's language (with its Hunspell dictionary installed)" : "the ones in Windows' language settings"}, and English.`;
   }
 
   /** Zooms in (1), out (-1) or back to 100% (0). */

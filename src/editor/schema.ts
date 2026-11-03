@@ -644,7 +644,18 @@ export function fieldKind(instr: string): string {
 export function cssFontFamily(family: string): string {
   const serif = /times|georgia|cambria|garamond|book|serif|palatino|constantia/i.test(family);
   const mono = /courier|consol|mono|lucida console/i.test(family);
-  return `"${family.replace(/"/g, "")}", ${mono ? "monospace" : serif ? "serif" : "sans-serif"}`;
+  const name = family.replace(/"/g, "");
+  const twin = METRIC_TWINS[name.toLowerCase()];
+  return `"${name}", ${twin ? `${twin}, ` : ""}${mono ? "monospace" : serif ? "serif" : "sans-serif"}`;
 }
+
+/** Free fonts with the same letter widths as Office's (Linux has them, not the originals), so lines still break where Word breaks them. */
+const METRIC_TWINS: Record<string, string> = {
+  calibri: "Carlito",
+  cambria: "Caladea",
+  arial: '"Liberation Sans", Arimo',
+  "times new roman": '"Liberation Serif", Tinos',
+  "courier new": '"Liberation Mono", Cousine',
+};
 
 export const isMark = (mark: Mark, name: keyof typeof schema.marks) => mark.type === schema.marks[name];

@@ -8,6 +8,7 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { open, save } from "@tauri-apps/plugin-dialog";
 
 export const isDesktop = "__TAURI_INTERNALS__" in window;
+export const isLinux = /Linux/.test(navigator.userAgent);
 
 export interface OpenedFile {
   name: string;
