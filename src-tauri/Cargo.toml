@@ -26,6 +26,13 @@ tokio-tungstenite = "0.30.0"
 futures-util = "0.3.34"
 serde = { version = "1.0.229", features = ["derive"] }
 
+# Spelling elsewhere (Linux): the system's Hunspell dictionaries; tests check that code on Windows too.
+[target.'cfg(not(windows))'.dependencies]
+spellbook = "0.4"
+
+[dev-dependencies]
+spellbook = "0.4"
+
 # Saving as PDF uses WebView2's own PDF printer, spelling Windows' spell checker; the same versions Tauri uses.
 [target.'cfg(windows)'.dependencies]
 webview2-com = "0.39"
