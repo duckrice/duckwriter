@@ -42,11 +42,24 @@ const twips = (value: number | null) => (value === null ? undefined : value / TW
 /** A list level as Word has them, 0 to 8, whatever a damaged file says. */
 const listLevel = (n: number) => Math.min(8, Math.max(0, Math.trunc(n)));
 
+/** Office's container for a document with a password: an OLE file holding an "EncryptedPackage" stream. */
+export function passwordProtected(bytes: Uint8Array): boolean {
+  if (bytes[0] !== 0xd0 || bytes[1] !== 0xcf || bytes[2] !== 0x11 || bytes[3] !== 0xe0) return false;
+  // The stream's name, in UTF-16, in the container's directory.
+  const name = new Uint8Array([..."EncryptedPackage"].flatMap((ch) => [ch.charCodeAt(0), 0]));
+  outer: for (let i = 0; i + name.length <= bytes.length; i++) {
+    for (let j = 0; j < name.length; j++) if (bytes[i + j] !== name[j]) continue outer;
+    return true;
+  }
+  return false;
+}
+
 export async function readDocx(bytes: Uint8Array): Promise<OpenedDocument> {
   let zip: JSZip;
   try {
     zip = await JSZip.loadAsync(bytes);
   } catch {
+    if (passwordProtected(bytes)) throw new Error("This Word document is protected with a password, which DuckWriter can't open yet. In Word: File → Info → Protect Document → Encrypt with Password, clear the password, and save.");
     throw new Error("This isn't a Word document (.docx), or the file is damaged.");
   }
   const documentPath = await mainDocumentPath(zip);
@@ -693,7 +706,20 @@ class BodyReader {
   }
 
   /** A Word table, with merged cells (gridSpan, vMerge) turned into column and row spans. */
+  /** How many tables deep the reading is: past 50 (only seen in files made to break programs), they're kept as they are. */
+  private tableDepth = 0;
+
   table(tbl: Element): Node {
+    if (this.tableDepth >= 50) throw new Error("Tables nested too deep to show");
+    this.tableDepth++;
+    try {
+      return this.tableInside(tbl);
+    } finally {
+      this.tableDepth--;
+    }
+  }
+
+  private tableInside(tbl: Element): Node {
     const tblPr = child(tbl, "tblPr");
     const grid = childrenNamed(child(tbl, "tblGrid"), "gridCol").map((g) => numAttr(g, "w") ?? 0);
     const direct = tableBorders(child(tblPr, "tblBorders"));
@@ -1193,18 +1219,19 @@ function mergeText(nodes: Node[]): Node[] {
 }
 
 function textOf(el: Element): string {
+  // Without recursion, as files can nest thousands deep: each paragraph after some text ends a line.
   let out = "";
-  const walk = (node: Element) => {
-    for (const c of children(node)) {
-      if (isW(c, "t")) out += c.textContent ?? "";
-      else if (isW(c, "tab")) out += " ";
-      else if (isW(c, "p") && out && !out.endsWith("\n")) {
-        walk(c);
-        out += "\n";
-      } else walk(c);
+  const todo: (Element | "\n")[] = children(el).reverse();
+  while (todo.length) {
+    const c = todo.pop()!;
+    if (c === "\n") out += "\n";
+    else if (isW(c, "t")) out += c.textContent ?? "";
+    else if (isW(c, "tab")) out += " ";
+    else {
+      if (isW(c, "p") && out && !out.endsWith("\n")) todo.push("\n");
+      todo.push(...children(c).reverse());
     }
-  };
-  walk(el);
+  }
   return out.trim();
 }
 

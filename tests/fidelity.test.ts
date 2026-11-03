@@ -7,7 +7,7 @@ import JSZip from "jszip";
 import { Fragment, Slice } from "prosemirror-model";
 import { describe, expect, it } from "vitest";
 import { checkPackage } from "../src/docx/check";
-import { readDocx } from "../src/docx/read";
+import { passwordProtected, readDocx } from "../src/docx/read";
 import { blankDocx } from "../src/docx/template";
 import { writeDocx } from "../src/docx/write";
 import { schema } from "../src/editor/schema";
@@ -97,5 +97,29 @@ describe("a template's content controls", () => {
     xml = await (await JSZip.loadAsync(await writeDocx(typed, context))).file("word/document.xml")!.async("string");
     expect(xml).toContain('<w:sdt><w:sdtPr><w:alias w:val="Title"/><w:id w:val="7"/><w:text/></w:sdtPr><w:sdtContent>');
     expect(xml).toContain("Ducks in winter");
+  });
+});
+
+describe("files made to break programs (Apache POI's test files)", () => {
+  it("tables nested thousands deep open, the deepest kept as they are", async () => {
+    // 300 tables, each in the one cell of the one above (deeper than the 50 shown).
+    let body = "<w:p><w:r><w:t>bottom</w:t></w:r></w:p>";
+    for (let i = 0; i < 300; i++) body = `<w:tbl><w:tblGrid><w:gridCol w:w="2400"/></w:tblGrid><w:tr><w:tc><w:p><w:r><w:t>Level ${299 - i}</w:t></w:r></w:p>${body}</w:tc></w:tr></w:tbl>`;
+    const zip = await JSZip.loadAsync(await blankDocx());
+    const xml = await zip.file("word/document.xml")!.async("string");
+    zip.file("word/document.xml", xml.replace(/<w:body>/, `<w:body>${body}<w:p/>`));
+    const { doc, context } = await readDocx(await zip.generateAsync({ type: "uint8array" }));
+    expect(doc.textContent.startsWith("Level 0Level 1")).toBe(true);
+    // Saved, nothing is lost: the deepest table's text is still in the file.
+    const saved = await (await JSZip.loadAsync(await writeDocx(doc, context))).file("word/document.xml")!.async("string");
+    expect(saved).toContain("bottom");
+  }, 60_000);
+
+  it("a password-protected document says so", async () => {
+    const ole = new Uint8Array(1024);
+    ole.set([0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1]);
+    ole.set([..."EncryptedPackage"].flatMap((ch) => [ch.charCodeAt(0), 0]), 600);
+    expect(passwordProtected(ole)).toBe(true);
+    await expect(readDocx(ole)).rejects.toThrow(/protected with a password/);
   });
 });

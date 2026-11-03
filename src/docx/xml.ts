@@ -86,15 +86,28 @@ export function startTag(el: Element): string {
 }
 
 /** Writes an element back out with the same names and prefixes it was read with. */
-function verbatim(node: Node): string {
-  if (node.nodeType === 3) return escapeText(node.nodeValue ?? "");
-  if (node.nodeType === 4) return `<![CDATA[${node.nodeValue ?? ""}]]>`;
-  if (node.nodeType === 8) return `<!--${node.nodeValue ?? ""}-->`;
-  if (node.nodeType !== 1) return "";
-  const el = node as Element;
-  let inner = "";
-  for (const c of Array.from(el.childNodes)) inner += verbatim(c);
-  return inner ? `${startTag(el)}>${inner}</${el.tagName}>` : `${startTag(el)}/>`;
+function verbatim(root: Node): string {
+  // Without recursion: a file can nest elements thousands deep (tables in tables), more than the stack holds.
+  const out: string[] = [];
+  const todo: (Node | string)[] = [root];
+  while (todo.length) {
+    const node = todo.pop()!;
+    if (typeof node === "string") out.push(node);
+    else if (node.nodeType === 3) out.push(escapeText(node.nodeValue ?? ""));
+    else if (node.nodeType === 4) out.push(`<![CDATA[${node.nodeValue ?? ""}]]>`);
+    else if (node.nodeType === 8) out.push(`<!--${node.nodeValue ?? ""}-->`);
+    else if (node.nodeType === 1) {
+      const el = node as Element;
+      if (!el.childNodes.length) {
+        out.push(`${startTag(el)}/>`);
+        continue;
+      }
+      out.push(`${startTag(el)}>`);
+      todo.push(`</${el.tagName}>`);
+      for (let i = el.childNodes.length - 1; i >= 0; i--) todo.push(el.childNodes[i]);
+    }
+  }
+  return out.join("");
 }
 
 /**

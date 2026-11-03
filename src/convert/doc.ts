@@ -96,6 +96,8 @@ export function docToHtml(bytes: Uint8Array): string {
   if (bytes.length < 512 || bytes[0] !== 0xd0 || bytes[1] !== 0xcf) throw new Error("This isn't a Word 97–2003 document (.doc).");
   const files = streams(bytes);
   const word = files.get("WordDocument");
+  // A .docx with a password is kept in this same kind of file (and may be named .doc).
+  if (!word && files.has("EncryptedPackage")) throw new Error("This Word document is protected with a password, which DuckWriter can't open yet. In Word: File → Info → Protect Document → Encrypt with Password, clear the password, and save.");
   if (!word) throw new Error("This isn't a Word document (.doc).");
   const w = new DataView(word.buffer, word.byteOffset, word.byteLength);
   if (w.getUint16(0, true) !== 0xa5ec) throw new Error("This isn't a Word document (.doc).");
