@@ -18,5 +18,6 @@ Optional extras:
 
 - Spelling: `sudo pacman -S hunspell-en_us` (and your language's Hunspell dictionary).
 - Fonts that match Word's (Calibri, Cambria, Arial, Times New Roman): `sudo pacman -S ttf-carlito ttf-caladea ttf-liberation`.
+- A font for equations (Linux has no Cambria Math): `sudo pacman -S otf-latinmodern-math`.
 
 The "Source code" files below are added by GitHub automatically; you don't need them.

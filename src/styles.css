@@ -585,7 +585,7 @@ body {
 }
 
 .doc .math math {
-  font-family: "Cambria Math", math;
+  font-family: "Cambria Math", "Latin Modern Math", "STIX Two Math", "Noto Sans Math", math;
 }
 
 .doc .math.display {
@@ -728,7 +728,7 @@ body {
 }
 
 .eq-preview math {
-  font-family: "Cambria Math", math;
+  font-family: "Cambria Math", "Latin Modern Math", "STIX Two Math", "Noto Sans Math", math;
 }
 
 .eq-message {
