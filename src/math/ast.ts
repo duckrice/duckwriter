@@ -45,7 +45,7 @@ export const SYMBOLS: Record<string, string> = {
   ldots: "…", cdots: "⋯", vdots: "⋮", ddots: "⋱", dots: "…", therefore: "∴", because: "∵",
   langle: "⟨", rangle: "⟩", lfloor: "⌊", rfloor: "⌋", lceil: "⌈", rceil: "⌉", vert: "|", Vert: "‖",
   quad: " ", qquad: "  ", ",": " ", ";": " ", " ": " ", "!": "", "{": "{", "}": "}",
-  "%": "%", "#": "#", "&": "&", _: "_", $: "$",
+  "%": "%", "#": "#", "&": "&", _: "_", $: "$", "^": "^", backslash: "\\",
 };
 
 /** Big operators, by LaTeX name. */
@@ -305,13 +305,13 @@ export function toLatex(node: MathNode): string {
       if (node.v === "−") return "-";
       const name = NAME_OF.get(node.v);
       if (name && !/^[a-zA-Z0-9]$/.test(node.v)) return `\\${name}`;
-      if (node.v === "{" || node.v === "}") return `\\${node.v}`;
+      if (node.v === "{" || node.v === "}" || "_^%#&$".includes(node.v)) return `\\${node.v}`;
       return node.v;
     }
     case "num":
       return node.v;
     case "fn":
-      return FUNCTIONS.has(node.v) ? `\\${node.v}` : `\\mathrm{${node.v}}`;
+      return FUNCTIONS.has(node.v) || LIMITS.has(node.v) ? `\\${node.v}` : `\\mathrm{${node.v}}`;
     case "text":
       return `\\text{${node.v}}`;
     case "frac":

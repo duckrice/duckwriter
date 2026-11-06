@@ -1,5 +1,6 @@
-// The equation editor: type the shorthand, see the result as you type, and
-// use the buttons for the common shapes so you don't have to remember them.
+// Equations are written straight into the text (editor/mathview.ts). This is
+// the LaTeX window, for writing or fixing the shorthand in one go: type it,
+// see the result as you type, and use the buttons for the common shapes.
 
 import { NodeSelection, TextSelection } from "prosemirror-state";
 import type { EditorView } from "prosemirror-view";
@@ -7,6 +8,7 @@ import { h } from "../dom";
 import { MathSyntaxError, parseMath } from "../math/ast";
 import { toMathML } from "../math/mathml";
 import { schema } from "../editor/schema";
+import { enterMath } from "../editor/mathview";
 import type { Node as PMNode } from "prosemirror-model";
 import type { DocContext } from "../docx/model";
 
@@ -163,7 +165,7 @@ export function editEquation(view: EditorView, pos: number, isNew = false) {
   input.setSelectionRange(input.value.length, input.value.length);
 }
 
-/** Inserts a new equation at the cursor (from the selected text, if any) and opens it for editing. */
+/** Inserts a new equation at the cursor (from the selected text, if any) and starts writing in it. */
 export function insertEquation(view: EditorView) {
   const { state } = view;
   const { from, to, $from, empty } = state.selection;
@@ -173,7 +175,7 @@ export function insertEquation(view: EditorView) {
   const node = schema.nodes.math.create({ latex: text, display });
   const tr = state.tr.replaceSelectionWith(node, false);
   view.dispatch(tr);
-  editEquation(view, tr.mapping.map(from, -1), true);
+  enterMath(view, tr.mapping.map(from, -1), "end");
 }
 
 /**
@@ -204,5 +206,5 @@ export function insertNumberedEquation(view: EditorView, ctx: DocContext) {
     return at < 0;
   });
   view.dispatch(tr.scrollIntoView());
-  if (at >= 0) editEquation(view, at, true);
+  if (at >= 0) enterMath(view, at, "end");
 }

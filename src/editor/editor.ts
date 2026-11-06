@@ -26,7 +26,7 @@ import { paraMarkPlugin } from "./paramark";
 import { citationsPlugin } from "./citations";
 import { authorName } from "../author";
 import { ImageView, type PictureHooks } from "./imageview";
-import { MathView } from "./mathview";
+import { MathView, enterMath } from "./mathview";
 import { paginationPlugin, sectionWidthPlugin, type PaginationHooks } from "./pagination";
 import { schema } from "./schema";
 import { editEquation } from "../ui/equation";
@@ -65,13 +65,15 @@ export function createState(doc: Node, ctx: () => DocContext, pages?: Omit<Pagin
           if (dispatch) dispatch(state.tr.replaceSelectionWith(state.schema.nodes.hard_break.create()).scrollIntoView());
           return true;
         }),
-        // Enter on a selected equation opens it for editing; otherwise a new paragraph.
+        // Enter on a selected equation goes into it for writing; otherwise a new paragraph.
         Enter: chainCommands((state, _dispatch, view) => {
           const sel = state.selection;
           if (!(sel instanceof NodeSelection) || sel.node.type !== schema.nodes.math || !view) return false;
-          editEquation(view, sel.from);
-          return true;
+          return enterMath(view, sel.from, "end");
         }, c((x) => newParagraph(x))),
+        // The arrows go into an equation as into a word, as in Word.
+        ArrowRight: (state, _dispatch, view) => intoMath(state, view, 1),
+        ArrowLeft: (state, _dispatch, view) => intoMath(state, view, -1),
         // In a table, Tab goes to the next cell; in the last one it adds a row, as in Word.
         Tab: chainCommands(
           goToNextCell(1),
@@ -145,6 +147,27 @@ export function createState(doc: Node, ctx: () => DocContext, pages?: Omit<Pagin
       ...extra,
     ],
   });
+}
+
+function intoMath(state: EditorState, view: EditorView | undefined, dir: 1 | -1): boolean {
+  const sel = state.selection;
+  if (!view) return false;
+  if (sel instanceof NodeSelection) return sel.node.type === schema.nodes.math && enterMath(view, sel.from, dir > 0 ? "start" : "end");
+  if (!sel.empty) return false;
+  // The browser moves the cursor itself, and the editor hears of it a moment later: ask the page where it is now.
+  let from = sel.from;
+  const dom = document.getSelection();
+  if (dom?.focusNode && dom.isCollapsed && view.dom.contains(dom.focusNode)) {
+    try {
+      from = view.posAtDOM(dom.focusNode, dom.focusOffset);
+    } catch {
+      // Keep the editor's own idea of it.
+    }
+  }
+  const $from = state.doc.resolve(from);
+  const node = dir > 0 ? $from.nodeAfter : $from.nodeBefore;
+  if (node?.type !== schema.nodes.math) return false;
+  return enterMath(view, dir > 0 ? from : from - node.nodeSize, dir > 0 ? "start" : "end");
 }
 
 /** @param className "doc" for the main text, "hf-doc" for a header or footer. */

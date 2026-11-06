@@ -241,6 +241,12 @@ export const SHORTCUTS: Shortcut[] = [
 
   // ---- inserting
   { group: "Insert", label: "Equation", keys: ["Alt+="], run: (x) => insertEquation(x.view) },
+  {
+    group: "Insert",
+    label: "In an equation, Space builds up what you typed: x_ → a box below, a/b → a fraction, \\alpha → α; \\frac, \\sqrt, \\sum, \\int, lim, \\vec, \\pmatrix give boxes to fill in",
+    keys: ["Space"],
+  },
+  { group: "Insert", label: "In an equation: move between its boxes; past either end goes back to the text", keys: ["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"] },
   { group: "Insert", label: "Endnote (at the end of the document)", keys: ["Ctrl+Alt+D"], run: (x) => insertEndnote(x.body, x.ctx) },
   { group: "Insert", label: "Numbered equation, (1) on the right", keys: ["Alt+Shift+E"], run: (x) => insertNumberedEquation(x.body, x.ctx) },
   { group: "Insert", label: "Link, or change the link at the cursor", keys: ["Ctrl+K"], run: (x) => editLink(x.view, x.ctx) },

@@ -413,37 +413,49 @@ await session(sample("report.docx"), 9434, async (app) => {
 await session(null, 9436, async (app) => {
   await app.type("The area is ");
   await app.key("=", 187, 1); // Alt+=
-  check("Alt+= opens the equation editor", await app.waitFor(`!!document.querySelector(".eq-editor")`, 3000));
-  await app.type("\\pi r^2");
-  check("it shows the equation while typing", await app.waitFor(`!!document.querySelector(".eq-preview msup")`, 3000));
-  await app.key("Enter", 13);
-  check("Enter puts it in the text as typeset maths", await app.waitFor(`!!document.querySelector(".doc .math math msup") && !document.querySelector(".eq-editor")`, 3000));
-  // As in Word: a click selects the equation (for formatting), a double-click opens it.
-  const eq = await app.center(".doc .math");
+  check("Alt+= starts an equation in the text, no window", await app.waitFor(`document.activeElement?.classList.contains("math-input") && !document.querySelector(".eq-editor")`, 3000));
+  // As in Word: the shorthand builds up on space, and every letter after _ goes below.
+  await app.type("\\pi r^2 +I_inn ");
+  check("it builds up as you type: x^2 , I_inn ", await app.waitFor(`!!document.querySelector(".doc .math.editing msup") && [...document.querySelectorAll(".doc .math.editing msub > :nth-child(2) mi")].map((m) => m.textContent).join("") === "inn"`, 3000));
+  await app.type("x_ ");
+  check("x_ and a space gives an empty box with the cursor in it", await app.waitFor(`!!document.querySelector(".doc .math.editing msub .m-slot .m-caret")`, 3000));
+  await app.type("0");
+  await app.key("ArrowRight", 39);
+  await app.type("/2 ");
+  check("a/b becomes a fraction", await app.waitFor(`!!document.querySelector(".doc .math.editing mfrac")`, 3000));
+  await app.key("Escape", 27);
+  check("Esc goes back to the text; it is saved as LaTeX", await app.waitFor(`!document.querySelector(".doc .math.editing") && document.querySelector(".doc .math").textContent.includes("inn")`, 3000));
+  // A click goes into the equation, with the cursor where it was clicked.
+  const eq = await app.center(".doc .math mi");
   await app.click(eq[0], eq[1]);
-  check("clicking an equation selects it, without opening it", await app.waitFor(`document.querySelector(".doc .math").classList.contains("selected") && !document.querySelector(".eq-editor")`, 2000));
+  check("clicking an equation goes into it", await app.waitFor(`!!document.querySelector(".doc .math.editing .m-caret") && document.activeElement?.classList.contains("math-input")`, 2000));
+  // It stays selected for the ribbon, as in Word.
   await app.clickOn(".combo-arrow");
   await app.evaluate(`[...document.querySelectorAll(".combo-item")].find((i) => i.textContent === "Times New Roman").dispatchEvent(new MouseEvent("mousedown", { bubbles: true }))`);
   check("a font from the list keeps it typeset", await app.waitFor(`!!document.querySelector(".doc .math math msup") && !!document.querySelector(".doc .math").closest('[style*="Times New Roman"]')`, 2000));
-  await app.mouse("mousePressed", eq[0], eq[1], { clickCount: 2 });
-  await app.mouse("mouseReleased", eq[0], eq[1], { clickCount: 2 });
-  check("double-clicking opens it for editing", await app.waitFor(`!!document.querySelector(".eq-editor")`, 2000));
+  await app.click(eq[0], eq[1]);
+  await app.key("End", 35);
+  await app.key("ArrowRight", 39);
+  await app.type(" and the sum is");
+  check("the arrow out of the end goes back to the text", await app.waitFor(`document.querySelector(".doc p").textContent.endsWith(" and the sum is")`, 2000));
+  for (let i = 0; i < 16; i++) await app.key("ArrowLeft", 37);
+  check("the arrow into it from the right goes into it", await app.waitFor(`!!document.querySelector(".doc .math.editing")`, 2000));
   await app.key("Escape", 27);
   await app.key("End", 35);
-  await app.type(" and the sum is");
   await app.key("Enter", 13);
   await app.clickOn(`.tb[title="Equation (Alt+=)"]`);
-  await app.waitFor(`!!document.querySelector(".eq-editor")`, 3000);
-  await app.clickOn(`.eq-template[title^="Sum"]`);
-  await app.type("i=1");
-  await app.key("Tab", 9);
-  await app.evaluate(`(() => { const i = document.querySelector(".eq-input"); i.value = "\\\\sum_{i=1}^{n} i = \\\\frac{n(n+1)}{2}"; i.dispatchEvent(new Event("input")); })()`);
-  check("the buttons insert shapes, and mistakes are explained", (await app.evaluate(`document.querySelector(".eq-message").textContent`)) === "");
+  await app.waitFor(`document.activeElement?.classList.contains("math-input")`, 3000);
+  await app.type("\\sum i=1");
+  await app.key("ArrowRight", 39);
+  await app.type("n");
+  await app.key("ArrowRight", 39);
+  await app.type("i=n(n+1)/2 ");
   await app.shoot("equation-editor");
-  await app.clickOn(".eq-footer .btn.primary");
+  await app.key("Enter", 13);
   check(
     "an equation on an empty line is shown on its own line, centred",
     await app.waitFor(`(() => { const m = document.querySelectorAll(".doc .math")[1]; return !!m && m.classList.contains("display") && !!m.querySelector("munderover") && !!m.querySelector("mfrac"); })()`, 3000),
+    await app.evaluate(`[...document.querySelectorAll(".doc .math")].map((m) => m.className + " " + m.mathView?.node.attrs.latex).join(" | ")`),
   );
   await app.key("Enter", 13);
   await app.clickOn(`.tb[title^="Symbol"][title$="options"]`);
@@ -1459,9 +1471,9 @@ await session(null, 9591, async (app) => {
   await app.key("End", 35);
   await app.key("Enter", 13);
   await app.key("E", 69, ALT | SHIFT);
-  check("Alt+Shift+E: a numbered equation, writing it straight away", await app.waitFor(`!!document.querySelector(".eq-editor") && document.activeElement?.classList.contains("eq-input")`, 3000));
-  await app.type("E = mc^2");
-  await app.key("Enter", 13);
+  check("Alt+Shift+E: a numbered equation, writing it straight away", await app.waitFor(`document.activeElement?.classList.contains("math-input")`, 3000));
+  await app.type("E=mc^2 ");
+  await app.key("Escape", 27);
   const number = () => app.evaluate(`[...document.querySelectorAll(".doc td")].map((c) => c.textContent).join("|")`);
   check("it is numbered (1) on the right", await app.waitFor(`[...document.querySelectorAll(".doc td")].some((c) => c.textContent === "(1)")`, 3000), await number());
   // Show the text as if the changes were accepted.

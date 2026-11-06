@@ -14,7 +14,7 @@ import { watermarkText } from "../watermark";
 // changes through the editor's commands.
 
 import { redo, undo, undoDepth, redoDepth } from "prosemirror-history";
-import type { Command } from "prosemirror-state";
+import { NodeSelection, type Command } from "prosemirror-state";
 import type { EditorView } from "prosemirror-view";
 import { h } from "../dom";
 import { combo } from "./combo";
@@ -40,7 +40,7 @@ import {
 import { changeListLevel, kindOf, listOf, toggleList } from "../editor/lists";
 import { reviewers } from "../editor/review";
 import { schema } from "../editor/schema";
-import { insertEquation, insertNumberedEquation } from "./equation";
+import { editEquation, insertEquation, insertNumberedEquation } from "./equation";
 import { choosePicture, setSnap, snapOn } from "./pictures";
 import { TABLE_COMMANDS, insertTable, isInTable, setTableLines, tableGrid, sortTable, textToTable } from "./tables";
 import { captionDialog, headingsNumbered, insertReference, insertToc, referenceTargets, toggleHeadingNumbers } from "./references";
@@ -761,6 +761,12 @@ export class Toolbar {
       { class: "menu" },
       this.simpleItem("Equation in the text (Alt+=)", () => insertEquation(this.host.view)),
       this.simpleItem("Numbered equation, (1) on the right (Alt+Shift+E)", () => insertNumberedEquation(this.host.view, this.host.ctx)),
+      h("div", { class: "menu-separator" }),
+      this.simpleItem("Edit the selected equation as LaTeX…", () => {
+        const sel = this.host.view.state.selection;
+        if (sel instanceof NodeSelection && sel.node.type.name === "math") editEquation(this.host.view, sel.from);
+        else this.toastHere("Click an equation first, then choose this.");
+      }),
     );
   }
 

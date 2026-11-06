@@ -579,7 +579,7 @@ body {
 /* ---- equations ------------------------------------------------------------------ */
 
 .doc .math {
-  cursor: pointer;
+  cursor: text;
   border-radius: 3px;
   text-indent: 0;
 }
@@ -598,6 +598,45 @@ body {
 .doc .math.selected {
   background: rgb(15 118 110 / 0.1);
   outline: 1px solid rgb(15 118 110 / 0.35);
+}
+
+/* Writing in an equation: a light box around it, a blinking cursor, dotted boxes to fill. */
+.doc .math.editing {
+  background: rgb(15 118 110 / 0.08);
+  outline: 1px solid rgb(15 118 110 / 0.35);
+}
+
+.doc .math .m-caret {
+  border-left: 1.5px solid currentColor;
+  margin-right: -1.5px;
+  animation: m-blink 1.06s steps(1) infinite;
+}
+
+@keyframes m-blink {
+  50% {
+    border-left-color: transparent;
+  }
+}
+
+.doc .math .m-slot {
+  outline: 1px dotted #65707d;
+  outline-offset: -1px;
+}
+
+.doc .math .m-marked {
+  background: rgb(15 118 110 / 0.25);
+}
+
+.math-input {
+  position: fixed;
+  width: 1px;
+  height: 1em;
+  padding: 0;
+  border: 0;
+  opacity: 0;
+  resize: none;
+  overflow: hidden;
+  pointer-events: none;
 }
 
 .doc .math.empty,
