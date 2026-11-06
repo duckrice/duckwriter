@@ -15,6 +15,7 @@ import { watermarkText } from "../watermark";
 
 import { redo, undo, undoDepth, redoDepth } from "prosemirror-history";
 import { NodeSelection, type Command } from "prosemirror-state";
+import { formatMarksOn, toggleFormatMarks } from "../editor/formatmarks";
 import type { EditorView } from "prosemirror-view";
 import { h } from "../dom";
 import { combo } from "./combo";
@@ -24,6 +25,7 @@ import {
   formattingAt,
   insertPageBreak,
   insertSectionBreak,
+  type SectionStart,
   insertColumnBreak,
   setColumns,
   setAlign,
@@ -180,6 +182,7 @@ export class Toolbar {
       textButton("Sort", "Sort the rows by this column: A to Z, again for Z to A (Alt+Shift+O)", () => this.sortRows()),
       textButton("Lines", "Lines around the cells, on or off (Ctrl+Alt+Shift+L)", () => this.toggleTableLines()),
       this.splitButton("shading", "Cell shading", null, () => this.shadingMenu(), () => this.shadingMenu()),
+      textButton("Caption…", "A caption for the table: Table 1 (Ctrl+Alt+C)", () => captionDialog(this.host.body, this.host.ctx)),
       textButton("Delete table", "Delete the whole table", () => this.run(t.deleteTable)),
     );
     // Always there: documents, undo and redo, find.
@@ -239,6 +242,10 @@ export class Toolbar {
             this.button("indentLess", "Decrease indent (Ctrl+Shift+M)", () => this.indent(-1)),
             this.button("indentMore", "Increase indent (Ctrl+M)", () => this.indent(1)),
             this.splitButton("lineSpacing", "Line spacing (Ctrl+1, Ctrl+5, Ctrl+2)", null, () => this.spacingMenu(), () => this.spacingMenu()),
+            this.button("pilcrow", "Show formatting: ¶, spaces, tabs and section breaks (Ctrl+Shift+8)", () => {
+              toggleFormatMarks(this.host.body);
+              this.update();
+            }),
             this.splitButton("sort", "Sort the selected lines A to Z (the arrow: Z to A)", null, () => this.run(sortParagraphs()), () => h("div", { class: "menu" }, this.simpleItem("A to Z", () => this.run(sortParagraphs())), this.simpleItem("Z to A", () => this.run(sortParagraphs(true))))),
           ),
         ],
@@ -256,9 +263,11 @@ export class Toolbar {
             this.splitButton("calendar", "Today's date (the arrow: other forms, and the time)", null, () => this.insertNow(new Date().toLocaleDateString()), () => this.dateMenu()),
           ),
           group(
-            this.button("pageBreak", "Page break (Ctrl+Enter)", () => this.run(insertPageBreak())),
+            this.splitButton("pageBreak", "Page break (Ctrl+Enter; the arrow: section breaks and more)", null, () => this.run(insertPageBreak()), () => this.breaksMenu()),
+            this.button("pageNumbers", "Page numbers: where they go, sections, i ii iii, start at", () => this.host.pageNumberFormat()),
             this.splitButton("header", "Header and footer (Ctrl+Alt+O)", null, () => this.host.editHeader(), () => this.headerMenu()),
             this.button("footnote", "Footnote (Ctrl+Alt+F)", () => this.host.insertFootnote()),
+            textButton("Caption…", "A caption for the table, picture or equation at the cursor: Table 1, Figure 1 (Ctrl+Alt+C)", () => captionDialog(this.host.body, this.host.ctx)),
           ),
         ],
       },
@@ -311,6 +320,8 @@ export class Toolbar {
         groups: [
           group(
             textButton("Page setup…", "Paper size, orientation, margins (Alt+P)", () => this.host.pageSetup()),
+            this.splitButton("breaks", "Breaks: page, column and section breaks", null, () => this.menuArrows.get("breaks")?.click(), () => this.breaksMenu()),
+            textButton("Page numbers…", "Page numbers: where they go, sections, i ii iii, start at", () => this.host.pageNumberFormat()),
             textButton("Line numbers", "Line numbers: through the document, from 1 on each page, or none (Alt+Shift+L)", () => this.host.cycleLineNumbers()),
             textButton("Fit zoom", "Zoom to the page width, the whole page, or 100% (Alt+Shift+Z)", () => this.host.cycleZoomFit()),
             textButton("Focus mode", "Only the page, full screen (F11; Esc to leave)", () => this.host.toggleFocus()),
@@ -357,10 +368,11 @@ export class Toolbar {
   }
 
   /** Runs a command on the editor and gives it the focus back. */
-  run(command: Command, focus = true) {
+  run(command: Command, focus = true): boolean {
     const { view } = this.host;
-    command(view.state, view.dispatch, view);
+    const done = command(view.state, view.dispatch, view);
     if (focus) view.focus();
+    return done;
   }
 
   /** Puts the cursor in the font, size or style box, for choosing from the keyboard. */
@@ -581,6 +593,27 @@ export class Toolbar {
   }
 
   /** Snapping pictures to the grid. */
+  /** Layout → Breaks, and the Page break button's arrow. */
+  private breaksMenu(): HTMLElement {
+    const section = (start: SectionStart, label: string) => this.simpleItem(label, () => {
+      if (!this.run(insertSectionBreak(this.host.ctx, start))) this.toastHere("Click in the text where the new section should start (not in a table), then try again.");
+    }, false);
+    return h(
+      "div",
+      { class: "menu" },
+      h("div", { class: "menu-title" }, "Breaks"),
+      this.simpleItem("Page break (Ctrl+Enter)", () => this.run(insertPageBreak()), false),
+      this.simpleItem("Column break (Ctrl+Shift+Enter)", () => this.run(insertColumnBreak()), false),
+      h("div", { class: "menu-title" }, "Section breaks: page numbers, margins and columns can change after one"),
+      section("nextPage", "Section break: next page"),
+      section("continuous", "Section break: continuous (same page)"),
+      section("oddPage", "Section break: odd page"),
+      section("evenPage", "Section break: even page"),
+      h("div", { class: "menu-separator" }),
+      this.simpleItem("Page numbers and sections…", () => this.host.pageNumberFormat(), false),
+    );
+  }
+
   private layoutMenu(): HTMLElement {
     const snap = h("button", { type: "button", class: `menu-item${snapOn() ? " checked" : ""}` }, `${snapOn() ? "✓ " : ""}Snap pictures to grid`);
     snap.addEventListener("click", () => {
@@ -612,13 +645,7 @@ export class Toolbar {
       auto,
       h("div", { class: "menu-hint" }, "Web and e-mail addresses become links; \"1. \" or \"- \" at the start of a paragraph starts a list; \\alpha becomes α and -> becomes →; teh becomes the, (c) becomes ©."),
       h("div", { class: "menu-separator" }),
-      h("div", { class: "menu-title" }, "Breaks"),
-      this.simpleItem("Page break (Ctrl+Enter)", () => this.run(insertPageBreak()), false),
-      this.simpleItem("Column break (Ctrl+Shift+Enter)", () => this.run(insertColumnBreak()), false),
-      this.simpleItem("Section break: next page", () => this.run(insertSectionBreak(this.host.ctx, "nextPage")), false),
-      this.simpleItem("Section break: continuous", () => this.run(insertSectionBreak(this.host.ctx, "continuous")), false),
-      this.simpleItem("Section break: odd page", () => this.run(insertSectionBreak(this.host.ctx, "oddPage")), false),
-      this.simpleItem("Section break: even page", () => this.run(insertSectionBreak(this.host.ctx, "evenPage")), false),
+      ...this.breaksMenu().children,
       h("div", { class: "menu-separator" }),
       h("div", { class: "menu-title" }, "Columns (for the section the cursor is in)"),
       ...[1, 2, 3].map((n) => this.simpleItem(["One", "Two", "Three"][n - 1], () => this.run(setColumns(this.host.ctx, n)), false)),
@@ -820,7 +847,7 @@ export class Toolbar {
       this.simpleItem("At the bottom, centred: Page 2 of 9", () => this.host.pageNumbers("bottom-center")),
       this.simpleItem("At the bottom, right: 2", () => this.host.pageNumbers("bottom-right")),
       this.simpleItem("At the top, right: 2", () => this.host.pageNumbers("top-right")),
-      this.simpleItem("Page number format… (i, ii, iii; start at; none on the first page)", () => this.host.pageNumberFormat()),
+      this.simpleItem("Page numbers and sections… (i, ii, iii; start at; none on a title page)", () => this.host.pageNumberFormat()),
     );
   }
 
@@ -975,6 +1002,7 @@ export class Toolbar {
     const kind = list ? kindOf(ctx, list.numId, list.ilvl) : null;
     active("bullets", kind === "bullet");
     active("numbers", kind === "number");
+    active("pilcrow", formatMarksOn(this.host.body.state));
     this.buttons.get("undo")!.disabled = undoDepth(view.state) === 0;
     this.buttons.get("redo")!.disabled = redoDepth(view.state) === 0;
 

@@ -9,14 +9,14 @@ import { ensureStyles } from "./docx/builtins";
 import { blankDocx } from "./docx/template";
 import { writeDocx } from "./docx/write";
 import { createState, createView, setLinkOpener } from "./editor/editor";
-import { pageNumberingAt, setPageNumbering, stepSize } from "./editor/commands";
+import { stepSize } from "./editor/commands";
 import { bookmarkPosition } from "./ui/references";
 import { addRecent, removeRecent } from "./recent";
 import { pageSetup } from "./ui/pagesetup";
 import { showVersions, type Version } from "./ui/versions";
 import { TEMPLATES, templateDoc, type TemplateKind } from "./templates";
 import { NavigationPane } from "./ui/navigation";
-import { pageNumberFormat } from "./ui/pagenumbers";
+import { pageNumbersWindow, refreshPageNumbers, type NumbersAt } from "./ui/pagenumbers";
 import { ReviewingPane } from "./ui/reviewing";
 import { count, showCounts } from "./ui/wordcount";
 import { offerUpdate } from "./updates";
@@ -420,7 +420,12 @@ class App {
   }
 
   /** Page numbers in the footer ("Page 2 of 9", centred) or at the top or bottom right. */
-  pageNumbers(where: "bottom-center" | "bottom-right" | "top-right") {
+  pageNumbers(where: NumbersAt) {
+    if (where === "none") {
+      this.removePageNumbers();
+      return;
+    }
+    this.removePageNumbers(true);
     const kind = where.startsWith("top") ? "header" : "footer";
     const style = kind === "header" ? "Header" : "Footer";
     ensureStyles(this.ctx, style);
@@ -446,6 +451,27 @@ class App {
     relayout(this.body);
     this.changed(false, true);
     this.toast("Page numbers added");
+  }
+
+  /** Takes the page numbers out of the headers and footers; anything else written there stays. */
+  private removePageNumbers(quiet = false) {
+    let removed = false;
+    for (const story of this.ctx.stories) {
+      const kept: Node[] = [];
+      story.doc.forEach((p) => {
+        let hasPage = false;
+        p.descendants((n) => {
+          if (n.type === schema.nodes.field && /^\s*(PAGE|NUMPAGES)\b/.test(n.attrs.instr)) hasPage = true;
+        });
+        if (hasPage) removed = true;
+        else kept.push(p);
+      });
+      if (kept.length !== story.doc.childCount) story.doc = schema.nodes.doc.create(null, kept.length ? kept : [schema.nodes.paragraph.create()]);
+    }
+    if (!removed || quiet) return;
+    relayout(this.body);
+    this.changed(false, true);
+    this.toast("Page numbers taken out");
   }
 
   private lineNumberLayer = h("div", { class: "line-numbers", "aria-hidden": "true" });
@@ -801,14 +827,16 @@ class App {
     this.placeSheet();
   }
 
-  /** How the section the cursor is in numbers its pages (Insert → Header & footer → Page number format). */
+  /** The page numbers window: where they go, each page's number, and each section's numbering and breaks. */
   pageNumberFormat() {
-    const sections = (this.lastLayout?.sections?.length ?? 1);
-    pageNumberFormat(pageNumberingAt(this.body.state, this.ctx), sections, (n) => {
-      setPageNumbering(this.ctx, n)(this.body.state, this.body.dispatch, this.body);
-      this.headers.stop();
-      this.changed(true, true);
-      this.view.focus();
+    this.headers.stop();
+    pageNumbersWindow({
+      body: this.body,
+      ctx: this.ctx,
+      layout: () => this.lastLayout,
+      placeNumbers: (where) => this.pageNumbers(where),
+      sectionsChanged: () => this.changed(true, true),
+      goTo: (pos) => this.goTo(pos),
     });
   }
 
@@ -911,6 +939,7 @@ class App {
     this.showPage();
     this.pages = layout.count;
     this.lastLayout = layout;
+    refreshPageNumbers();
     this.headers.render(layout.count, layout.labels, layout.sections, layout);
     this.footnotes.render(layout);
     this.comments.layout();

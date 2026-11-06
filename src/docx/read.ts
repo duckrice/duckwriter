@@ -1024,13 +1024,13 @@ class BodyReader {
         case "endnoteReference": {
           flush();
           const xml = `${startTag(r)}>${rPr ? this.raw(rPr) : ""}${this.raw(el)}</${r.tagName}>`;
-          out.push(schema.nodes.endnote.create({ id: attr(el, "id") ?? "", xml }, null, marks));
+          out.push(schema.nodes.endnote.create({ id: attr(el, "id") ?? "", xml }, null, withoutNoteStyle(marks)));
           break;
         }
         case "footnoteReference": {
           flush();
           const xml = `${startTag(r)}>${rPr ? this.raw(rPr) : ""}${this.raw(el)}</${r.tagName}>`;
-          out.push(schema.nodes.footnote.create({ id: attr(el, "id") ?? "", xml }, null, marks));
+          out.push(schema.nodes.footnote.create({ id: attr(el, "id") ?? "", xml }, null, withoutNoteStyle(marks)));
           break;
         }
         case "noBreakHyphen":
@@ -1240,4 +1240,13 @@ function tablePreview(tbl: Element): string {
     .slice(0, 12)
     .map((tr) => childrenNamed(tr, "tc").map((tc) => textOf(tc).replace(/\s+/g, " ")).join("  |  "))
     .join("\n");
+}
+
+/**
+ * A note's mark keeps its run as read (xml) but not the "Footnote reference" style as a mark:
+ * styled, it sits inside a span the editor can't place the cursor after at the end of a
+ * paragraph, so it couldn't be selected or deleted there. The page shows it raised anyway.
+ */
+function withoutNoteStyle(marks: readonly Mark[]): readonly Mark[] {
+  return marks.filter((m) => !(m.type === schema.marks.charStyle && /^(Footnote|Endnote)Reference$/.test(m.attrs.id)));
 }

@@ -1752,16 +1752,26 @@ rmSync(texOut, { force: true });
     await app.clickOn('.split-arrow[title^="Header and footer"]');
     await app.clickText(".menu .menu-item", "At the bottom, right");
     check("page numbers go on every section's pages", await app.waitFor(`[...document.querySelectorAll(".hf.footer")].map((f) => f.textContent.trim()).join(",") === "1,2,3,4"`, 5000), await footers());
-    const format = async (inside, set) => {
-      await app.clickText(".doc p", inside);
-      await app.clickOn('.split-arrow[title^="Header and footer"]');
-      await app.clickText(".menu .menu-item", "Page number format");
-      await app.waitFor(`!!document.querySelector("dialog[open] select")`, 3000);
-      await app.evaluate(`(() => { const d = document.querySelector("dialog[open]"); ${set}; [...d.querySelectorAll(".btn")].find((b) => b.textContent === "OK").click(); })()`);
-    };
-    await format("Title page", `d.querySelector("select").value = "lowerRoman"; d.querySelectorAll("input[type=radio]")[1].click(); d.querySelector("input[type=checkbox]").checked = true`);
-    await format("Chapter one", `d.querySelector("select").value = "decimal"; d.querySelectorAll("input[type=radio]")[1].click(); d.querySelector("input[type=number]").value = "1"`);
+    // The page numbers window: every section at once.
+    await app.clickOn('.split-arrow[title^="Header and footer"]');
+    await app.clickText(".menu .menu-item", "Page numbers and sections");
+    check("the page numbers window lists the sections", await app.waitFor(`document.querySelectorAll("dialog.pn-dialog[open] .pn-section").length === 2`, 3000));
+    await app.evaluate(`(async () => {
+      const wait = () => new Promise((r) => setTimeout(r, 400));
+      const sec = (i) => document.querySelectorAll(".pn-dialog .pn-section")[i];
+      const set = async (el, value) => { if (typeof value === "boolean") el.checked = value; else el.value = value; el.dispatchEvent(new Event("change", { bubbles: true })); await wait(); };
+      await set(sec(0).querySelector("select[aria-label$='number style']"), "lowerRoman");
+      await set(sec(0).querySelectorAll("input[type=radio]")[1], true);
+      await set(sec(0).querySelector("input[type=checkbox]"), true);
+      await set(sec(1).querySelectorAll("input[type=radio]")[1], true);
+    })()`);
+    check("…and its strip shows each page's number", await app.waitFor(`[...document.querySelectorAll(".pn-dialog .pn-page-number")].map((p) => p.textContent).join(",") === "–,ii,1,2"`, 5000));
+    await app.evaluate(`[...document.querySelectorAll(".pn-dialog .btn")].find((b) => b.textContent === "Close").click()`);
     check("a blank title page, i, ii in the front matter, then 1, 2 from the first chapter", await app.waitFor(`[...document.querySelectorAll(".hf.footer")].map((f) => f.textContent.trim()).join(",") === ",ii,1,2"`, 5000), await footers());
+    await app.clickText(".doc p", "Chapter one");
+    await app.key("8", 56, CTRL | SHIFT);
+    check("Ctrl+Shift+8 shows formatting: ¶ and the section break", await app.waitFor(`document.querySelector(".doc").classList.contains("show-marks") && document.querySelectorAll(".doc .fm-section").length === 1`, 3000));
+    await app.key("8", 56, CTRL | SHIFT);
     // And Word, opening the saved file, numbers the pages the same.
     const saved = join(tmpdir(), "duckwriter-smoke-report-numbers-saved.docx");
     await app.evaluate(`(async () => {

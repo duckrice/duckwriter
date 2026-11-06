@@ -3,7 +3,7 @@
 // 1.1.1) and a table of contents that keeps itself up to date.
 
 import type { Node } from "prosemirror-model";
-import { TextSelection, type Transaction } from "prosemirror-state";
+import { NodeSelection, TextSelection, type EditorState, type Transaction } from "prosemirror-state";
 import type { EditorView } from "prosemirror-view";
 import { h } from "../dom";
 import { ensureStyles } from "../docx/builtins";
@@ -65,7 +65,7 @@ export function insertCaption(view: EditorView, ctx: DocContext, label: string, 
   const depth = $from.depth > 0 ? 1 : 0;
   const at = depth ? (above ? $from.before(1) : $from.after(1)) : $from.pos;
   const [start, end] = bookmarkNodes(view.state.doc);
-  const seq = schema.nodes.field.create({ instr: ` SEQ ${label} \\* ARABIC `, result: "1" });
+  const seq = schema.nodes.field.create({ instr: ` SEQ ${label.replace(/\s/g, "_")} \\* ARABIC `, result: "1" });
   const content = [start, schema.text(`${label} `), seq, end, ...(text ? [schema.text(`: ${text}`)] : [])];
   const para = schema.nodes.paragraph.create({ style: "Caption" }, content);
   const tr = view.state.tr.insert(at, para);
@@ -74,41 +74,66 @@ export function insertCaption(view: EditorView, ctx: DocContext, label: string, 
   view.focus();
 }
 
-/** Asks for a caption's label and text, then adds it. */
+/** What the cursor is on, for a caption: a table (captioned above), a picture or an equation (below). */
+export function captionFor(state: EditorState): { label: string; above: boolean } {
+  const sel = state.selection;
+  if (sel instanceof NodeSelection && sel.node.type === schema.nodes.image) return { label: "Figure", above: false };
+  if (sel instanceof NodeSelection && sel.node.type === schema.nodes.math) return { label: "Equation", above: false };
+  for (let d = sel.$from.depth; d > 0; d--) if (sel.$from.node(d).type === schema.nodes.table) return { label: "Table", above: true };
+  let has: string | null = null;
+  sel.$from.parent.forEach((n) => {
+    if (n.type === schema.nodes.image) has ??= "Figure";
+    if (n.type === schema.nodes.math) has ??= "Equation";
+  });
+  return { label: has ?? "Figure", above: false };
+}
+
+/** Labels for captions: Word's three, a few more, and any the document already uses (SEQ fields). */
+function captionLabels(doc: Node): string[] {
+  const labels = new Set([...CAPTION_LABELS, "Chart", "Diagram", "Photo", "Map", "Listing"]);
+  doc.descendants((n) => {
+    const m = n.type === schema.nodes.field ? /^\s*SEQ\s+(\S+)/.exec(n.attrs.instr) : null;
+    if (m) labels.add(m[1]);
+  });
+  return [...labels];
+}
+
+/** Asks for a caption's label and text, then adds it. The label and side follow what the cursor is on. */
 export function captionDialog(view: EditorView, ctx: DocContext) {
-  const label = h("select", { class: "tb-select" }, ...CAPTION_LABELS.map((l) => h("option", { value: l }, l)));
+  const guess = captionFor(view.state);
+  const list = h("datalist", { id: "dw-caption-labels" }, ...captionLabels(view.state.doc).map((l) => h("option", { value: l })));
+  const label = h("input", { class: "tb-input dialog-input", list: "dw-caption-labels", value: guess.label, "aria-label": "Label", title: "Figure, Table, Equation, or a label of your own (one word)" }) as HTMLInputElement;
   const text = h("input", { class: "tb-input dialog-input", placeholder: "What it shows (optional)" });
   const where = h("select", { class: "tb-select" }, h("option", { value: "below" }, "Below the selected item"), h("option", { value: "above" }, "Above the selected item"));
+  where.value = guess.above ? "above" : "below";
   label.addEventListener("change", () => {
     // Tables are captioned above, figures below, by convention.
-    where.value = label.value === "Table" ? "above" : "below";
+    where.value = label.value.trim() === "Table" ? "above" : "below";
   });
+  const message = h("p", { class: "dialog-hint" }, guess.label === "Table" ? "For the table the cursor is in." : guess.label === "Figure" && view.state.selection instanceof NodeSelection ? "For the selected picture." : "");
+  const insert = () => {
+    // A label is one word, as Word's SEQ fields need: "My chart" becomes "My_chart" there, shown with its space.
+    const name = label.value.trim().replace(/\s+/g, " ") || "Figure";
+    dialog.close();
+    insertCaption(view, ctx, name, text.value.trim(), where.value === "above");
+  };
   const dialog = h(
     "dialog",
     { class: "dialog" },
     h("h2", {}, "Insert caption"),
-    h("div", { class: "dialog-form" }, h("label", {}, "Label", label), h("label", {}, "Caption", text), h("label", {}, "Position", where)),
+    message,
+    h("div", { class: "dialog-form" }, h("label", {}, "Label", label, list), h("label", {}, "Caption", text), h("label", {}, "Position", where)),
     h(
       "div",
       { class: "dialog-footer" },
       h("button", { type: "button", class: "btn", onclick: () => dialog.close() }, "Cancel"),
-      h(
-        "button",
-        {
-          type: "button",
-          class: "btn primary",
-          onclick: () => {
-            dialog.close();
-            insertCaption(view, ctx, label.value, text.value.trim(), where.value === "above");
-          },
-        },
-        "Insert",
-      ),
+      h("button", { type: "button", class: "btn primary", onclick: insert }, "Insert"),
     ),
   );
-  text.addEventListener("keydown", (event) => {
-    if (event.key === "Enter") (dialog.querySelector(".btn.primary") as HTMLButtonElement).click();
-  });
+  for (const input of [text, label])
+    input.addEventListener("keydown", (event) => {
+      if (event.key === "Enter") insert();
+    });
   dialog.addEventListener("close", () => dialog.remove());
   document.body.append(dialog);
   dialog.showModal();

@@ -2858,3 +2858,147 @@ kbd {
   float: left;
   margin: 0 4pt 0 0;
 }
+
+/* ---- show formatting (¶) --------------------------------------------------------- */
+
+/* Drawn over the text, taking no room, so the lines and pages break as without them. */
+.show-marks .fm-mark {
+  position: absolute;
+  color: #2b6cb0;
+  font: normal 400 1em "Segoe UI", sans-serif;
+  text-decoration: none;
+  pointer-events: none;
+  user-select: none;
+}
+
+.show-marks .fm-section::after {
+  content: " " attr(data-label);
+  margin-left: 0.4em;
+  padding: 0 0.5em;
+  border-top: 1px dotted #2b6cb0;
+  border-bottom: 1px dotted #2b6cb0;
+  font-size: 0.75em;
+  white-space: nowrap;
+}
+
+.show-marks .fm-space,
+.show-marks .fm-tab {
+  position: relative;
+}
+
+.show-marks .fm-space::after,
+.show-marks .fm-tab::after {
+  position: absolute;
+  inset: 0;
+  color: #2b6cb0;
+  text-align: center;
+  font-style: normal;
+  font-weight: normal;
+  pointer-events: none;
+}
+
+.show-marks .fm-space::after {
+  content: "·";
+}
+
+.show-marks .fm-tab::after {
+  content: "→";
+  text-align: left;
+}
+
+/* ---- the page numbers window ------------------------------------------------------ */
+
+.pn-dialog {
+  width: 640px;
+  max-width: calc(100vw - 32px);
+}
+
+.pn-content {
+  max-height: calc(100vh - 200px);
+  overflow-y: auto;
+}
+
+.pn-content h3 {
+  margin: 12px 0 6px;
+  font-size: 13px;
+}
+
+.pn-places {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 2px 12px;
+}
+
+.pn-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.pn-page {
+  position: relative;
+  width: 34px;
+  height: 46px;
+  border: 1px solid var(--border);
+  background: #ffffff;
+  color: #000000;
+  cursor: pointer;
+}
+
+.pn-page-number {
+  position: absolute;
+  right: 0;
+  bottom: 3px;
+  left: 0;
+  font-size: 11px;
+  text-align: center;
+}
+
+.pn-page.blank .pn-page-number {
+  color: #9aa3ad;
+}
+
+.pn-page:hover {
+  outline: 2px solid var(--accent);
+}
+
+.pn-page.pn-s0 { border-top: 4px solid #0f766e; }
+.pn-page.pn-s1 { border-top: 4px solid #b45309; }
+.pn-page.pn-s2 { border-top: 4px solid #6d28d9; }
+.pn-page.pn-s3 { border-top: 4px solid #be123c; }
+
+.pn-section {
+  margin: 0 0 8px;
+  padding: 6px 10px 8px;
+  border: 1px solid var(--border);
+}
+
+.pn-section.pn-s0 { border-left: 4px solid #0f766e; }
+.pn-section.pn-s1 { border-left: 4px solid #b45309; }
+.pn-section.pn-s2 { border-left: 4px solid #6d28d9; }
+.pn-section.pn-s3 { border-left: 4px solid #be123c; }
+
+.pn-section legend {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 600;
+}
+
+.pn-field {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+  margin: 2px 16px 4px 0;
+}
+
+.pn-actions {
+  display: flex;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.pn-footer-hint {
+  margin-right: auto;
+}

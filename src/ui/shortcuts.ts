@@ -34,6 +34,7 @@ import {
 import { changeListLevel, toggleList } from "../editor/lists";
 import { localKey, matches } from "../keys";
 import { insertEquation, insertNumberedEquation } from "./equation";
+import { toggleFormatMarks } from "../editor/formatmarks";
 import { choosePicture } from "./pictures";
 import { captionDialog, insertToc, toggleHeadingNumbers } from "./references";
 import { TABLE_COMMANDS } from "./tables";
@@ -211,7 +212,7 @@ export const SHORTCUTS: Shortcut[] = [
   { group: "Paragraphs", label: "Centre", keys: ["Ctrl+E"], run: plain(setAlign("center")) },
   { group: "Paragraphs", label: "Align right", keys: ["Ctrl+R"], run: plain(setAlign("right")) },
   { group: "Paragraphs", label: "Justify", keys: ["Ctrl+J"], run: plain(setAlign("justify")) },
-  { group: "Paragraphs", label: "Bullets", keys: ["Ctrl+Shift+L", "Ctrl+Shift+8"], run: cmd((c) => toggleList(c, "bullet")) },
+  { group: "Paragraphs", label: "Bullets", keys: ["Ctrl+Shift+L"], run: cmd((c) => toggleList(c, "bullet")) },
   { group: "Paragraphs", label: "Numbering", keys: ["Ctrl+Shift+7"], run: cmd((c) => toggleList(c, "number")) },
   {
     group: "Paragraphs",
@@ -293,6 +294,7 @@ export const SHORTCUTS: Shortcut[] = [
   { group: "Equations, headers and notes", label: "Leave the equation, header, footer, note or comment", keys: ["Esc"] },
 
   // ---- view and layout
+  { group: "View and layout", label: "Show formatting: ¶, spaces, tabs and section breaks (as Word's ¶ button)", keys: ["Ctrl+Shift+8"], run: (x) => toggleFormatMarks(x.body) },
   { group: "View and layout", label: "Zoom in", keys: ["Ctrl+Alt++", "Ctrl+Alt+="], run: (x) => x.zoomBy(1), everywhere: true },
   { group: "View and layout", label: "Zoom out", keys: ["Ctrl+Alt+-"], run: (x) => x.zoomBy(-1), everywhere: true },
   { group: "View and layout", label: "Zoom to 100%", keys: ["Ctrl+Alt+0"], run: (x) => x.zoomBy(0), everywhere: true },

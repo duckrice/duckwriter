@@ -189,8 +189,22 @@ export class Footnotes {
       },
       "hf-doc fn-doc",
     );
+    // Backspace or Delete in an emptied note removes the footnote, mark and all. Before the
+    // editor sees the key, and once it is over, so it can't go on to delete in the text too.
+    view.dom.addEventListener(
+      "keydown",
+      (event) => {
+        const key = (event as KeyboardEvent).key;
+        if ((key !== "Backspace" && key !== "Delete") || view.state.doc.textContent.trim()) return;
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        setTimeout(() => this.remove(id));
+      },
+      true,
+    );
     view.dom.addEventListener("keydown", (event) => {
-      if ((event as KeyboardEvent).key === "Escape") {
+      const key = (event as KeyboardEvent).key;
+      if (key === "Escape") {
         event.preventDefault();
         this.stop();
         // Back to the text, after the note's mark.
@@ -223,6 +237,22 @@ export class Footnotes {
     this.host.storiesChanged();
   }
 
+  /** Takes a footnote out: its mark in the text and the note; the cursor goes where the mark was. */
+  remove(id: string) {
+    this.stop();
+    const { body } = this.host;
+    let at = -1;
+    body.state.doc.descendants((node, pos) => {
+      if (at < 0 && node.type === schema.nodes.footnote && node.attrs.id === id) at = pos;
+      return at < 0;
+    });
+    if (at < 0) return;
+    const tr = body.state.tr.delete(at, at + 1);
+    tr.setSelection(TextSelection.near(tr.doc.resolve(at)));
+    body.dispatch(tr.scrollIntoView());
+    body.focus();
+  }
+
   /** Puts a new footnote at the cursor in the text, and opens it for typing. */
   insert() {
     const { ctx, body } = this.host;
@@ -230,8 +260,8 @@ export class Footnotes {
     const ids = [...ctx.footnotes.notes.keys(), ...this.order()].map(Number).filter(Number.isFinite);
     const id = String(Math.max(0, ...ids) + 1);
     ctx.footnotes.notes.set(id, schema.nodes.doc.create(null, schema.nodes.paragraph.create({ style: "FootnoteText" }, schema.text(" "))));
-    const mark = schema.marks.charStyle.create({ id: "FootnoteReference" });
-    const node = schema.nodes.footnote.create({ id }, null, [mark]);
+    // No "Footnote reference" style mark (see withoutNoteStyle in docx/read.ts); it is saved with that style.
+    const node = schema.nodes.footnote.create({ id });
     const tr = body.state.tr.replaceSelectionWith(node, false);
     // Text typed after the mark isn't superscript.
     tr.setStoredMarks(body.state.selection.$from.marks().filter((m) => m.type !== schema.marks.charStyle));

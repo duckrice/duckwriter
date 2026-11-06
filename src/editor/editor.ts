@@ -27,6 +27,7 @@ import { citationsPlugin } from "./citations";
 import { authorName } from "../author";
 import { ImageView, type PictureHooks } from "./imageview";
 import { MathView, enterMath } from "./mathview";
+import { formatMarksPlugin } from "./formatmarks";
 import { paginationPlugin, sectionWidthPlugin, type PaginationHooks } from "./pagination";
 import { schema } from "./schema";
 import { editEquation } from "../ui/equation";
@@ -111,6 +112,7 @@ export function createState(doc: Node, ctx: () => DocContext, pages?: Omit<Pagin
       pastePlugin(ctx),
       citationsPlugin(ctx),
       paraMarkPlugin,
+      formatMarksPlugin,
       ...(pages ? [paginationPlugin({ context: ctx, ...pages }), sectionWidthPlugin(ctx)] : []),
       dropCursor({ color: "#0f766e", width: 2 }),
       gapCursor(),

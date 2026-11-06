@@ -82,4 +82,17 @@ describe("footnotes", () => {
     expect(refs(again.doc)).toEqual(["1"]);
     expect(again.context.footnotes.notes.get("1")!.textContent).toBe(" At sea level.");
   });
+
+  // Bug: a styled footnote mark at the end of a paragraph couldn't be selected or deleted.
+  it("keeps the mark in the text free of the reference style, and saves it with that style", async () => {
+    const { doc, context } = await readDocx(await withFootnotes());
+    doc.descendants((n) => {
+      if (n.type.name === "footnote") expect(n.marks.filter((m) => m.type === schema.marks.charStyle)).toEqual([]);
+    });
+    ensureStyles(context, "FootnoteText", "FootnoteReference");
+    const para = schema.nodes.paragraph.create(null, [schema.text("Water boils"), schema.nodes.footnote.create({ id: "9" })]);
+    context.footnotes.notes.set("9", schema.nodes.doc.create(null, schema.nodes.paragraph.create(null, schema.text(" Note."))));
+    const zip = await JSZip.loadAsync(await writeDocx(schema.nodes.doc.create(null, para), context));
+    expect(await zip.file("word/document.xml")!.async("string")).toContain('<w:rStyle w:val="FootnoteReference"/></w:rPr><w:footnoteReference w:id="9"/>');
+  });
 });

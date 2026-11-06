@@ -302,6 +302,25 @@ export function newParagraph(ctx: DocContext): Command {
       if (dispatch) dispatch(state.tr.setNodeMarkup($from.before(), undefined, { ...para.attrs, style, numId: fromStyle ? "0" : null, ilvl: 0, indentLeft: null, indentFirst: null }).setMeta(listPluginKey, true));
       return true;
     }
+    const atStart = state.selection.empty && $from.parentOffset === 0;
+    // At the start of a table's first cell, with no line above the table to type in: a line goes above it, as in Word.
+    const table = atStart ? tableStartingAt(state) : -1;
+    if (table >= 0) {
+      if (dispatch) {
+        const tr = state.tr.insert(table, schema.nodes.paragraph.create());
+        dispatch(tr.setSelection(TextSelection.create(tr.doc, table + 1)).scrollIntoView());
+      }
+      return true;
+    }
+    // At the start of a heading (after a table, say), the empty line made above it is ordinary text, not an empty heading.
+    if (atStart && para.content.size > 0 && !listOf(ctx, para)) {
+      const own = para.attrs.style ?? ctx.styles.defaultParagraph;
+      const after = own ? ctx.styles.byId.get(own)?.next : undefined;
+      if (after && after !== own) {
+        if (dispatch) dispatch(state.tr.insert($from.before(), schema.nodes.paragraph.create({ style: after === ctx.styles.defaultParagraph ? null : after })).scrollIntoView());
+        return true;
+      }
+    }
     if (!dispatch) return true;
     // A new paragraph goes on in the same formatting, but not as a link.
     const marks = withoutLink(state.storedMarks ?? ($from.parentOffset > 0 ? $from.marks() : (para.firstChild?.marks ?? paraMarks(para.attrs))));
@@ -320,6 +339,19 @@ export function newParagraph(ctx: DocContext): Command {
     dispatch(tr.setMeta(listPluginKey, true).scrollIntoView());
     return true;
   };
+}
+
+/** Where the table starts, if the cursor is at the very start of its first cell and nothing to type in is above it; else -1. */
+function tableStartingAt(state: EditorState): number {
+  const { $from } = state.selection;
+  for (let d = $from.depth; d > 0; d--) {
+    if ($from.index(d) !== 0 && d < $from.depth) return -1;
+    const node = $from.node(d);
+    if (node.type !== schema.nodes.table) continue;
+    const before = $from.index(d - 1) > 0 ? $from.node(d - 1).child($from.index(d - 1) - 1) : null;
+    return before && before.isTextblock ? -1 : $from.before(d);
+  }
+  return -1;
 }
 
 /** Backspace at the start of a list item takes it out of the list first, as in Word. */
@@ -422,12 +454,90 @@ export interface PageNumbering {
 /** The section the cursor is in: its page numbering, as the dialog shows it. */
 export function pageNumberingAt(state: EditorState, ctx: DocContext): PageNumbering {
   const end = sectionEndAt(state);
-  const xml = end >= 0 ? sectPrOf(state.doc.nodeAt(end)!)! : ctx.sectPr ?? "";
+  return numberingOf(end >= 0 ? sectPrOf(state.doc.nodeAt(end)!)! : ctx.sectPr ?? "", end < 0, ctx);
+}
+
+function numberingOf(xml: string, last: boolean, ctx: DocContext): PageNumbering {
   const num = /<w:pgNumType\b[^>]*>/.exec(xml)?.[0] ?? "";
   const format = /w:fmt="(\w+)"/.exec(num)?.[1] as PageNumbering["format"] | undefined;
   const start = /w:start="(\d+)"/.exec(num)?.[1];
-  const firstBlank = end >= 0 ? /<w:titlePg(?![^>]*w:val="(0|false)")[^>]*>/.test(xml) : ctx.titlePage;
+  const firstBlank = last ? ctx.titlePage : /<w:titlePg(?![^>]*w:val="(0|false)")[^>]*>/.test(xml);
   return { format: format && ["lowerRoman", "upperRoman", "lowerLetter", "upperLetter"].includes(format) ? format : "decimal", start: start ? Number(start) : null, firstBlank };
+}
+
+/** A section of the document, as the page numbers window lists it. */
+export interface SectionInfo {
+  /** Where its first paragraph is. */
+  from: number;
+  /** The paragraph ending it, holding its properties; -1 for the last section (its properties are the document's). */
+  end: number;
+  start: SectionStart;
+  numbering: PageNumbering;
+  /** The start of its first words, to tell it apart. */
+  preview: string;
+}
+
+/** Every section, in order. */
+export function sectionsOf(doc: Node, ctx: DocContext): SectionInfo[] {
+  const out: SectionInfo[] = [];
+  let from = 0;
+  let preview = "";
+  doc.forEach((node, pos) => {
+    if (!preview && node.textContent.trim()) preview = node.textContent.trim().slice(0, 60);
+    const xml = sectPrOf(node);
+    if (!xml) return;
+    out.push({ from, end: pos, start: startOf(xml), numbering: numberingOf(xml, false, ctx), preview });
+    from = pos + node.nodeSize;
+    preview = "";
+  });
+  const last = ctx.sectPr ?? "";
+  out.push({ from, end: -1, start: startOf(last), numbering: numberingOf(last, true, ctx), preview });
+  return out;
+}
+
+const startOf = (xml: string): SectionStart => (/<w:type w:val="(continuous|oddPage|evenPage)"/.exec(xml)?.[1] as SectionStart | undefined) ?? "nextPage";
+
+/** Changes the properties of the section ending at `end` (-1: the last section, kept in the document's context). */
+function editSection(ctx: DocContext, end: number, change: (xml: string, last: boolean) => string): Command {
+  return (state, dispatch, view) => {
+    if (!dispatch) return true;
+    const tr = state.tr;
+    const para = end >= 0 ? state.doc.nodeAt(end) : null;
+    const current = para ? sectPrOf(para) : null;
+    if (para && current) tr.setNodeMarkup(end, undefined, { ...para.attrs, extra: para.attrs.extra.replace(current, change(current, false)) });
+    // shortcut: the document's last section lives outside the text, so Undo doesn't change it back; fine until someone misses it.
+    else ctx.sectPr = change(ctx.sectPr ?? "", true);
+    dispatch(tr);
+    if (view) relayout(view);
+    return true;
+  };
+}
+
+/** Sets how a section's pages are numbered (the section ending at `end`; -1 for the last). */
+export function setSectionNumbering(ctx: DocContext, end: number, n: PageNumbering): Command {
+  return editSection(ctx, end, (xml, last) => {
+    if (last) ctx.titlePage = n.firstBlank;
+    return withPageNumbering(xml, n, !last);
+  });
+}
+
+/** Sets how a section starts: on a new page, straight on, or on the next odd or even page. */
+export function setSectionStart(ctx: DocContext, end: number, start: SectionStart): Command {
+  return editSection(ctx, end, (xml) => withSectionStart(xml, start));
+}
+
+/** Takes out the section break ending at `end`: its text joins the section after it, and takes that section's setup (as in Word). */
+export function removeSectionBreak(end: number): Command {
+  return (state, dispatch, view) => {
+    const para = state.doc.nodeAt(end);
+    const xml = para && sectPrOf(para);
+    if (!para || !xml) return false;
+    if (dispatch) {
+      dispatch(state.tr.setNodeMarkup(end, undefined, { ...para.attrs, extra: para.attrs.extra.replace(xml, "") }));
+      if (view) relayout(view);
+    }
+    return true;
+  };
 }
 
 /** Section properties with this page numbering, in Word's order (titlePg only when `withTitle`; the last section's is the document's). */
@@ -446,23 +556,7 @@ export function withPageNumbering(sectPr: string, n: PageNumbering, withTitle = 
 
 /** Sets the page numbering of the section the cursor is in, as Word's Page Number Format and Different First Page. */
 export function setPageNumbering(ctx: DocContext, n: PageNumbering): Command {
-  return (state, dispatch, view) => {
-    if (!dispatch) return true;
-    const end = sectionEndAt(state);
-    const tr = state.tr;
-    if (end >= 0) {
-      const para = state.doc.nodeAt(end)!;
-      const current = sectPrOf(para)!;
-      tr.setNodeMarkup(end, undefined, { ...para.attrs, extra: para.attrs.extra.replace(current, withPageNumbering(current, n)) });
-    } else {
-      // shortcut: the document's last section lives outside the text, so Undo doesn't change it back (as with section breaks).
-      ctx.sectPr = withPageNumbering(ctx.sectPr ?? "", n, false);
-      ctx.titlePage = n.firstBlank;
-    }
-    dispatch(tr);
-    if (view) relayout(view);
-    return true;
-  };
+  return (state, dispatch, view) => setSectionNumbering(ctx, sectionEndAt(state), n)(state, dispatch, view);
 }
 
 /** Puts the section the cursor is in into columns (one: back to a single column), as Word's Columns button. */
