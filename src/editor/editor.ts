@@ -28,6 +28,7 @@ import { authorName } from "../author";
 import { ImageView, type PictureHooks } from "./imageview";
 import { MathView, enterMath } from "./mathview";
 import { formatMarksPlugin } from "./formatmarks";
+import { backspaceCells, cellsAt } from "../ui/tables";
 import { paginationPlugin, sectionWidthPlugin, type PaginationHooks } from "./pagination";
 import { schema } from "./schema";
 import { editEquation } from "../ui/equation";
@@ -98,7 +99,8 @@ export function createState(doc: Node, ctx: () => DocContext, pages?: Omit<Pagin
           insertTab(),
         ),
         "Shift-Tab": chainCommands(goToNextCell(-1), c((x) => changeListLevel(x, -1))),
-        Backspace: c((x) => leaveListAtStart(x)),
+        // Selected rows, columns or the whole table go, as in Word; otherwise lists first.
+        Backspace: chainCommands(backspaceCells, c((x) => leaveListAtStart(x))),
       }),
       keymap(baseKeymap),
       columnResizing({ View: DuckTableView, cellMinWidth: 30 }),
@@ -119,6 +121,17 @@ export function createState(doc: Node, ctx: () => DocContext, pages?: Omit<Pagin
       new Plugin({
         props: {
           handleDOMEvents: {
+            // The handle at a table's corner selects the whole table.
+            mousedown(view, event) {
+              const handle = (event.target as HTMLElement).closest?.(".table-handle");
+              const cell = handle?.parentElement?.querySelector("td, th");
+              if (!cell) return false;
+              event.preventDefault();
+              const selection = cellsAt(view.state, "table", view.state.doc.resolve(view.posAtDOM(cell, 0)));
+              if (selection) view.dispatch(view.state.tr.setSelection(selection));
+              view.focus();
+              return true;
+            },
             copy(view) {
               copyPictures(view);
               return false;

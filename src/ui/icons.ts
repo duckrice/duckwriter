@@ -37,6 +37,7 @@ const PATHS = {
   caret: '<path d="m7 10 5 5 5-5"/>',
   pilcrow: '<path d="M11 4h8M13 4v16M17 4v16M13 12h-2a4 4 0 0 1 0-8"/>',
   breaks: '<path d="M6 3v5h12V3M6 21v-5h12v5M3 12h3M9 12h2M13 12h2M18 12h3"/>',
+  borders: '<path d="M4 4h16v16H4zM4 12h16M12 4v16"/>',
   pageNumbers: '<path d="M6 3h12v18H6zM13 16h2"/>',
   pageBreak: '<path d="M6 3v5h12V3M6 21v-5h12v5M3 12h3M9 12h2M13 12h2M18 12h3"/>',
   equation: '<path d="M5 6h12M7 6v12M15 6v10a2 2 0 0 0 2 2h1"/>',

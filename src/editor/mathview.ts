@@ -143,6 +143,8 @@ export class MathView implements NodeView {
       (event.key === "y" || event.shiftKey ? redo : undo)(this.view.state, this.view.dispatch);
       return;
     }
+    // The equation shortcut again (Alt+=, Alt+\ on a Norwegian keyboard) finishes the equation.
+    if (event.altKey && !ctrl && (event.code === "Equal" || event.key === "=" || event.key === "\\")) return this.leave(event, "after");
     if (ctrl || event.altKey) return;
     let changed = false;
     switch (event.key) {
@@ -287,7 +289,7 @@ export class MathView implements NodeView {
     if (item.k === "ch") {
       if (/^[0-9.]$/.test(item.v)) return el("mn", {}, item.v);
       if (/^\p{L}$/u.test(item.v)) return el("mi", {}, item.v);
-      if (item.v === " ") return el("mspace", { width: "0.5em" });
+      if (/^\s$/u.test(item.v)) return el("mspace", { width: item.v === " " ? "0.5em" : "0.28em" });
       const v = item.v === "-" ? "−" : item.v === "*" ? "∗" : item.v;
       if (BIG.has(v)) return el("mo", { largeop: "true", movablelimits: "true" }, v);
       return el("mo", BRACKETS.includes(v) ? { lspace: "0", rspace: "0" } : {}, v);

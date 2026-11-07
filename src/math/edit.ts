@@ -29,6 +29,8 @@ export interface Caret {
 }
 
 const ch = (v: string): Item => ({ k: "ch", v });
+/** A space typed in an equation: a medium space, \; in the LaTeX. */
+export const SPACE = " ";
 const box = (kind: Kind, slots: Row[], extra: Partial<Box> = {}): Box => ({ k: "box", kind, slots, ...extra });
 const isCh = (item: Item | undefined, test: string | RegExp): boolean =>
   !!item && item.k === "ch" && (typeof test === "string" ? test.includes(item.v) : test.test(item.v));
@@ -83,7 +85,8 @@ export class MathEdit {
     // Straight after ^ _ / everything is part of what comes next: x^-1, x^(a+b).
     const afterOperator = isCh(before, "_^/");
     if (c === " ") {
-      this.build(true);
+      // Space builds up what was typed; with nothing to build it is a space, which also keeps things apart (a b/c: only b/c).
+      if (!this.build(true)) this.insert(ch(SPACE));
       return;
     }
     if (c === "'") c = "′";

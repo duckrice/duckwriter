@@ -3002,3 +3002,68 @@ kbd {
 .pn-footer-hint {
   margin-right: auto;
 }
+
+/* ---- tables: the corner handle, and lines chosen side by side ------------------------ */
+
+.doc .tableWrapper {
+  position: relative;
+}
+
+.doc .table-handle {
+  position: absolute;
+  top: -4px;
+  left: -20px;
+  z-index: 2;
+  padding: 0 2px;
+  border: 1px solid #9aa3ad;
+  background: #ffffff;
+  color: #3b4652;
+  font: 11px/14px "Segoe UI", sans-serif;
+  cursor: pointer;
+  opacity: 0;
+  user-select: none;
+}
+
+.doc .tableWrapper:hover .table-handle,
+.doc .tableWrapper:has(.selectedCell) .table-handle {
+  opacity: 1;
+}
+
+.doc table.custom-lines > tbody > tr > :is(td, th) {
+  border-top: var(--line-insideH) !important;
+  border-bottom: var(--line-insideH) !important;
+  border-left: var(--line-insideV) !important;
+  border-right: var(--line-insideV) !important;
+}
+
+.doc table.custom-lines > tbody > tr:first-child > :is(td, th) {
+  border-top: var(--line-top) !important;
+}
+
+.doc table.custom-lines > tbody > tr:last-child > :is(td, th) {
+  border-bottom: var(--line-bottom) !important;
+}
+
+.doc table.custom-lines > tbody > tr > :is(td, th):first-child {
+  border-left: var(--line-left) !important;
+}
+
+.doc table.custom-lines > tbody > tr > :is(td, th):last-child {
+  border-right: var(--line-right) !important;
+}
+
+@media print {
+  .doc .table-handle {
+    display: none;
+  }
+}
+
+.ribbon-tab[hidden] {
+  display: none;
+}
+
+/* A tab that shows only for what the cursor is in (the Table tab), as in Word. */
+.ribbon-tab.contextual {
+  color: #0f766e;
+  font-weight: 600;
+}

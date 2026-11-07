@@ -74,7 +74,7 @@ describe("typing an equation straight into the text", () => {
   });
 
   it("quoted words stay ordinary text", () => {
-    expect(typed('"rate" =k').latex()).toBe("\\text{rate}=k");
+    expect(typed('"rate"=k').latex()).toBe("\\text{rate}=k");
   });
 
   it("the arrows go into and out of every box", () => {
@@ -104,6 +104,12 @@ describe("typing an equation straight into the text", () => {
     f.left();
     f.backspace();
     expect(f.latex()).toBe("xi");
+  });
+
+  it("a space with nothing to build stays a space, and keeps things apart", () => {
+    expect(typed("a b").latex()).toBe("a\\;b");
+    expect(typed("a b/c ").latex()).toBe("a\\;\\frac{b}{c}");
+    expect(new MathEdit(fromLatex("a\\;b")).latex()).toBe("a\\;b");
   });
 
   it("Enter in a matrix adds a row", () => {

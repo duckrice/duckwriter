@@ -148,6 +148,8 @@ const tableSpec: NodeSpec = {
     style: { default: null },
     /** Lines around the cells: true, false, or null to follow the table's style. */
     borders: { default: null },
+    /** Lines chosen side by side (TableLines in ui/tables.ts); when set, they win over `borders`. */
+    lines: { default: null },
     /** Column widths in twentieths of a point, from the file. */
     grid: { default: [] },
   },

@@ -200,7 +200,12 @@ class BodyWriter {
     const style = node.attrs.style ?? (node.attrs.tblPr ? null : "TableGrid");
     if (style) props.push(tag("w:tblStyle", { "w:val": style }));
     if (!props.some((e) => localName(e) === "tblW")) props.push(tag("w:tblW", { "w:w": 0, "w:type": "auto" }));
-    if (node.attrs.borders !== null) {
+    const lines = node.attrs.lines as { [side: string]: unknown; style: string; size: number; color: string } | null;
+    if (lines) {
+      props.push(tag("w:tblBorders", {}, ...["top", "left", "bottom", "right", "insideH", "insideV"].map((side) =>
+        tag(`w:${side}`, lines[side] ? { "w:val": lines.style, "w:sz": lines.size, "w:space": 0, "w:color": lines.color } : { "w:val": "none", "w:sz": 0, "w:space": 0, "w:color": "auto" }),
+      )));
+    } else if (node.attrs.borders !== null) {
       const line = node.attrs.borders ? { "w:val": "single", "w:sz": 4, "w:space": 0, "w:color": "auto" } : { "w:val": "none", "w:sz": 0, "w:space": 0, "w:color": "auto" };
       props.push(tag("w:tblBorders", {}, ...["top", "left", "bottom", "right", "insideH", "insideV"].map((side) => tag(`w:${side}`, line))));
     } else {

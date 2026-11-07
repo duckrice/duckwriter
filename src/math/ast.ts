@@ -306,6 +306,7 @@ export function toLatex(node: MathNode): string {
       const name = NAME_OF.get(node.v);
       if (name && !/^[a-zA-Z0-9]$/.test(node.v)) return `\\${name}`;
       if (node.v === "{" || node.v === "}" || "_^%#&$".includes(node.v)) return `\\${node.v}`;
+      if (node.v === " ") return "\\;";
       return node.v;
     }
     case "num":

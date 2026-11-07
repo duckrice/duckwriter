@@ -423,8 +423,9 @@ await session(null, 9436, async (app) => {
   await app.key("ArrowRight", 39);
   await app.type("/2 ");
   check("a/b becomes a fraction", await app.waitFor(`!!document.querySelector(".doc .math.editing mfrac")`, 3000));
-  await app.key("Escape", 27);
-  check("Esc goes back to the text; it is saved as LaTeX", await app.waitFor(`!document.querySelector(".doc .math.editing") && document.querySelector(".doc .math").textContent.includes("inn")`, 3000));
+  // Alt+\ on a Norwegian keyboard (the key Windows calls Equal) finishes the equation, as it started it.
+  await app.key("\\", 187, ALT, "Equal");
+  check("the equation shortcut again goes back to the text; it is saved as LaTeX", await app.waitFor(`!document.querySelector(".doc .math.editing") && document.querySelector(".doc .math").textContent.includes("inn")`, 3000));
   // A click goes into the equation, with the cursor where it was clicked.
   const eq = await app.center(".doc .math mi");
   await app.click(eq[0], eq[1]);
@@ -1097,7 +1098,7 @@ await session(null, 9510, async (app) => {
   await app.key("Enter", 13);
   const shape = () => app.evaluate(`[...document.querySelectorAll(".doc table")].map((t) => [...t.rows].filter((r) => !r.classList.contains("page-gap-row")).map((r) => r.cells.length).join(","))`);
   check("a 2 × 3 table is inserted, with the cursor in the first cell", JSON.stringify(await shape()) === JSON.stringify(["3,3"]) && (await app.evaluate(`!!document.getSelection().anchorNode?.parentElement?.closest("td")`)), JSON.stringify(await shape()));
-  check("the table toolbar appears", await app.evaluate(`!document.querySelector(".table-tools").hidden`));
+  check("the Table tab appears", await app.evaluate(`!document.querySelector('.ribbon-tab[data-tab="table"]').hidden`));
   for (const text of ["Sample", "Mass", "Notes", "A", "1.2"]) {
     await app.type(text);
     await app.key("Tab", 9);
@@ -1113,7 +1114,8 @@ await session(null, 9510, async (app) => {
   const to = await app.evaluate(`(() => { const r = [...document.querySelectorAll(".doc td")].find((c) => c.textContent === "clear").getBoundingClientRect(); return [r.left + 8, r.top + r.height / 2]; })()`);
   await app.drag(from[0], from[1], to[0], to[1]);
   check("dragging across cells selects them", (await app.count(".doc .selectedCell")) === 2);
-  await app.clickText(".table-tools .tb-text", "Merge");
+  await app.clickOn('.ribbon-tab[data-tab="table"]');
+  await app.clickText('.tb-group[data-tab="table"] .tb-text', "Merge");
   check("Merge makes them one cell", JSON.stringify(await shape()) === JSON.stringify(["3,2,3,3"]), JSON.stringify(await shape()));
   check("new tables have lines (Word's Table Grid style)", await app.evaluate(`getComputedStyle(document.querySelector(".doc td")).borderTopStyle === "solid"`));
   await app.shoot("table");
@@ -2087,6 +2089,53 @@ await session(sample("lecture.pdf"), 9439, async (app) => {
 
 await session(sample("not-a-docx.docx"), 9435, async (app) => {
   check("a file that isn't a Word document gets a plain message", await app.waitFor(`/isn't a Word document/.test(document.querySelector(".toast.error")?.textContent ?? "")`, 5000));
+});
+
+// ---- tables: selecting, copying, removing, lines -------------------------------------
+
+await session(null, 9871, async (app) => {
+  const blocks = () => app.evaluate(`[...document.querySelector(".doc").children].map((e) => e.tagName + ":" + e.textContent).join("|")`);
+  await app.type("Before the table");
+  await app.key("Enter", 13);
+  await app.key("T", 84, CTRL | ALT | SHIFT);
+  await app.key("ArrowRight", 39);
+  await app.key("ArrowDown", 40);
+  await app.key("Enter", 13);
+  for (const [i, text] of ["a1", "b1", "a2", "b2"].entries()) {
+    if (i) await app.key("Tab", 9);
+    await app.type(text);
+  }
+  check("in a table, the Table tab shows", await app.evaluate(`!document.querySelector('.ribbon-tab[data-tab="table"]').hidden`));
+  // The handle at the corner selects the whole table.
+  await app.evaluate(`document.querySelector(".doc .table-handle").scrollIntoView({ block: "center" })`);
+  const handle = await app.evaluate(`(() => { const r = document.querySelector(".doc .table-handle").getBoundingClientRect(); return [r.left + r.width / 2, r.top + r.height / 2]; })()`);
+  await app.mouse("mouseMoved", handle[0], handle[1]);
+  await app.click(handle[0], handle[1]);
+  check("the handle at the table's corner selects the whole table", (await app.count(".doc .selectedCell")) === 4, String(await app.count(".doc .selectedCell")));
+  // Copy it, and paste it below as a second table.
+  await app.key("C", 67, CTRL);
+  await app.key("End", 35, CTRL);
+  await app.key("V", 86, CTRL);
+  check("a copied table pastes as a whole table", await app.waitFor(`document.querySelectorAll(".doc table").length === 2 && document.querySelectorAll(".doc table")[1].textContent === "a1b1a2b2"`, 3000), await blocks());
+  // The second table: the lines menu.
+  await app.clickOn('.ribbon-tab[data-tab="table"]');
+  await app.clickOn('.split-arrow[title^="Lines"]');
+  await app.clickText(".lines-menu .menu-item", "Outside lines only");
+  check("Lines → Outside lines only leaves the inside without lines", await app.waitFor(`(() => { const t = document.querySelectorAll(".doc table")[1]; const c = getComputedStyle(t.querySelector("td")); return c.borderTopStyle === "solid" && c.borderRightStyle === "none"; })()`, 2000));
+  await app.clickOn('.split-arrow[title^="Lines"]');
+  await app.clickText(".lines-menu .menu-item", "Double");
+  check("…and a double line", await app.waitFor(`getComputedStyle(document.querySelectorAll(".doc table")[1].querySelector("td")).borderTopStyle === "double"`, 2000));
+  // Select table, then Backspace, removes it.
+  await app.clickText('.tb-group[data-tab="table"] .tb-text', "Select table");
+  await app.key("Backspace", 8);
+  check("Select table, then Backspace, removes the table", await app.waitFor(`document.querySelectorAll(".doc table").length === 1`, 2000), await blocks());
+  // A selected row goes with Backspace.
+  await app.clickText(".doc td", "a2");
+  await app.clickText('.tb-group[data-tab="table"] .tb-text', "Row");
+  await app.key("Backspace", 8);
+  check("a selected row goes with Backspace", await app.waitFor(`document.querySelector(".doc table").textContent === "a1b1"`, 2000), await blocks());
+  await app.shoot("table-tab");
+  check("no errors in the app", app.errors.length === 0, app.errors.join("; "));
 });
 
 removeFolder(profile);

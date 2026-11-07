@@ -2,9 +2,11 @@
 // table commands for the toolbar and the keyboard.
 
 import { Fragment } from "prosemirror-model";
-import { TextSelection, type Command } from "prosemirror-state";
+import { TextSelection, type Command, type EditorState } from "prosemirror-state";
 import type { EditorView } from "prosemirror-view";
 import {
+  CellSelection,
+  TableMap,
   addColumnAfter,
   addColumnBefore,
   addRowAfter,
@@ -76,7 +78,7 @@ export function setTableLines(on: boolean): Command {
     if (!isInTable(state)) return false;
     const table = findTable(state.selection.$from);
     if (!table) return false;
-    if (dispatch) dispatch(state.tr.setNodeMarkup(table.pos, undefined, { ...table.node.attrs, borders: on }));
+    if (dispatch) dispatch(state.tr.setNodeMarkup(table.pos, undefined, { ...table.node.attrs, borders: on, lines: null }));
     return true;
   };
 }
@@ -93,7 +95,92 @@ export const TABLE_COMMANDS = {
   split: splitCell,
   headerRow: toggleHeaderRow,
   shade: (color: string | null) => setCellAttr("background", color),
+  valign: (where: "top" | "middle" | "bottom") => setCellAttr("valign", where),
+  selectTable: selectCells("table"),
+  selectRow: selectCells("row"),
+  selectColumn: selectCells("column"),
 };
+
+/** Selects the whole table, or the row or column the cursor is in, as Word's Select menu. */
+function selectCells(what: "table" | "row" | "column"): Command {
+  return (state, dispatch) => {
+    const selection = cellsAt(state, what, state.selection.$from);
+    if (!selection) return false;
+    if (dispatch) dispatch(state.tr.setSelection(selection));
+    return true;
+  };
+}
+
+/** The whole table (or row, or column) around `$at`, as a cell selection. */
+export function cellsAt(state: EditorState, what: "table" | "row" | "column", $at: import("prosemirror-model").ResolvedPos): CellSelection | null {
+  const found = findTable($at);
+  if (!found) return null;
+  const map = TableMap.get(found.node);
+  const start = found.pos + 1;
+  const $cell = (index: number) => state.doc.resolve(start + map.map[index]);
+  if (what === "table") return new CellSelection($cell(0), $cell(map.map.length - 1));
+  const sel = state.selection;
+  const rect = map.findCell((sel instanceof CellSelection ? sel.$headCell.pos : cellStart(state)) - start);
+  return what === "row"
+    ? CellSelection.rowSelection($cell(rect.top * map.width), $cell(rect.top * map.width + map.width - 1))
+    : CellSelection.colSelection($cell(rect.left), $cell((map.height - 1) * map.width + rect.left));
+}
+
+/** Where the cell the cursor is in starts. */
+function cellStart(state: EditorState): number {
+  const $from = state.selection.$from;
+  for (let d = $from.depth; d > 0; d--) if (/^table_(cell|header)$/.test($from.node(d).type.name)) return $from.before(d);
+  return $from.pos;
+}
+
+/**
+ * Backspace on selected cells, as in Word: the whole table selected removes the table,
+ * whole rows or columns remove them; other cells are emptied (as Delete does).
+ */
+export const backspaceCells: Command = (state, dispatch) => {
+  const sel = state.selection;
+  if (!(sel instanceof CellSelection)) return false;
+  if (sel.isRowSelection() && sel.isColSelection()) return deleteTable(state, dispatch);
+  if (sel.isRowSelection()) return deleteRow(state, dispatch);
+  if (sel.isColSelection()) return deleteColumn(state, dispatch);
+  return false;
+};
+
+/** The lines of a table, side by side, as Word's Borders menu sets them. Size is in eighths of a point. */
+export interface TableLines {
+  top: boolean;
+  bottom: boolean;
+  left: boolean;
+  right: boolean;
+  insideH: boolean;
+  insideV: boolean;
+  style: "single" | "double" | "dashed" | "dotted";
+  size: number;
+  color: string;
+}
+
+export const DEFAULT_LINES: TableLines = { top: true, bottom: true, left: true, right: true, insideH: true, insideV: true, style: "single", size: 4, color: "auto" };
+
+/** The table's lines as they are now (all on, in thin black, when the table only says "lines" or follows its style). */
+export function linesOf(state: EditorState): TableLines | null {
+  const table = findTable(state.selection.$from);
+  if (!table) return null;
+  const { lines, borders } = table.node.attrs;
+  if (lines) return lines as TableLines;
+  const on = borders !== false;
+  return { ...DEFAULT_LINES, top: on, bottom: on, left: on, right: on, insideH: on, insideV: on };
+}
+
+/** Changes some of the table's lines: which sides, and their style, width and colour. */
+export function setLines(change: Partial<TableLines>): Command {
+  return (state, dispatch) => {
+    const table = findTable(state.selection.$from);
+    const current = linesOf(state);
+    if (!table || !current) return false;
+    if (dispatch) dispatch(state.tr.setNodeMarkup(table.pos, undefined, { ...table.node.attrs, borders: null, lines: { ...current, ...change } }));
+    return true;
+  };
+}
 
 export { isInTable };
 

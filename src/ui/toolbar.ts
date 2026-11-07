@@ -44,7 +44,7 @@ import { reviewers } from "../editor/review";
 import { schema } from "../editor/schema";
 import { editEquation, insertEquation, insertNumberedEquation } from "./equation";
 import { choosePicture, setSnap, snapOn } from "./pictures";
-import { TABLE_COMMANDS, insertTable, isInTable, setTableLines, tableGrid, sortTable, textToTable } from "./tables";
+import { DEFAULT_LINES, TABLE_COMMANDS, insertTable, isInTable, linesOf, setLines, setTableLines, tableGrid, sortTable, textToTable, type TableLines } from "./tables";
 import { captionDialog, headingsNumbered, insertReference, insertToc, referenceTargets, toggleHeadingNumbers } from "./references";
 import { icon, type IconName } from "./icons";
 
@@ -166,25 +166,46 @@ export class Toolbar {
       return b;
     };
     const t = TABLE_COMMANDS;
+    // The Table tab, shown while the cursor is in a table (as Word's Table Design and Layout tabs).
     this.tableGroup = h(
       "div",
-      { class: "tb-group table-tools", hidden: true },
-      h("span", { class: "tb-caption" }, "Table"),
-      textButton("+ Row above", "Insert a row above (Ctrl+Alt+Shift+Up)", () => this.run(t.rowAbove)),
-      textButton("+ Row below", "Insert a row below (Ctrl+Alt+Shift+Down)", () => this.run(t.rowBelow)),
-      textButton("+ Column left", "Insert a column to the left (Ctrl+Alt+Shift+Left)", () => this.run(t.columnLeft)),
-      textButton("+ Column right", "Insert a column to the right (Ctrl+Alt+Shift+Right)", () => this.run(t.columnRight)),
-      textButton("− Row", "Delete the row (Ctrl+Alt+Shift+Backspace)", () => this.run(t.deleteRow)),
-      textButton("− Column", "Delete the column (Ctrl+Alt+Shift+Delete)", () => this.run(t.deleteColumn)),
-      textButton("Merge", "Merge the selected cells (Ctrl+Alt+Shift+M)", () => this.run(t.merge)),
-      textButton("Split", "Split the cell (Ctrl+Alt+Shift+N)", () => this.run(t.split)),
-      textButton("Header row", "First row as a header, repeated on each page in Word (Ctrl+Alt+Shift+R)", () => this.run(t.headerRow)),
-      textButton("Sort", "Sort the rows by this column: A to Z, again for Z to A (Alt+Shift+O)", () => this.sortRows()),
-      textButton("Lines", "Lines around the cells, on or off (Ctrl+Alt+Shift+L)", () => this.toggleTableLines()),
-      this.splitButton("shading", "Cell shading", null, () => this.shadingMenu(), () => this.shadingMenu()),
-      textButton("Caption…", "A caption for the table: Table 1 (Ctrl+Alt+C)", () => captionDialog(this.host.body, this.host.ctx)),
-      textButton("Delete table", "Delete the whole table", () => this.run(t.deleteTable)),
+      { class: "tb-group table-tools" },
+      textButton("Select table", "Select the whole table, to copy, cut or remove it (Backspace)", () => this.run(t.selectTable)),
+      textButton("Row", "Select the row", () => this.run(t.selectRow)),
+      textButton("Column", "Select the column", () => this.run(t.selectColumn)),
     );
+    const tableGroups = [
+      this.tableGroup,
+      group(
+        textButton("+ Row above", "Insert a row above (Ctrl+Alt+Shift+Up)", () => this.run(t.rowAbove)),
+        textButton("+ Row below", "Insert a row below (Ctrl+Alt+Shift+Down)", () => this.run(t.rowBelow)),
+        textButton("+ Column left", "Insert a column to the left (Ctrl+Alt+Shift+Left)", () => this.run(t.columnLeft)),
+        textButton("+ Column right", "Insert a column to the right (Ctrl+Alt+Shift+Right)", () => this.run(t.columnRight)),
+      ),
+      group(
+        textButton("− Row", "Delete the row (Ctrl+Alt+Shift+Backspace)", () => this.run(t.deleteRow)),
+        textButton("− Column", "Delete the column (Ctrl+Alt+Shift+Delete)", () => this.run(t.deleteColumn)),
+        textButton("Delete table", "Delete the whole table", () => this.run(t.deleteTable)),
+      ),
+      group(
+        textButton("Merge", "Merge the selected cells (Ctrl+Alt+Shift+M)", () => this.run(t.merge)),
+        textButton("Split", "Split the cell (Ctrl+Alt+Shift+N)", () => this.run(t.split)),
+      ),
+      group(
+        this.splitButton("borders", "Lines: on or off (the arrow: which lines, style, width, colour; Ctrl+Alt+Shift+L)", null, () => this.toggleTableLines(), () => this.linesMenu()),
+        this.splitButton("shading", "Cell shading", null, () => this.shadingMenu(), () => this.shadingMenu()),
+      ),
+      group(
+        textButton("Top", "Text at the top of the cells", () => this.run(t.valign("top"))),
+        textButton("Middle", "Text in the middle of the cells, top to bottom", () => this.run(t.valign("middle"))),
+        textButton("Bottom", "Text at the bottom of the cells", () => this.run(t.valign("bottom"))),
+      ),
+      group(
+        textButton("Header row", "First row as a header, repeated on each page in Word (Ctrl+Alt+Shift+R)", () => this.run(t.headerRow)),
+        textButton("Sort", "Sort the rows by this column: A to Z, again for Z to A (Alt+Shift+O)", () => this.sortRows()),
+        textButton("Caption…", "A caption for the table: Table 1 (Ctrl+Alt+C)", () => captionDialog(this.host.body, this.host.ctx)),
+      ),
+    ];
     // Always there: documents, undo and redo, find.
     const quick = group(
       this.splitButton("newDoc", "New document (Ctrl+N)", null, () => this.host.newDocument(), () => this.newMenu()),
@@ -330,6 +351,7 @@ export class Toolbar {
           ),
         ],
       },
+      { name: "table", label: "Table", groups: tableGroups },
     ];
     const strip = h("div", { class: "ribbon-tabs", role: "tablist" });
     const panel = h("div", { class: "ribbon-panel" });
@@ -343,7 +365,6 @@ export class Toolbar {
         panel.append(g);
       }
     });
-    panel.append(this.tableGroup);
     this.tabNames = tabs.map((t) => t.name);
     this.el = h("div", { class: "toolbar ribbon", role: "toolbar" }, h("div", { class: "ribbon-top" }, quick, strip), panel, fonts, sizes);
     let remembered = "home";
@@ -352,7 +373,10 @@ export class Toolbar {
     } catch {
       // The first tab, then.
     }
-    this.selectTab(this.tabNames.includes(remembered) ? remembered : "home");
+    this.tableTab = strip.querySelector<HTMLElement>('[data-tab="table"]')!;
+    this.tableTab.classList.add("contextual");
+    this.tableTab.hidden = true;
+    this.selectTab(this.tabNames.includes(remembered) && remembered !== "table" ? remembered : "home");
     this.textColorBar.style.background = this.lastTextColor;
     this.highlightBar.style.background = HIGHLIGHTS[this.lastHighlight];
     // Escape closes an open menu, wherever the cursor is.
@@ -389,15 +413,20 @@ export class Toolbar {
   }
 
   private tabNames: string[] = [];
+  private currentTab = "home";
+  private tabBeforeTable = "home";
+  private tableTab!: HTMLElement;
 
   /** Shows a tab of the ribbon (by name, or by number from 1: Alt+1…). */
   selectTab(tab: string | number) {
     const name = typeof tab === "number" ? this.tabNames[tab - 1] : tab;
     if (!name) return;
+    if (name === "table" && this.currentTab !== "table") this.tabBeforeTable = this.currentTab;
+    this.currentTab = name;
     for (const el of this.el.querySelectorAll<HTMLElement>(".ribbon-panel [data-tab]")) el.hidden = el.dataset.tab !== name;
     for (const el of this.el.querySelectorAll<HTMLElement>(".ribbon-tab")) el.classList.toggle("active", el.dataset.tab === name);
     try {
-      localStorage.setItem("duckwriter.tab", name);
+      if (name !== "table") localStorage.setItem("duckwriter.tab", name);
     } catch {
       // Not remembered.
     }
@@ -576,6 +605,38 @@ export class Toolbar {
     });
     const shades = ["#f2f2f2", "#d9d9d9", "#fff2cc", "#e2efda", "#ddebf7", "#fce4d6", "#ededed", "#d9e1f2", "#ffd966", "#a9d08e", "#9bc2e6", "#f4b084"];
     return h("div", { class: "menu" }, this.swatches(shades, (c) => c, (c) => this.run(TABLE_COMMANDS.shade(c)), (c) => c), none);
+  }
+
+  /** Which of the table's lines show, and their style, width and colour (Word's Borders menu). */
+  private linesMenu(): HTMLElement {
+    const lines = linesOf(this.host.view.state) ?? DEFAULT_LINES;
+    const set = (change: Partial<TableLines>) => this.run(setLines(change));
+    const all = (on: boolean) => ({ top: on, bottom: on, left: on, right: on, insideH: on, insideV: on });
+    const side = (key: "top" | "bottom" | "left" | "right" | "insideH" | "insideV", label: string) => this.simpleItem(label, () => set({ [key]: !lines[key] }), lines[key]);
+    const colors: Record<string, string> = { "000000": "Black", "7f7f7f": "Grey", c00000: "Dark red", "2f5597": "Blue", "548235": "Green", bf9000: "Gold", "7030a0": "Purple", ffffff: "White" };
+    const styles = { single: "Single ───", double: "Double ═══", dashed: "Dashed ‒ ‒ ‒", dotted: "Dotted ·······" } as const;
+    const widths: Record<number, string> = { 4: "½ pt", 8: "1 pt", 12: "1½ pt", 18: "2¼ pt", 24: "3 pt" };
+    return h(
+      "div",
+      { class: "menu lines-menu" },
+      h("div", { class: "menu-title" }, "Which lines"),
+      this.simpleItem("All lines", () => set(all(true))),
+      this.simpleItem("Outside lines only", () => set({ ...all(true), insideH: false, insideV: false })),
+      this.simpleItem("Inside lines only", () => set({ ...all(false), insideH: true, insideV: true })),
+      this.simpleItem("No lines", () => set(all(false))),
+      side("top", "Top"),
+      side("bottom", "Bottom"),
+      side("left", "Left"),
+      side("right", "Right"),
+      side("insideH", "Between rows"),
+      side("insideV", "Between columns"),
+      h("div", { class: "menu-title" }, "Style"),
+      ...(Object.keys(styles) as (keyof typeof styles)[]).map((style) => this.simpleItem(styles[style], () => set({ style }), lines.style === style)),
+      h("div", { class: "menu-title" }, "Width"),
+      ...Object.keys(widths).map(Number).map((size) => this.simpleItem(widths[size], () => set({ size }), lines.size === size)),
+      h("div", { class: "menu-title" }, "Colour"),
+      this.swatches(Object.keys(colors), (c) => `#${c}`, (color) => set({ color }), (c) => colors[c] ?? c),
+    );
   }
 
   /** Lines around the table's cells, on or off: the opposite of what shows now. */
@@ -1009,7 +1070,10 @@ export class Toolbar {
     if (document.activeElement !== this.fontInput) this.fontInput.value = run.font ?? "";
     if (document.activeElement !== this.sizeInput) this.sizeInput.value = run.size !== undefined ? String(run.size) : "";
     this.syncStyles(paragraph?.attrs.style ?? ctx.styles.defaultParagraph);
-    this.tableGroup.hidden = !isInTable(view.state);
+    // The Table tab shows while in a table; leaving the table while on it goes back to the tab before.
+    const inTable = isInTable(view.state);
+    this.tableTab.hidden = !inTable;
+    if (!inTable && this.currentTab === "table") this.selectTab(this.tabBeforeTable);
     active("track", ctx.trackChanges);
   }
 
